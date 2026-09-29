@@ -1,0 +1,7 @@
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-09-29
+[Implementasi awal]
++ Auto Align menyusun satu ellipse terpilih dalam batas 320 x 470 mm yang dipusatkan pada halaman: Dense tanpa jarak, Straight berjarak 1 mm, dan ZigZag berselang-seling.
++ Objek hasil digroup dan dipusatkan pada halaman; marker sementara dihapus.
+~ Z-Order anggota group diurutkan per baris dari kiri atas ke kanan bawah.
+Catatan: Auto, Process, dan antrean objek belum aktif.
