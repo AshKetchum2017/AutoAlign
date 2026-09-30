@@ -5,3 +5,10 @@
 + Objek hasil digroup dan dipusatkan pada halaman; marker sementara dihapus.
 ~ Z-Order anggota group diurutkan per baris dari kiri atas ke kanan bawah.
 Catatan: Auto, Process, dan antrean objek belum aktif.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-09-30
+[lbxObjects dan penyusunan beberapa sumber]
++ Design dan Cut Line dari seleksi didaftarkan ke lbxObjects tanpa duplikat; Remove menghapus baris terpilih dan Clear mengosongkan daftar.
++ Dense, Straight, dan ZigZag menyusun tiap sumber menjadi group terpisah, lalu memperbarui ID di daftar. Group berikutnya berjarak 50 mm; Cut Line yang cocok ditempatkan bersama Design.
+~ Penempatan group menjaga peran tetap terpisah dan menukar hasil Design/Cut Line pada Layer bernomor sesuai pasangannya. Auto, Process, dan txbGap tetap nonaktif.
