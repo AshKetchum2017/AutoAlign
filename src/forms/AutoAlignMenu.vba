@@ -14,12 +14,48 @@ Private Sub txbAreaWidth_Change()
 
 End Sub
 
-Private Sub txbGapHorizontal_Change()
+Private Sub txbQuantity_Change()
 
 End Sub
 
-Private Sub txbGapVertical_Change()
+Private Sub txbGapHorizontal_Change()
+    If Not chkHPercent.Value Then Exit Sub
+    If AAGapIsNegative(txbGapHorizontal.Text) Then
+        MsgBox "Persen gap horizontal tidak boleh negatif.", vbExclamation, "Auto Align"
+        chkHPercent.Value = False
+        AASetGapPercentText txbGapHorizontal, False
+        Exit Sub
+    End If
+    AASetGapPercentText txbGapHorizontal, True
+End Sub
 
+Private Sub txbGapVertical_Change()
+    If Not chkVPercent.Value Then Exit Sub
+    If AAGapIsNegative(txbGapVertical.Text) Then
+        MsgBox "Persen gap vertikal tidak boleh negatif.", vbExclamation, "Auto Align"
+        chkVPercent.Value = False
+        AASetGapPercentText txbGapVertical, False
+        Exit Sub
+    End If
+    AASetGapPercentText txbGapVertical, True
+End Sub
+
+Private Sub chkHPercent_Click()
+    If chkHPercent.Value And AAGapIsNegative(txbGapHorizontal.Text) Then
+        MsgBox "Persen gap horizontal tidak boleh negatif.", vbExclamation, "Auto Align"
+        chkHPercent.Value = False
+        Exit Sub
+    End If
+    AASetGapPercentText txbGapHorizontal, chkHPercent.Value
+End Sub
+
+Private Sub chkVPercent_Click()
+    If chkVPercent.Value And AAGapIsNegative(txbGapVertical.Text) Then
+        MsgBox "Persen gap vertikal tidak boleh negatif.", vbExclamation, "Auto Align"
+        chkVPercent.Value = False
+        Exit Sub
+    End If
+    AASetGapPercentText txbGapVertical, chkVPercent.Value
 End Sub
 
 Private Sub UserForm_Initialize()
@@ -30,10 +66,14 @@ Private Sub UserForm_Initialize()
     optZigZag.Value = False
     optDense.Value = True
     AAUpdateModeControls
-    txbAreaHeight.Enabled = False
-    txbAreaWidth.Enabled = False
-    txbGapHorizontal.Enabled = False
-    txbGapVertical.Enabled = False
+    txbAreaHeight.Enabled = True
+    txbAreaWidth.Enabled = True
+    txbGapHorizontal.Enabled = True
+    txbGapVertical.Enabled = True
+    chkHPercent.Enabled = True
+    chkVPercent.Enabled = True
+    AASetGapPercentText txbGapHorizontal, chkHPercent.Value
+    AASetGapPercentText txbGapVertical, chkVPercent.Value
     AARefreshObjects
 End Sub
 
@@ -54,11 +94,8 @@ Private Sub cmdProcess_Click()
     Dim layoutMode As Long
 
     If chkAuto.Value Then
-        MsgBox "Mode Auto belum tersedia.", vbExclamation, "Auto Align"
-        Exit Sub
-    End If
-
-    If optDense.Value Then
+        layoutMode = AA_MODE_AUTO
+    ElseIf optDense.Value Then
         layoutMode = AA_MODE_DENSE
     ElseIf optStraight.Value Then
         layoutMode = AA_MODE_STRAIGHT
@@ -111,7 +148,27 @@ Private Sub AAUpdateModeControls()
     optDense.Enabled = Not chkAuto.Value
     optStraight.Enabled = Not chkAuto.Value
     optZigZag.Enabled = Not chkAuto.Value
-    cmdProcess.Enabled = Not chkAuto.Value
+    cmdProcess.Enabled = True
+End Sub
+
+Private Function AAGapIsNegative(ByVal gapText As String) As Boolean
+    AAGapIsNegative = (Left$(Trim$(gapText), 1) = "-")
+End Function
+
+Private Sub AASetGapPercentText(ByVal gapBox As MSForms.TextBox, _
+                                ByVal percentEnabled As Boolean)
+    Dim numberText As String
+    Dim displayText As String
+    Dim cursorPosition As Long
+
+    cursorPosition = gapBox.SelStart
+    numberText = Trim$(Replace$(gapBox.Text, "%", vbNullString))
+    displayText = numberText
+    If percentEnabled And Len(numberText) > 0 Then displayText = numberText & "%"
+    If gapBox.Text = displayText Then Exit Sub
+    gapBox.Text = displayText
+    If cursorPosition > Len(numberText) Then cursorPosition = Len(numberText)
+    gapBox.SelStart = cursorPosition
 End Sub
 
 Private Sub AARunMode(ByVal layoutMode As Long)
@@ -119,7 +176,9 @@ Private Sub AARunMode(ByVal layoutMode As Long)
     Dim feedbackStyle As VbMsgBoxStyle
 
     If mPresenter Is Nothing Then Set mPresenter = New AAPresenter
-    mPresenter.RunLayout layoutMode, feedback, feedbackStyle
+    mPresenter.RunLayout layoutMode, txbAreaWidth.Text, txbAreaHeight.Text, _
+        txbGapHorizontal.Text, txbGapVertical.Text, chkHPercent.Value, _
+        chkVPercent.Value, feedback, feedbackStyle
     AARefreshObjects
     If Len(feedback) > 0 Then MsgBox feedback, feedbackStyle, "Auto Align"
 End Sub

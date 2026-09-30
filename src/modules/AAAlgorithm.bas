@@ -10,14 +10,13 @@ Public Const AA_ROLE_CUT_LINE As String = "Cut Line"
 
 Private Const AA_EDGE_TOLERANCE_MM As Double = 0.0001
 Private Const AA_MATCH_TOLERANCE_MM As Double = 10#
+Private Const AA_MAX_OBJECTS_PER_SOURCE As Long = 5000
 
 Public Function AAPlanPositions(ByVal shapeWidth As Double, ByVal shapeHeight As Double, _
                                 ByVal areaWidth As Double, ByVal areaHeight As Double, _
-                                ByVal layoutMode As Long, ByVal straightGap As Double, _
-                                ByVal zigZagVerticalFactor As Double) As Collection
+                                ByVal layoutMode As Long, ByVal horizontalStep As Double, _
+                                ByVal verticalStep As Double) As Collection
     Dim result As New Collection
-    Dim horizontalStep As Double
-    Dim verticalStep As Double
     Dim rowShift As Double
     Dim xOffset As Double
     Dim yOffset As Double
@@ -32,16 +31,10 @@ Public Function AAPlanPositions(ByVal shapeWidth As Double, ByVal shapeHeight As
         Case AA_MODE_DENSE
             horizontalStep = shapeWidth
             verticalStep = shapeHeight
-        Case AA_MODE_STRAIGHT
-            horizontalStep = shapeWidth + straightGap
-            verticalStep = shapeHeight + straightGap
-        Case AA_MODE_ZIGZAG
-            horizontalStep = shapeWidth + straightGap
-            verticalStep = shapeHeight * zigZagVerticalFactor
-            rowShift = horizontalStep / 2#
+        Case AA_MODE_STRAIGHT, AA_MODE_ZIGZAG
+            If layoutMode = AA_MODE_ZIGZAG Then rowShift = horizontalStep / 2#
         Case Else
-            Err.Raise vbObjectError + 5203, "AAPlanPositions", _
-                "Mode Auto belum tersedia. Nantinya Auto memilih Straight atau ZigZag."
+            Err.Raise vbObjectError + 5203, "AAPlanPositions", "Mode penyusunan tidak dikenal."
     End Select
 
     If horizontalStep <= 0# Or verticalStep <= 0# Then Err.Raise vbObjectError + 5205, _
@@ -51,6 +44,9 @@ Public Function AAPlanPositions(ByVal shapeWidth As Double, ByVal shapeHeight As
         xOffset = 0#
         If layoutMode = AA_MODE_ZIGZAG And rowIndex Mod 2 = 1 Then xOffset = rowShift
         Do While xOffset + shapeWidth <= areaWidth + AA_EDGE_TOLERANCE_MM
+            If result.Count >= AA_MAX_OBJECTS_PER_SOURCE Then Err.Raise _
+                vbObjectError + 5210, "AAPlanPositions", _
+                "Satu sumber melebihi batas " & CStr(AA_MAX_OBJECTS_PER_SOURCE) & " object."
             result.Add Array(xOffset, yOffset)
             xOffset = xOffset + horizontalStep
         Loop

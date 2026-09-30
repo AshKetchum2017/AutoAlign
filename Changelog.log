@@ -16,3 +16,8 @@ Catatan: Auto, Process, dan antrean objek belum aktif.
 [Z-Order dari rencana dan pemilihan mode]
 + Dense, Straight, dan ZigZag dipilih melalui OptionButton lalu dijalankan dengan Process. Auto menjadi CheckBox yang menonaktifkan pilihan manual dan Process saat dicentang.
 ~ Z-Order anggota group mengikuti urutan slot penyusunan, tanpa mengurutkan ulang berdasarkan geometri objek.
+
+[Auto, area, dan gap manual]
++ Auto membandingkan jumlah hasil Straight dan ZigZag untuk tiap Design; ZigZag dipilih jika lebih banyak, sedangkan jumlah sama memakai Straight.
++ Area susunan dan gap horizontal/vertikal dapat diatur manual, termasuk langkah berbasis persen; kolom kosong mempertahankan nilai default tiap mode.
+~ lbxObjects mempertahankan ID sumber sehingga mode lain dapat dicoba setelah satu Undo. Perencanaan dibatasi hingga 5000 objek per sumber.

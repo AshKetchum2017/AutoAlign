@@ -3,6 +3,7 @@ Option Explicit
 Private Const AA_GROUP_GAP_MM As Double = 50#
 
 Private mStore As AAObjectStore
+Private mLastProcessCompleted As Boolean
 
 Private Sub Class_Initialize()
     Set mStore = New AAObjectStore
@@ -18,6 +19,7 @@ End Function
 
 Public Sub ClearObjects()
     mStore.Clear
+    mLastProcessCompleted = False
 End Sub
 
 Public Sub RemoveObjectAt(ByVal index As Long)
@@ -50,17 +52,20 @@ RegisterFailed:
     feedback = Err.Description
 End Sub
 
-Public Sub RunLayout(ByVal layoutMode As Long, ByRef feedback As String, _
+Public Sub RunLayout(ByVal layoutMode As Long, ByVal areaWidthText As String, _
+                     ByVal areaHeightText As String, ByVal horizontalGapText As String, _
+                     ByVal verticalGapText As String, ByVal horizontalPercent As Boolean, _
+                     ByVal verticalPercent As Boolean, ByRef feedback As String, _
                      ByRef feedbackStyle As VbMsgBoxStyle)
     Dim doc As Document
     Dim targetPage As Page
     Dim marker As Shape
+    Dim settings As AASettings
     Dim sourceShapes() As Shape
     Dim sourceLayers() As Layer
     Dim models() As AAModel
     Dim resultGroups() As Shape
     Dim plannedMembers As Collection
-    Dim resultIDs() As Long
     Dim designIndexes() As Long
     Dim cutIndexes() As Long
     Dim designCount As Long
@@ -69,6 +74,7 @@ Public Sub RunLayout(ByVal layoutMode As Long, ByRef feedback As String, _
     Dim entryIndex As Long
     Dim roleIndex As Long
     Dim anchorIndex As Long
+    Dim cutLayoutMode As Long
     Dim resultSelection As ShapeRange
     Dim previousUnit As cdrUnit
     Dim previousHUnit As cdrUnit
@@ -91,6 +97,11 @@ Public Sub RunLayout(ByVal layoutMode As Long, ByRef feedback As String, _
         feedback = "Daftarkan object Design atau Cut Line terlebih dahulu."
         Exit Sub
     End If
+
+    operation = "Memeriksa area dan gap"
+    Set settings = New AASettings
+    settings.Configure layoutMode, areaWidthText, areaHeightText, _
+        horizontalGapText, verticalGapText, horizontalPercent, verticalPercent
     operation = "Memeriksa dokumen dan halaman sumber"
     If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5310, _
         "AAPresenter", "Tidak ada dokumen aktif."
@@ -105,16 +116,19 @@ Public Sub RunLayout(ByVal layoutMode As Long, ByRef feedback As String, _
     ReDim sourceLayers(0 To entryCount - 1)
     ReDim models(0 To entryCount - 1)
     ReDim resultGroups(0 To entryCount - 1)
-    ReDim resultIDs(0 To entryCount - 1)
     ReDim designIndexes(0 To entryCount - 1)
     ReDim cutIndexes(0 To entryCount - 1)
 
     operation = "Mencari semua object terdaftar"
     For entryIndex = 0 To entryCount - 1
         Set sourceShapes(entryIndex) = AAFindTopLevelShape(targetPage, mStore.StaticIDAt(entryIndex))
-        If sourceShapes(entryIndex) Is Nothing Then Err.Raise vbObjectError + 5313, _
-            "AAPresenter", "Obj. ID: /" & CStr(mStore.StaticIDAt(entryIndex)) & _
-            " tidak ditemukan pada halaman sumber. Perbarui daftar."
+        If sourceShapes(entryIndex) Is Nothing Then
+            If mLastProcessCompleted Then Err.Raise vbObjectError + 5317, _
+                "AAPresenter", "Undo susunan sebelumnya satu kali sebelum mencoba mode lain."
+            Err.Raise vbObjectError + 5313, "AAPresenter", _
+                "Obj. ID: /" & CStr(mStore.StaticIDAt(entryIndex)) & _
+                " tidak ditemukan pada halaman sumber. Perbarui daftar."
+        End If
         If Not sourceShapes(entryIndex).Layer.Editable Then Err.Raise vbObjectError + 5314, _
             "AAPresenter", "Layer Obj. ID: /" & CStr(mStore.StaticIDAt(entryIndex)) & _
             " tidak dapat diedit."
@@ -127,6 +141,14 @@ Public Sub RunLayout(ByVal layoutMode As Long, ByRef feedback As String, _
             cutCount = cutCount + 1
         End If
     Next entryIndex
+
+    If layoutMode = AA_MODE_AUTO And designCount = 0 Then Err.Raise _
+        vbObjectError + 5318, "AAPresenter", _
+        "Mode Auto memerlukan sedikitnya satu Design."
+    If designCount > 0 And cutCount > designCount Then Err.Raise _
+        vbObjectError + 5319, "AAPresenter", _
+        "Jumlah Cut Line melebihi Design; ada Cut Line tanpa pasangan."
+    mLastProcessCompleted = False
 
     operation = "Membaca unit dokumen dan ruler"
     previousUnit = doc.Unit
@@ -143,17 +165,35 @@ Public Sub RunLayout(ByVal layoutMode As Long, ByRef feedback As String, _
     doc.Rulers.HUnits = cdrMillimeter
     doc.Rulers.VUnits = cdrMillimeter
 
-    operation = "Merencanakan susunan setiap object"
-    For entryIndex = 0 To entryCount - 1
+    operation = "Merencanakan susunan Design"
+    For roleIndex = 0 To designCount - 1
+        entryIndex = designIndexes(roleIndex)
         Set models(entryIndex) = New AAModel
         models(entryIndex).Prepare layoutMode, sourceShapes(entryIndex).SizeWidth, _
-            sourceShapes(entryIndex).SizeHeight
+            sourceShapes(entryIndex).SizeHeight, settings
         If models(entryIndex).PositionCount < 2 Then
             feedback = "Obj. ID: /" & CStr(mStore.StaticIDAt(entryIndex)) & _
-                " tidak dapat disusun lebih dari satu kali dalam marker 320 x 470 mm."
+                " tidak dapat disusun lebih dari satu kali dalam area yang dipilih."
             GoTo CleanExit
         End If
-    Next entryIndex
+    Next roleIndex
+
+    operation = "Merencanakan susunan Cut Line"
+    For roleIndex = 0 To cutCount - 1
+        entryIndex = cutIndexes(roleIndex)
+        cutLayoutMode = layoutMode
+        If layoutMode = AA_MODE_AUTO Then
+            cutLayoutMode = models(designIndexes(roleIndex)).LayoutMode
+        End If
+        Set models(entryIndex) = New AAModel
+        models(entryIndex).Prepare cutLayoutMode, sourceShapes(entryIndex).SizeWidth, _
+            sourceShapes(entryIndex).SizeHeight, settings
+        If models(entryIndex).PositionCount < 2 Then
+            feedback = "Obj. ID: /" & CStr(mStore.StaticIDAt(entryIndex)) & _
+                " tidak dapat disusun lebih dari satu kali dalam area yang dipilih."
+            GoTo CleanExit
+        End If
+    Next roleIndex
 
     If designCount > 0 Then
         anchorIndex = designIndexes(0)
@@ -224,7 +264,6 @@ Public Sub RunLayout(ByVal layoutMode As Long, ByRef feedback As String, _
     operation = "Memilih seluruh group hasil"
     Set resultSelection = New ShapeRange
     For entryIndex = 0 To entryCount - 1
-        resultIDs(entryIndex) = CLng(resultGroups(entryIndex).StaticID)
         resultSelection.Add resultGroups(entryIndex)
     Next entryIndex
     resultSelection.CreateSelection
@@ -242,11 +281,7 @@ CleanExit:
         doc.EndCommandGroup
         commandGroupOpen = False
     End If
-    If mutationStarted Then
-        For entryIndex = 0 To entryCount - 1
-            mStore.UpdateStaticIDAt entryIndex, resultIDs(entryIndex)
-        Next entryIndex
-    End If
+    If mutationStarted Then mLastProcessCompleted = True
     Exit Sub
 
 RunFailed:

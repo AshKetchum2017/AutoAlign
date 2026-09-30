@@ -97,11 +97,6 @@ Public Sub Clear()
     mSourcePageIndex = 0
 End Sub
 
-Public Sub UpdateStaticIDAt(ByVal index As Long, ByVal newStaticID As Long)
-    CheckIndex index
-    mEntries(index).StaticID = newStaticID
-End Sub
-
 Private Sub AppendEntry(ByVal roleLabel As String, ByVal staticID As Long)
     If mCount = 0 Then
         ReDim mEntries(0 To 0)
