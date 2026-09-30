@@ -59,6 +59,7 @@ Public Sub RunLayout(ByVal layoutMode As Long, ByRef feedback As String, _
     Dim sourceLayers() As Layer
     Dim models() As AAModel
     Dim resultGroups() As Shape
+    Dim plannedMembers As Collection
     Dim resultIDs() As Long
     Dim designIndexes() As Long
     Dim cutIndexes() As Long
@@ -171,8 +172,8 @@ Public Sub RunLayout(ByVal layoutMode As Long, ByRef feedback As String, _
     For roleIndex = 0 To designCount - 1
         entryIndex = designIndexes(roleIndex)
         Set resultGroups(entryIndex) = AAArrangeShape(sourceShapes(entryIndex), marker, _
-            models(entryIndex).Positions, sourceLayers(entryIndex))
-        AAOrderGroupMembers resultGroups(entryIndex)
+            models(entryIndex).Positions, sourceLayers(entryIndex), plannedMembers)
+        AAOrderGroupMembers resultGroups(entryIndex), plannedMembers
         resultGroups(entryIndex).CenterY = targetPage.CenterY
         If roleIndex = 0 Then
             resultGroups(entryIndex).CenterX = targetPage.CenterX
@@ -186,8 +187,8 @@ Public Sub RunLayout(ByVal layoutMode As Long, ByRef feedback As String, _
     For roleIndex = 0 To cutCount - 1
         entryIndex = cutIndexes(roleIndex)
         Set resultGroups(entryIndex) = AAArrangeShape(sourceShapes(entryIndex), marker, _
-            models(entryIndex).Positions, sourceLayers(entryIndex))
-        AAOrderGroupMembers resultGroups(entryIndex)
+            models(entryIndex).Positions, sourceLayers(entryIndex), plannedMembers)
+        AAOrderGroupMembers resultGroups(entryIndex), plannedMembers
         resultGroups(entryIndex).CenterY = targetPage.CenterY
         If designCount = 0 Then
             If roleIndex = 0 Then

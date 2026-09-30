@@ -2,24 +2,43 @@ Option Explicit
 
 Private mPresenter As AAPresenter
 
+Private Sub lbxObjects_Click()
+
+End Sub
+
+Private Sub txbAreaHeight_Change()
+
+End Sub
+
+Private Sub txbAreaWidth_Change()
+
+End Sub
+
+Private Sub txbGapHorizontal_Change()
+
+End Sub
+
+Private Sub txbGapVertical_Change()
+
+End Sub
+
 Private Sub UserForm_Initialize()
     Set mPresenter = New AAPresenter
-    cmdProcess.Enabled = False
-    cmdAuto.Enabled = False
-    txbGap.Enabled = False
+    chkAuto.Value = False
+    chkAuto.Enabled = True
+    optStraight.Value = False
+    optZigZag.Value = False
+    optDense.Value = True
+    AAUpdateModeControls
+    txbAreaHeight.Enabled = False
+    txbAreaWidth.Enabled = False
+    txbGapHorizontal.Enabled = False
+    txbGapVertical.Enabled = False
     AARefreshObjects
 End Sub
 
-Private Sub chkSequentially_Click()
-
-End Sub
-
-Private Sub txbGap_Change()
-
-End Sub
-
-Private Sub cmdAuto_Click()
-    ' Scope berikutnya: Auto memilih AA_MODE_STRAIGHT atau AA_MODE_ZIGZAG.
+Private Sub chkAuto_Click()
+    AAUpdateModeControls
 End Sub
 
 Private Sub cmdClear_Click()
@@ -31,12 +50,26 @@ Private Sub cmdClose_Click()
     Unload Me
 End Sub
 
-Private Sub cmdDense_Click()
-    AARunMode AA_MODE_DENSE
-End Sub
-
 Private Sub cmdProcess_Click()
-    ' Tiap mode saat ini dijalankan langsung dari Command Button.
+    Dim layoutMode As Long
+
+    If chkAuto.Value Then
+        MsgBox "Mode Auto belum tersedia.", vbExclamation, "Auto Align"
+        Exit Sub
+    End If
+
+    If optDense.Value Then
+        layoutMode = AA_MODE_DENSE
+    ElseIf optStraight.Value Then
+        layoutMode = AA_MODE_STRAIGHT
+    ElseIf optZigZag.Value Then
+        layoutMode = AA_MODE_ZIGZAG
+    Else
+        MsgBox "Pilih mode penyusunan terlebih dahulu.", vbExclamation, "Auto Align"
+        Exit Sub
+    End If
+
+    AARunMode layoutMode
 End Sub
 
 Private Sub cmdRemove_Click()
@@ -56,16 +89,29 @@ Private Sub cmdSetDesign_Click()
     AARegisterObjects AA_ROLE_DESIGN
 End Sub
 
-Private Sub cmdStraight_Click()
-    AARunMode AA_MODE_STRAIGHT
+Private Sub optDense_Click()
+    If Not optDense.Value Then Exit Sub
+    optStraight.Value = False
+    optZigZag.Value = False
 End Sub
 
-Private Sub cmdZigZag_Click()
-    AARunMode AA_MODE_ZIGZAG
+Private Sub optStraight_Click()
+    If Not optStraight.Value Then Exit Sub
+    optDense.Value = False
+    optZigZag.Value = False
 End Sub
 
-Private Sub lbxObjects_Click()
+Private Sub optZigZag_Click()
+    If Not optZigZag.Value Then Exit Sub
+    optDense.Value = False
+    optStraight.Value = False
+End Sub
 
+Private Sub AAUpdateModeControls()
+    optDense.Enabled = Not chkAuto.Value
+    optStraight.Enabled = Not chkAuto.Value
+    optZigZag.Enabled = Not chkAuto.Value
+    cmdProcess.Enabled = Not chkAuto.Value
 End Sub
 
 Private Sub AARunMode(ByVal layoutMode As Long)

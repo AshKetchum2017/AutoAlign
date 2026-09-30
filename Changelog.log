@@ -11,4 +11,8 @@ Catatan: Auto, Process, dan antrean objek belum aktif.
 [lbxObjects dan penyusunan beberapa sumber]
 + Design dan Cut Line dari seleksi didaftarkan ke lbxObjects tanpa duplikat; Remove menghapus baris terpilih dan Clear mengosongkan daftar.
 + Dense, Straight, dan ZigZag menyusun tiap sumber menjadi group terpisah, lalu memperbarui ID di daftar. Group berikutnya berjarak 50 mm; Cut Line yang cocok ditempatkan bersama Design.
-~ Penempatan group menjaga peran tetap terpisah dan menukar hasil Design/Cut Line pada Layer bernomor sesuai pasangannya. Auto, Process, dan txbGap tetap nonaktif.
+~ Penempatan group menjaga peran tetap terpisah dan menukar hasil Design/Cut Line pada Layer bernomor sesuai pasangannya. Pada tahap ini Auto, Process, dan txbGap belum diaktifkan.
+
+[Z-Order dari rencana dan pemilihan mode]
++ Dense, Straight, dan ZigZag dipilih melalui OptionButton lalu dijalankan dengan Process. Auto menjadi CheckBox yang menonaktifkan pilihan manual dan Process saat dicentang.
+~ Z-Order anggota group mengikuti urutan slot penyusunan, tanpa mengurutkan ulang berdasarkan geometri objek.
