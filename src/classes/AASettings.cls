@@ -2,6 +2,8 @@ Option Explicit
 
 Private Const AA_DEFAULT_AREA_WIDTH_MM As Double = 320#
 Private Const AA_DEFAULT_AREA_HEIGHT_MM As Double = 470#
+Private Const AA_PRESET_PAGE_WIDTH_MM As Double = 325#
+Private Const AA_PRESET_PAGE_HEIGHT_MM As Double = 485#
 
 Private mAreaWidthMM As Double
 Private mAreaHeightMM As Double
@@ -11,17 +13,22 @@ Private mHasHorizontalGap As Boolean
 Private mHasVerticalGap As Boolean
 Private mHorizontalPercent As Boolean
 Private mVerticalPercent As Boolean
+Private mModelMode As Long
 
-Public Sub Configure(ByVal layoutMode As Long, ByVal areaWidthText As String, _
+Public Sub Configure(ByVal modelMode As Long, ByVal areaWidthText As String, _
                      ByVal areaHeightText As String, ByVal horizontalGapText As String, _
                      ByVal verticalGapText As String, ByVal horizontalPercent As Boolean, _
                      ByVal verticalPercent As Boolean)
+    If modelMode <> AA_MODEL_CUSTOM And modelMode <> AA_MODEL_KISS_A And _
+        modelMode <> AA_MODEL_DIE_A Then Err.Raise vbObjectError + 5324, _
+        "AASettings", "Model area tidak dikenal."
+    mModelMode = modelMode
     mAreaWidthMM = AA_DEFAULT_AREA_WIDTH_MM
     mAreaHeightMM = AA_DEFAULT_AREA_HEIGHT_MM
-    If Len(Trim$(areaWidthText)) > 0 Then
+    If modelMode = AA_MODEL_CUSTOM And Len(Trim$(areaWidthText)) > 0 Then
         mAreaWidthMM = ParseDecimal(areaWidthText, "Lebar area", False)
     End If
-    If Len(Trim$(areaHeightText)) > 0 Then
+    If modelMode = AA_MODEL_CUSTOM And Len(Trim$(areaHeightText)) > 0 Then
         mAreaHeightMM = ParseDecimal(areaHeightText, "Tinggi area", False)
     End If
     If mAreaWidthMM <= 0# Or mAreaHeightMM <= 0# Then Err.Raise _
@@ -33,8 +40,6 @@ Public Sub Configure(ByVal layoutMode As Long, ByVal areaWidthText As String, _
     mHasVerticalGap = False
     mHorizontalGap = 0#
     mVerticalGap = 0#
-    If layoutMode = AA_MODE_DENSE Then Exit Sub
-
     mHasHorizontalGap = (Len(Trim$(horizontalGapText)) > 0)
     mHasVerticalGap = (Len(Trim$(verticalGapText)) > 0)
     If mHasHorizontalGap Then
@@ -48,6 +53,30 @@ Public Sub Configure(ByVal layoutMode As Long, ByVal areaWidthText As String, _
             vbObjectError + 5322, "AASettings", "Persen gap vertikal harus lebih besar dari nol."
     End If
 End Sub
+
+Public Property Get ModelMode() As Long
+    ModelMode = mModelMode
+End Property
+
+Public Property Get PresetPageWidthMM() As Double
+    PresetPageWidthMM = AA_PRESET_PAGE_WIDTH_MM
+End Property
+
+Public Property Get PresetPageHeightMM() As Double
+    PresetPageHeightMM = AA_PRESET_PAGE_HEIGHT_MM
+End Property
+
+Public Property Get DefaultHorizontalGapMM() As Double
+    If mModelMode = AA_MODEL_CUSTOM Then
+        DefaultHorizontalGapMM = 0#
+    Else
+        DefaultHorizontalGapMM = 1#
+    End If
+End Property
+
+Public Property Get DefaultVerticalGapMM() As Double
+    DefaultVerticalGapMM = DefaultHorizontalGapMM
+End Property
 
 Public Property Get AreaWidthMM() As Double
     AreaWidthMM = mAreaWidthMM

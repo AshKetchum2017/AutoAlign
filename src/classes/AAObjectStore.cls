@@ -3,6 +3,7 @@ Option Explicit
 Private Type AAObjectEntry
     RoleLabel As String
     StaticID As Long
+    Quantity As Long  ' -1 berarti kosong: isi area yang sedang aktif.
 End Type
 
 Private mEntries() As AAObjectEntry
@@ -31,6 +32,42 @@ Public Property Get StaticIDAt(ByVal index As Long) As Long
     CheckIndex index
     StaticIDAt = mEntries(index).StaticID
 End Property
+
+Public Property Get QuantityAt(ByVal index As Long) As Long
+    CheckIndex index
+    QuantityAt = mEntries(index).Quantity
+End Property
+
+Public Function QuantityTextAt(ByVal index As Long) As String
+    CheckIndex index
+    If mEntries(index).Quantity >= 0 Then _
+        QuantityTextAt = CStr(mEntries(index).Quantity)
+End Function
+
+Public Sub SetQuantityTextAt(ByVal index As Long, ByVal rawText As String)
+    Dim valueText As String
+    Dim i As Long
+
+    CheckIndex index
+    If mEntries(index).RoleLabel <> AA_ROLE_DESIGN Then Err.Raise _
+        vbObjectError + 5308, "AAObjectStore", "Quantity hanya berlaku untuk Design."
+    valueText = Trim$(rawText)
+    If Len(valueText) = 0 Then
+        mEntries(index).Quantity = -1
+        Exit Sub
+    End If
+    For i = 1 To Len(valueText)
+        If Mid$(valueText, i, 1) < "0" Or Mid$(valueText, i, 1) > "9" Then _
+            Err.Raise vbObjectError + 5309, "AAObjectStore", _
+                "Quantity harus berupa bilangan bulat nol atau lebih."
+    Next i
+    On Error GoTo InvalidQuantity
+    mEntries(index).Quantity = CLng(valueText)
+    Exit Sub
+InvalidQuantity:
+    Err.Raise vbObjectError + 5309, "AAObjectStore", _
+        "Quantity terlalu besar atau tidak valid."
+End Sub
 
 Public Function RegisterSelection(ByVal roleLabel As String, ByVal selectedShapes As ShapeRange, _
                                   ByVal sourceDoc As Document, ByVal sourcePage As Page) As Long
@@ -105,6 +142,7 @@ Private Sub AppendEntry(ByVal roleLabel As String, ByVal staticID As Long)
     End If
     mEntries(mCount).RoleLabel = roleLabel
     mEntries(mCount).StaticID = staticID
+    mEntries(mCount).Quantity = -1
     mCount = mCount + 1
 End Sub
 

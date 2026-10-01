@@ -21,3 +21,12 @@ Catatan: Auto, Process, dan antrean objek belum aktif.
 + Auto membandingkan jumlah hasil Straight dan ZigZag untuk tiap Design; ZigZag dipilih jika lebih banyak, sedangkan jumlah sama memakai Straight.
 + Area susunan dan gap horizontal/vertikal dapat diatur manual, termasuk langkah berbasis persen; kolom kosong mempertahankan nilai default tiap mode.
 ~ lbxObjects mempertahankan ID sumber sehingga mode lain dapat dicoba setelah satu Undo. Perencanaan dibatasi hingga 5000 objek per sumber.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-01
+[Minimum, Quantity, dan collision]
++ Minimum membandingkan susunan lengkap Straight/ZigZag pada KissA, DieA, dan Custom; memilih jumlah area paling sedikit, lalu jumlah Design dan isi area awal terbanyak. Seri tetap memakai Straight.
++ Quantity diatur per Design: kosong mengisi sisa area, 0 melewati sumber, dan jumlah berlebih dilanjutkan ke area berikutnya dengan jarak antartepi area 50 mm.
++ Pemeriksaan bentuk kurva menjaga Design beserta Cut Line tetap di dalam area, menghindari mark dan tumpang tindih; Minimum mencoba pergeseran kelompok sebelum mengurangi objek, dengan toleransi mark 0,2 mm.
+~ Rectangle bersudut runcing, termasuk Curve, selalu memakai Straight pada ketiga model. Gap default KissA/DieA untuk bentuk ini menjadi 0; input manual tetap diutamakan.
+~ Hasil mempertahankan layer asal Design/Cut Line dengan aturan Z-Order yang ada; input gap, area, dan Quantity menampilkan placeholder abu-abu tanpa menganggapnya sebagai nilai manual.
