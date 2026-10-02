@@ -78,14 +78,14 @@ Public Sub GetSteps(ByVal layoutMode As Long, ByRef horizontalStep As Double, _
     If sharpPreset Then verticalStep = baseHeight
     If mSettings.HasHorizontalGap Then
         If mSettings.HorizontalPercent Then
-            horizontalStep = DesignWidth * mSettings.HorizontalGap / 100#
+            horizontalStep = baseWidth * mSettings.HorizontalGap / 100#
         Else
             horizontalStep = baseWidth + mSettings.HorizontalGap
         End If
     End If
     If mSettings.HasVerticalGap Then
         If mSettings.VerticalPercent Then
-            verticalStep = DesignHeight * mSettings.VerticalGap / 100#
+            verticalStep = baseHeight * mSettings.VerticalGap / 100#
         Else
             verticalStep = baseHeight + mSettings.VerticalGap
         End If
