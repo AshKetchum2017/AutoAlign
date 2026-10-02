@@ -8,6 +8,7 @@ Private mDesignTop As Double
 Private mCutLeft As Double
 Private mCutTop As Double
 Private mFootprint As AAGeometry
+Private mCollisionFootprint As AAGeometry
 
 Public Sub Configure(ByVal designIndex As Long, ByVal cutIndex As Long, _
                      ByVal areaIndex As Long, ByVal designLeft As Double, _
@@ -21,9 +22,16 @@ Public Sub Configure(ByVal designIndex As Long, ByVal cutIndex As Long, _
     mCutLeft = cutLeft
     mCutTop = cutTop
     Set mFootprint = footprint
+    Set mCollisionFootprint = footprint
+End Sub
+
+Public Sub SetCollisionFootprint(ByVal geometry As AAGeometry)
+    Set mCollisionFootprint = geometry
 End Sub
 
 Public Sub Translate(ByVal deltaX As Double, ByVal deltaY As Double)
+    Set mCollisionFootprint = mCollisionFootprint.Placed(mCollisionFootprint.LeftX + deltaX, _
+        mCollisionFootprint.TopY + deltaY)
     Set mFootprint = mFootprint.Placed(mFootprint.LeftX + deltaX, _
         mFootprint.TopY + deltaY)
     mDesignLeft = mDesignLeft + deltaX
@@ -62,4 +70,8 @@ End Property
 
 Public Property Get Footprint() As AAGeometry
     Set Footprint = mFootprint
+End Property
+
+Public Property Get CollisionFootprint() As AAGeometry
+    Set CollisionFootprint = mCollisionFootprint
 End Property

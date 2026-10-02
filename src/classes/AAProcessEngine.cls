@@ -135,10 +135,10 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
             models(entryIndex).Prepare sourceShapes(entryIndex), Nothing, settings
         End If
         If cutCount = 1 And roleIndex > 0 Then
-            If Not models(entryIndex).SameDesignGeometry( _
+            If Not models(entryIndex).CanShareCutWith( _
                    models(designIndexes(0))) Then Err.Raise _
                 vbObjectError + 5326, "AAProcessEngine", _
-                "Satu Cut Line bersama memerlukan bentuk dan ukuran Design yang sama."
+                "Satu Cut Line bersama memerlukan bentuk Design yang sama dan selisih ukuran yang memenuhi batas 2 mm. Gunakan pasangan Cut Line masing-masing."
         End If
     Next roleIndex
 

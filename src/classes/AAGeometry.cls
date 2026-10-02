@@ -91,6 +91,138 @@ Private Function SameDirection(ByVal x1 As Double, ByVal y1 As Double, _
         AA_RECTANGLE_DIRECTION_TOLERANCE And x1 * x2 + y1 * y2 > 0#)
 End Function
 
+Public Function IsRoundedRectangle() As Boolean
+    Dim part As Curve
+    Dim path As SubPath
+    Dim edge As Segment
+    Dim dx(1 To 4) As Double, dy(1 To 4) As Double
+    Dim x1 As Double, y1 As Double, x2 As Double, y2 As Double
+    Dim vx As Double, vy As Double, length As Double
+    Dim sides As Long, bends As Long, i As Long, nextSide As Long
+    Dim turn As Double
+
+    If mCurves.Count <> 1 Then Exit Function
+    Set part = mCurves(1)
+    If part.SubPaths.Count <> 1 Then Exit Function
+    Set path = part.SubPaths(1)
+    If Not path.Closed Then Exit Function
+    For Each edge In path.Segments
+        If edge.Type = cdrLineSegment Then
+            edge.GetPointPositionAt x1, y1, 0#, cdrParamSegmentOffset
+            edge.GetPointPositionAt x2, y2, 1#, cdrParamSegmentOffset
+            vx = x2 - x1
+            vy = y2 - y1
+            length = Sqr(vx * vx + vy * vy)
+            If length <= AA_GEOMETRY_TOLERANCE_MM Then Exit Function
+            vx = vx / length
+            vy = vy / length
+            If sides > 0 Then
+                If SameDirection(dx(sides), dy(sides), vx, vy) Then GoTo NextEdge
+                If sides = 4 Then
+                    If SameDirection(dx(1), dy(1), vx, vy) Then GoTo NextEdge
+                    Exit Function
+                End If
+            End If
+            sides = sides + 1
+            dx(sides) = vx
+            dy(sides) = vy
+        Else
+            bends = bends + 1
+        End If
+NextEdge:
+    Next edge
+    If sides <> 4 Or bends = 0 Then Exit Function
+    turn = dx(1) * dy(2) - dy(1) * dx(2)
+    For i = 1 To 4
+        nextSide = i Mod 4 + 1
+        If Abs(dx(i) * dx(nextSide) + dy(i) * dy(nextSide)) > _
+            AA_RECTANGLE_DIRECTION_TOLERANCE Then Exit Function
+        If (dx(i) * dy(nextSide) - dy(i) * dx(nextSide)) * turn <= 0# Then Exit Function
+    Next i
+    ' Kurva sudut harus membelok searah sisi, tanpa cekungan/gelombang.
+    For Each edge In path.Segments
+        If edge.Type <> cdrLineSegment Then
+            If Not ConvexCorner(edge, turn) Then Exit Function
+        End If
+    Next edge
+    IsRoundedRectangle = True
+End Function
+
+Private Function ConvexCorner(ByVal edge As Segment, ByVal turn As Double) As Boolean
+    Dim ax As Double, ay As Double, bx As Double, by As Double
+    Dim cx As Double, cy As Double
+    Dim i As Long
+    edge.GetPointPositionAt ax, ay, 0#, cdrParamSegmentOffset
+    edge.GetPointPositionAt bx, by, 0.125, cdrParamSegmentOffset
+    For i = 2 To 8
+        edge.GetPointPositionAt cx, cy, i / 8#, cdrParamSegmentOffset
+        If ((bx - ax) * (cy - by) - (by - ay) * (cx - bx)) * turn < _
+            -AA_AREA_TOLERANCE_MM2 Then Exit Function
+        ax = bx: ay = by
+        bx = cx: by = cy
+    Next i
+    ConvexCorner = True
+End Function
+
+Public Function SameForm(ByVal other As AAGeometry) As Boolean
+    Dim first As AAGeometry, second As AAGeometry
+    Set first = UnitSizedCopy
+    Set second = other.UnitSizedCopy
+    SameForm = first.SameGeometry(second)
+End Function
+
+' Siluet tertutup mengabaikan artwork yang berada di dalam background Design.
+' Weld hanya dilakukan pada salinan kurva bebas, tanpa Ungroup/ubah Shape sumber.
+Public Function OuterBoundary() As AAGeometry
+    Dim joined As Curve
+    Dim part As Curve
+    Dim result As AAGeometry
+
+    For Each part In mCurves
+        If IsClosedCurve(part) Then
+            If joined Is Nothing Then
+                Set joined = part.GetCopy
+            Else
+                Set joined = joined.WeldWith(part)
+            End If
+        End If
+    Next part
+    If joined Is Nothing Then
+        Set OuterBoundary = Me
+        Exit Function
+    End If
+    Set result = New AAGeometry
+    result.AddCurve joined
+    ' Kurva terbuka yang menentukan batas luar tetap memerlukan geometri lengkap.
+    If Abs(result.LeftX - LeftX) > AA_GEOMETRY_TOLERANCE_MM Or _
+       Abs(result.RightX - RightX) > AA_GEOMETRY_TOLERANCE_MM Or _
+       Abs(result.BottomY - BottomY) > AA_GEOMETRY_TOLERANCE_MM Or _
+       Abs(result.TopY - TopY) > AA_GEOMETRY_TOLERANCE_MM Then
+        Set OuterBoundary = Me
+    Else
+        Set OuterBoundary = result
+    End If
+End Function
+
+Friend Function UnitSizedCopy() As AAGeometry
+    Set UnitSizedCopy = SizedCopy(1#, 1#)
+End Function
+
+Public Function SizedCopy(ByVal targetWidth As Double, ByVal targetHeight As Double) As AAGeometry
+    Dim result As AAGeometry
+    Dim part As Curve, copy As Curve
+    Set result = New AAGeometry
+    If Width <= 0# Or Height <= 0# Then Err.Raise vbObjectError + 5221, _
+        "AAGeometry", "Ukuran kurva tidak dapat dinormalisasi."
+    For Each part In mCurves
+        Set copy = part.GetCopy
+        copy.Nodes.All.Stretch CSng(targetWidth / Width), CSng(targetHeight / Height), _
+            True, mLeft, mBottom
+        result.AddCurve copy
+    Next part
+    Set SizedCopy = result.Placed(0#, result.Height)
+End Function
+
 Public Sub AddRectangle(ByVal leftX As Double, ByVal bottomY As Double, _
                         ByVal rightX As Double, ByVal topY As Double, _
                         ByVal sourceDocument As Document)
@@ -257,7 +389,7 @@ Private Sub AddShapeCurves(ByVal sourceShape As Shape)
     End If
 End Sub
 
-Private Sub AddCurve(ByVal part As Curve)
+Friend Sub AddCurve(ByVal part As Curve)
     Dim x As Double
     Dim y As Double
     Dim widthMM As Double

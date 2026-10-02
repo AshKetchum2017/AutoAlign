@@ -37,6 +37,10 @@ Private Sub optKissA_Click()
     AAUpdateModelControls
 End Sub
 
+Private Sub cmdOptimize_Click()
+' One of the last scopes of AutoAlign is to optimize the existing group. This button triggers the optimization process.
+End Sub
+
 Private Sub optMaximum_Click()
 
 End Sub

@@ -193,46 +193,126 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
     Dim rowIndex As Long
     Dim probes As Long
     Dim candidate As AAPlacement
+    Dim startingRows() As Double
+    Dim startIndex As Long
+    Dim rowAdded As Boolean
+    Dim horizontalGap As Double, verticalGap As Double
+    Dim gridTop As Double
+    Dim nextTop As Double
+    Dim i As Long
+    Dim retryBoundary As Boolean
 
-    ' Rectangle bersudut runcing selalu memakai Straight, termasuk Custom.
+    ' Semua rectangle selalu memakai Straight, termasuk sudut lengkung dan Custom.
     ' layoutMode ByVal: sumber lain tetap mengikuti pola rencana yang dibandingkan.
-    If model.IsSharpRectangle Then layoutMode = AA_MODE_STRAIGHT
+    If model.IsRectangle Then layoutMode = AA_MODE_STRAIGHT
     model.GetSteps layoutMode, horizontalStep, verticalStep
-    Do While yOffset + model.DesignHeight <= settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM
+    model.GetBoundaryGaps layoutMode, horizontalGap, verticalGap
+    BuildStartingRows occupied, designIndex, verticalGap, _
+        cutIndex >= 0, model.CollisionInsetY, settings.AreaHeightMM, startingRows
+    gridTop = startingRows(0)
+    yOffset = settings.AreaHeightMM - gridTop
+    Do While yOffset + model.FootprintHeight <= settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM
+        rowAdded = False
         xOffset = 0#
         If layoutMode = AA_MODE_ZIGZAG And rowIndex Mod 2 = 1 Then _
             xOffset = horizontalStep / 2#
-        Do While xOffset + model.DesignWidth <= _
+        Do While xOffset + model.FootprintWidth <= _
                  settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM
             probes = probes + 1
             If probes > AA_MAX_CANDIDATES_PER_AREA Then Err.Raise _
                 vbObjectError + 5232, "AAPlanner", _
                 "Langkah gap menghasilkan terlalu banyak kandidat posisi."
             Set candidate = model.MakePlacement(designIndex, cutIndex, areaIndex, _
-                xOffset, settings.AreaHeightMM - yOffset)
-            If CandidateFits(candidate, occupied, forbidden, settings, offsets) Then
+                xOffset + model.DesignInsetX, settings.AreaHeightMM - yOffset - model.DesignInsetY)
+            If CandidateFits(candidate, occupied, forbidden, settings, offsets, _
+                             horizontalGap, verticalGap) Then
                 result.Add candidate
                 occupied.Add candidate
                 FillArea = FillArea + 1
+                rowAdded = True
                 If FillArea >= limit Then Exit Function
             End If
             xOffset = xOffset + horizontalStep
         Loop
-        rowIndex = rowIndex + 1
-        yOffset = rowIndex * verticalStep
+        If FillArea = 0 And Not rowAdded And startIndex < UBound(startingRows) Then
+            startIndex = startIndex + 1
+            gridTop = startingRows(startIndex)
+        Else
+            retryBoundary = False
+            nextTop = settings.AreaHeightMM - yOffset - verticalStep
+            For i = 0 To UBound(startingRows)
+                If startingRows(i) < settings.AreaHeightMM - yOffset - _
+                    AA_EDGE_TOLERANCE_MM And startingRows(i) > nextTop + _
+                    AA_EDGE_TOLERANCE_MM Then
+                    gridTop = startingRows(i)
+                    rowIndex = 0
+                    retryBoundary = True
+                    Exit For
+                End If
+            Next i
+            If Not retryBoundary Then rowIndex = rowIndex + 1
+        End If
+        yOffset = settings.AreaHeightMM - gridTop + rowIndex * verticalStep
     Loop
 End Function
+
+Private Sub BuildStartingRows(ByVal occupied As Collection, ByVal designIndex As Long, _
+                              ByVal verticalGap As Double, ByVal hasCut As Boolean, _
+                              ByVal collisionInsetY As Double, ByVal areaTop As Double, _
+                              ByRef values() As Double)
+    Dim unique As Object
+    Dim placed As AAPlacement
+    Dim key As Variant
+    Dim value As Double
+    Dim i As Long, j As Long
+
+    Set unique = CreateObject("Scripting.Dictionary")
+    unique.Add CStr(areaTop), areaTop
+    For Each placed In occupied
+        If placed.DesignIndex <> designIndex Then
+            If hasCut And placed.CutIndex >= 0 Then
+                value = placed.CollisionFootprint.BottomY - verticalGap + collisionInsetY
+            Else
+                value = placed.Footprint.BottomY - verticalGap
+            End If
+            If value >= 0# And value <= areaTop Then
+                If Not unique.Exists(CStr(value)) Then unique.Add CStr(value), value
+            End If
+        End If
+    Next placed
+    ReDim values(0 To unique.Count - 1)
+    For Each key In unique.Keys
+        values(i) = CDbl(unique(key))
+        i = i + 1
+    Next key
+    ' Tingkat awal dari atas ke bawah; grid dilanjutkan dari baris pertama yang diterima.
+    For i = 1 To UBound(values)
+        value = values(i)
+        j = i - 1
+        Do While j >= 0
+            If values(j) >= value Then Exit Do
+            values(j + 1) = values(j)
+            j = j - 1
+        Loop
+        values(j + 1) = value
+    Next i
+End Sub
 
 Private Function CandidateFits(ByVal candidate As AAPlacement, _
                                ByVal occupied As Collection, _
                                ByVal forbidden As Collection, _
-                               ByVal settings As AASettings, ByVal offsets As Object) As Boolean
+                               ByVal settings As AASettings, ByVal offsets As Object, _
+                               ByVal horizontalGap As Double, ByVal verticalGap As Double) As Boolean
     Dim obstacle As AAGeometry
     Dim placed As AAPlacement
     Dim footprint As AAGeometry
+    Dim collisionFootprint As AAGeometry
+    Dim spacingFootprint As AAGeometry
+    Dim placedSpacing As AAGeometry
     Dim centeredFootprint As AAGeometry
 
     Set footprint = candidate.Footprint
+    Set collisionFootprint = candidate.CollisionFootprint
     If footprint.LeftX < -AA_EDGE_TOLERANCE_MM Or _
        footprint.BottomY < -AA_EDGE_TOLERANCE_MM Or _
        footprint.RightX > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
@@ -246,7 +326,21 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
         End If
     End If
     For Each placed In occupied
-        If footprint.Overlaps(placed.Footprint) Then Exit Function
+        ' Design boleh bertumpuk hanya bila kedua posisi memiliki Cut Line.
+        If candidate.CutIndex >= 0 And placed.CutIndex >= 0 Then
+            Set spacingFootprint = collisionFootprint
+            Set placedSpacing = placed.CollisionFootprint
+        Else
+            Set spacingFootprint = footprint
+            Set placedSpacing = placed.Footprint
+        End If
+        If spacingFootprint.Overlaps(placedSpacing) Then Exit Function
+        If placed.DesignIndex <> candidate.DesignIndex Then
+            If spacingFootprint.RightX + horizontalGap > placedSpacing.LeftX + AA_EDGE_TOLERANCE_MM And _
+               spacingFootprint.LeftX - horizontalGap < placedSpacing.RightX - AA_EDGE_TOLERANCE_MM And _
+               spacingFootprint.TopY + verticalGap > placedSpacing.BottomY + AA_EDGE_TOLERANCE_MM And _
+               spacingFootprint.BottomY - verticalGap < placedSpacing.TopY - AA_EDGE_TOLERANCE_MM Then Exit Function
+        End If
     Next placed
     CandidateFits = True
 End Function

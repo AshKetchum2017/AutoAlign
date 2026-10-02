@@ -30,3 +30,11 @@ Catatan: Auto, Process, dan antrean objek belum aktif.
 + Pemeriksaan bentuk kurva menjaga Design beserta Cut Line tetap di dalam area, menghindari mark dan tumpang tindih; Minimum mencoba pergeseran kelompok sebelum mengurangi objek, dengan toleransi mark 0,2 mm.
 ~ Rectangle bersudut runcing, termasuk Curve, selalu memakai Straight pada ketiga model. Gap default KissA/DieA untuk bentuk ini menjadi 0; input manual tetap diutamakan.
 ~ Hasil mempertahankan layer asal Design/Cut Line dengan aturan Z-Order yang ada; input gap, area, dan Quantity menampilkan placeholder abu-abu tanpa menganggapnya sebagai nilai manual.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-02
+[Optimasi gap dan pasangan Design/Cut Line]
+~ Peralihan antarsumber dalam satu container mengikuti tepi susunan yang sudah terisi dan gap manual/default, termasuk persegi ber-Quantity terbatas lalu bulat pengisi sisa ruang.
+~ Pasangan memakai bentuk Cut Line sebagai acuan pola, gap, dan collision antarunit; Design standalone memakai bentuk Design. Gap tidak lagi ditambah selisih ukuran, dan Design berpasangan boleh bertumpuk selama Cut Line tetap memenuhi aturan susunan.
+~ Semua rectangle, sudut siku maupun lengkung, memakai Straight di ketiga model; gap default tetap dibedakan menurut jenis sudut.
+~ Design dapat memakai Cut Line bersama jika bentuk batas luarnya cocok dan selisih ukuran memenuhi toleransi per sumbu: lebih kecil maksimal 0,2 mm atau lebih besar maksimal 2 mm. Artwork internal group tidak ikut menentukan kecocokan bentuk luar.
