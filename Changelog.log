@@ -50,3 +50,6 @@ Catatan: Auto, Process, dan antrean objek belum aktif.
 + Medium mencoba rotasi dan pergeseran terbatas untuk mencari susunan yang muat lebih baik; rectangle memakai empat rotasi siku-siku.
 ~ Minimum memakai jarak kontur Cut Line, atau Design standalone, untuk langkah grid. Medium merapatkan hasil menurut gap kontur, tanpa menarik objek tepi menjauh dari tetangganya.
 ~ Pencarian Medium mengisi seluruh slot dasar sebelum pergeseran tambahan dan mempercepat pemeriksaan gap pada kurva kompleks.
+
+[Cut Line bersama]
+~ Dua atau lebih Design yang memakai satu Cut Line mengikuti susunan Design pertama pada container terpisah; satu susunan Cut Line dibuat untuk dipakai bersama.
