@@ -18,6 +18,12 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
     Dim straightError As String
     Dim zigZagError As String
 
+    If AllActiveRectangles(models, designIndexes, designCount, quantities) Then
+        Set BuildMinimum = BuildOne(models, designIndexes, designCount, cutIndexes, _
+            cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT)
+        Exit Function
+    End If
+
     On Error Resume Next
     Set straightPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
         cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT)
@@ -50,6 +56,20 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
     Else
         Set BuildMinimum = straightPlan
     End If
+End Function
+
+Private Function AllActiveRectangles(ByRef models() As AAModel, _
+                                     ByRef designIndexes() As Long, _
+                                     ByVal designCount As Long, _
+                                     ByRef quantities() As Long) As Boolean
+    Dim i As Long, index As Long
+    For i = 0 To designCount - 1
+        index = designIndexes(i)
+        If quantities(index) <> 0 Then
+            If Not models(index).IsRectangle Then Exit Function
+        End If
+    Next i
+    AllActiveRectangles = True
 End Function
 
 Private Function HasFullerEarlierArea(ByVal candidate As AALayoutPlan, _
@@ -270,11 +290,7 @@ Private Sub BuildStartingRows(ByVal occupied As Collection, ByVal designIndex As
     unique.Add CStr(areaTop), areaTop
     For Each placed In occupied
         If placed.DesignIndex <> designIndex Then
-            If hasCut And placed.CutIndex >= 0 Then
-                value = placed.CollisionFootprint.BottomY - verticalGap + collisionInsetY
-            Else
-                value = placed.Footprint.BottomY - verticalGap
-            End If
+            value = placed.CollisionFootprint.BottomY - verticalGap + collisionInsetY
             If value >= 0# And value <= areaTop Then
                 If Not unique.Exists(CStr(value)) Then unique.Add CStr(value), value
             End If
@@ -303,13 +319,11 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
                                ByVal forbidden As Collection, _
                                ByVal settings As AASettings, ByVal offsets As Object, _
                                ByVal horizontalGap As Double, ByVal verticalGap As Double) As Boolean
-    Dim obstacle As AAGeometry
     Dim placed As AAPlacement
     Dim footprint As AAGeometry
     Dim collisionFootprint As AAGeometry
     Dim spacingFootprint As AAGeometry
     Dim placedSpacing As AAGeometry
-    Dim centeredFootprint As AAGeometry
 
     Set footprint = candidate.Footprint
     Set collisionFootprint = candidate.CollisionFootprint
@@ -319,21 +333,13 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
        footprint.TopY > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then Exit Function
     If Not offsets Is Nothing Then
         If offsets.Exists(CStr(candidate.AreaIndex)) Then
-            Set centeredFootprint = ShiftedFootprint(candidate, offsets)
-            For Each obstacle In forbidden
-                If centeredFootprint.Overlaps(obstacle) Then Exit Function
-            Next obstacle
+            If Not PlacementMarksFit(candidate, offsets, forbidden) Then Exit Function
         End If
     End If
     For Each placed In occupied
-        ' Design boleh bertumpuk hanya bila kedua posisi memiliki Cut Line.
-        If candidate.CutIndex >= 0 And placed.CutIndex >= 0 Then
-            Set spacingFootprint = collisionFootprint
-            Set placedSpacing = placed.CollisionFootprint
-        Else
-            Set spacingFootprint = footprint
-            Set placedSpacing = placed.Footprint
-        End If
+        ' Acuan pasangan: Cut Line; standalone: siluet Design.
+        Set spacingFootprint = collisionFootprint
+        Set placedSpacing = placed.CollisionFootprint
         If spacingFootprint.Overlaps(placedSpacing) Then Exit Function
         If placed.DesignIndex <> candidate.DesignIndex Then
             If spacingFootprint.RightX + horizontalGap > placedSpacing.LeftX + AA_EDGE_TOLERANCE_MM And _
@@ -386,6 +392,7 @@ Private Function FindSafeOffsets(ByVal plan As AALayoutPlan, ByVal offsets As Ob
     Dim key As Variant
     Dim placement As AAPlacement
     Dim footprints As Collection
+    Dim markFootprints As Collection
     Dim footprint As AAGeometry
     Dim shift As Variant
     Dim dx As Double, dy As Double
@@ -394,13 +401,19 @@ Private Function FindSafeOffsets(ByVal plan As AALayoutPlan, ByVal offsets As Ob
     allSafe = True
     For Each key In offsets.Keys
         Set footprints = New Collection
+        Set markFootprints = New Collection
         For Each placement In plan.Placements
             If CStr(placement.AreaIndex) = CStr(key) Then
                 Set footprint = ShiftedFootprint(placement, offsets)
                 footprints.Add footprint
+                shift = offsets(key)
+                Set footprint = placement.CollisionFootprint.Placed( _
+                    placement.CollisionFootprint.LeftX + CDbl(shift(0)), _
+                    placement.CollisionFootprint.TopY + CDbl(shift(1)))
+                markFootprints.Add footprint
             End If
         Next placement
-        If FindAreaShift(footprints, forbidden, settings, dx, dy) Then
+        If FindAreaShift(footprints, markFootprints, forbidden, settings, dx, dy) Then
             shift = offsets(key)
             offsets(key) = Array(CDbl(shift(0)) + dx, CDbl(shift(1)) + dy)
         Else
@@ -411,6 +424,7 @@ Private Function FindSafeOffsets(ByVal plan As AALayoutPlan, ByVal offsets As Ob
 End Function
 
 Private Function FindAreaShift(ByVal footprints As Collection, _
+                               ByVal markFootprints As Collection, _
                                ByVal forbidden As Collection, ByVal settings As AASettings, _
                                ByRef bestX As Double, ByRef bestY As Double) As Boolean
     Dim footprint As AAGeometry
@@ -422,7 +436,7 @@ Private Function FindAreaShift(ByVal footprints As Collection, _
 
     bestX = 0#
     bestY = 0#
-    If AreaShiftFits(footprints, 0#, 0#, forbidden, settings) Then
+    If AreaShiftFits(footprints, markFootprints, 0#, 0#, forbidden, settings) Then
         FindAreaShift = True
         Exit Function
     End If
@@ -448,7 +462,7 @@ Private Function FindAreaShift(ByVal footprints As Collection, _
             If distance >= bestDistance Then Exit For
             probes = probes + 1
             If probes > AA_MAX_SHIFT_PROBES_PER_AREA Then GoTo SearchFinished
-            If AreaShiftFits(footprints, xs(i), ys(j), forbidden, settings) Then
+            If AreaShiftFits(footprints, markFootprints, xs(i), ys(j), forbidden, settings) Then
                 found = True
                 bestDistance = distance
                 bestX = xs(i)
@@ -504,24 +518,20 @@ Private Sub BuildShiftValues(ByVal minimum As Double, ByVal maximum As Double, _
 End Sub
 
 Private Function AreaShiftFits(ByVal footprints As Collection, _
+                               ByVal markFootprints As Collection, _
                                ByVal dx As Double, ByVal dy As Double, _
                                ByVal forbidden As Collection, _
                                ByVal settings As AASettings) As Boolean
     Dim footprint As AAGeometry
-    Dim moved As AAGeometry
-    Dim obstacle As AAGeometry
 
     For Each footprint In footprints
         If footprint.LeftX + dx < -AA_EDGE_TOLERANCE_MM Or _
            footprint.BottomY + dy < -AA_EDGE_TOLERANCE_MM Or _
            footprint.RightX + dx > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
            footprint.TopY + dy > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then Exit Function
-        If forbidden.Count > 0 Then
-            Set moved = footprint.Placed(footprint.LeftX + dx, footprint.TopY + dy)
-            For Each obstacle In forbidden
-                If moved.Overlaps(obstacle) Then Exit Function
-            Next obstacle
-        End If
+    Next footprint
+    For Each footprint In markFootprints
+        If Not MarksFit(footprint, dx, dy, forbidden) Then Exit Function
     Next footprint
     AreaShiftFits = True
 End Function
@@ -529,10 +539,16 @@ End Function
 Private Function ShiftedFootprint(ByVal placement As AAPlacement, _
                                   ByVal offsets As Object) As AAGeometry
     Dim shift As Variant
+    Dim result As AAGeometry
+    Dim footprint As AAGeometry
     shift = offsets(CStr(placement.AreaIndex))
-    Set ShiftedFootprint = placement.Footprint.Placed( _
-        placement.Footprint.LeftX + CDbl(shift(0)), _
-        placement.Footprint.TopY + CDbl(shift(1)))
+    Set footprint = placement.Footprint
+    Set result = New AAGeometry
+    ' Pemusatan/batas area hanya memerlukan angka, bukan salinan kurva.
+    result.AddBounds footprint.LeftX + CDbl(shift(0)), _
+        footprint.BottomY + CDbl(shift(1)), footprint.RightX + CDbl(shift(0)), _
+        footprint.TopY + CDbl(shift(1))
+    Set ShiftedFootprint = result
 End Function
 
 Private Function CenteredPlanFits(ByVal plan As AALayoutPlan, ByVal offsets As Object, _
@@ -540,18 +556,43 @@ Private Function CenteredPlanFits(ByVal plan As AALayoutPlan, ByVal offsets As O
                                   ByVal settings As AASettings) As Boolean
     Dim placement As AAPlacement
     Dim footprint As AAGeometry
-    Dim obstacle As AAGeometry
     For Each placement In plan.Placements
         Set footprint = ShiftedFootprint(placement, offsets)
         If footprint.LeftX < -AA_EDGE_TOLERANCE_MM Or _
            footprint.BottomY < -AA_EDGE_TOLERANCE_MM Or _
            footprint.RightX > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
            footprint.TopY > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then Exit Function
-        For Each obstacle In forbidden
-            If footprint.Overlaps(obstacle) Then Exit Function
-        Next obstacle
+        If Not PlacementMarksFit(placement, offsets, forbidden) Then Exit Function
     Next placement
     CenteredPlanFits = True
+End Function
+
+Private Function PlacementMarksFit(ByVal placement As AAPlacement, _
+                                   ByVal offsets As Object, _
+                                   ByVal forbidden As Collection) As Boolean
+    Dim shift As Variant
+    shift = offsets(CStr(placement.AreaIndex))
+    PlacementMarksFit = MarksFit(placement.CollisionFootprint, _
+        CDbl(shift(0)), CDbl(shift(1)), forbidden)
+End Function
+
+Private Function MarksFit(ByVal footprint As AAGeometry, _
+                          ByVal dx As Double, ByVal dy As Double, _
+                          ByVal forbidden As Collection) As Boolean
+    Dim obstacle As AAGeometry
+    Dim moved As AAGeometry
+    For Each obstacle In forbidden
+        ' Salin kurva hanya jika bounding box dekat dengan salah satu mark.
+        If footprint.LeftX + dx < obstacle.RightX - AA_EDGE_TOLERANCE_MM And _
+           footprint.RightX + dx > obstacle.LeftX + AA_EDGE_TOLERANCE_MM And _
+           footprint.BottomY + dy < obstacle.TopY - AA_EDGE_TOLERANCE_MM And _
+           footprint.TopY + dy > obstacle.BottomY + AA_EDGE_TOLERANCE_MM Then
+            If moved Is Nothing Then Set moved = footprint.Placed( _
+                footprint.LeftX + dx, footprint.TopY + dy)
+            If moved.Overlaps(obstacle) Then Exit Function
+        End If
+    Next obstacle
+    MarksFit = True
 End Function
 
 Private Function BuildForbidden(ByVal settings As AASettings, _

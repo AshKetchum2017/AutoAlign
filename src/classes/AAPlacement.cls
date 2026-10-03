@@ -30,10 +30,15 @@ Public Sub SetCollisionFootprint(ByVal geometry As AAGeometry)
 End Sub
 
 Public Sub Translate(ByVal deltaX As Double, ByVal deltaY As Double)
-    Set mCollisionFootprint = mCollisionFootprint.Placed(mCollisionFootprint.LeftX + deltaX, _
-        mCollisionFootprint.TopY + deltaY)
+    Dim sharedFootprint As Boolean
+    sharedFootprint = (mCollisionFootprint Is mFootprint)
+    If Not sharedFootprint Then
+        Set mCollisionFootprint = mCollisionFootprint.Placed( _
+            mCollisionFootprint.LeftX + deltaX, mCollisionFootprint.TopY + deltaY)
+    End If
     Set mFootprint = mFootprint.Placed(mFootprint.LeftX + deltaX, _
         mFootprint.TopY + deltaY)
+    If sharedFootprint Then Set mCollisionFootprint = mFootprint
     mDesignLeft = mDesignLeft + deltaX
     mDesignTop = mDesignTop + deltaY
     mCutLeft = mCutLeft + deltaX

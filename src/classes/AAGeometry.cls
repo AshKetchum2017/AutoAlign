@@ -223,6 +223,31 @@ Public Function SizedCopy(ByVal targetWidth As Double, ByVal targetHeight As Dou
     Set SizedCopy = result.Placed(0#, result.Height)
 End Function
 
+' Bounding box pasangan tanpa membaca kurva artwork Design.
+Public Sub CaptureBounds(ByVal sourceShape As Shape)
+    Dim x As Double, y As Double, widthMM As Double, heightMM As Double
+    sourceShape.GetBoundingBox x, y, widthMM, heightMM, False
+    If widthMM <= 0# Or heightMM <= 0# Then Err.Raise vbObjectError + 5220, _
+        "AAGeometry", "Object tidak memiliki bounding box yang valid."
+    AddBounds x, y, x + widthMM, y + heightMM
+End Sub
+
+Public Sub AddBounds(ByVal leftX As Double, ByVal bottomY As Double, _
+                     ByVal rightX As Double, ByVal topY As Double)
+    If Not mHasBounds Then
+        mLeft = leftX
+        mBottom = bottomY
+        mRight = rightX
+        mTop = topY
+        mHasBounds = True
+    Else
+        If leftX < mLeft Then mLeft = leftX
+        If bottomY < mBottom Then mBottom = bottomY
+        If rightX > mRight Then mRight = rightX
+        If topY > mTop Then mTop = topY
+    End If
+End Sub
+
 Public Sub AddRectangle(ByVal leftX As Double, ByVal bottomY As Double, _
                         ByVal rightX As Double, ByVal topY As Double, _
                         ByVal sourceDocument As Document)
@@ -249,6 +274,10 @@ Public Sub AddPlaced(ByVal source As AAGeometry, ByVal leftX As Double, _
 
     deltaX = leftX - source.LeftX
     deltaY = topY - source.TopY
+    If source.CurveCount = 0 Then
+        AddBounds leftX, topY - source.Height, leftX + source.Width, topY
+        Exit Sub
+    End If
     For i = 1 To source.CurveCount
         Set part = source.CurveAt(i)
         Set moved = part.GetCopy
@@ -272,6 +301,10 @@ Public Function Overlaps(ByVal other As AAGeometry) As Boolean
     Dim i As Long
 
     If Not BoundsMayOverlap(other) Then Exit Function
+    If mCurves.Count = 0 Or other.CurveCount = 0 Then
+        Overlaps = True
+        Exit Function
+    End If
     For Each firstCurve In mCurves
         For i = 1 To other.CurveCount
             Set secondCurve = other.CurveAt(i)
@@ -296,6 +329,10 @@ Public Function SameGeometry(ByVal other As AAGeometry) As Boolean
     If Abs(Width - other.Width) > AA_GEOMETRY_TOLERANCE_MM Or _
         Abs(Height - other.Height) > AA_GEOMETRY_TOLERANCE_MM Then Exit Function
     If mCurves.Count <> other.CurveCount Then Exit Function
+    If mCurves.Count = 0 Then
+        SameGeometry = True
+        Exit Function
+    End If
     Set firstNormalized = Placed(0#, Height)
     Set secondNormalized = other.Placed(0#, other.Height)
     ReDim matched(1 To mCurves.Count)

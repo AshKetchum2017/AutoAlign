@@ -1,4 +1,7 @@
 Option Explicit
+' Merge declarations into the top of the target UserForm code module.
+Private pMRObserver As Object
+Private pMRToken As String
 
 Private mPresenter As AAPresenter
 Private mUpdatingQuantity As Boolean
@@ -14,25 +17,25 @@ Private Sub lbxObjects_Click()
 End Sub
 
 Private Sub optCustom_Click()
-    If optCustom.Value Then
-        optKissA.Value = False
-        optDieA.Value = False
+    If optCustom.value Then
+        optKissA.value = False
+        optDieA.value = False
     End If
     AAUpdateModelControls
 End Sub
 
 Private Sub optDieA_Click()
-    If optDieA.Value Then
-        optCustom.Value = False
-        optKissA.Value = False
+    If optDieA.value Then
+        optCustom.value = False
+        optKissA.value = False
     End If
     AAUpdateModelControls
 End Sub
 
 Private Sub optKissA_Click()
-    If optKissA.Value Then
-        optCustom.Value = False
-        optDieA.Value = False
+    If optKissA.value Then
+        optCustom.value = False
+        optDieA.value = False
     End If
     AAUpdateModelControls
 End Sub
@@ -41,12 +44,20 @@ Private Sub cmdOptimize_Click()
 ' One of the last scopes of AutoAlign is to optimize the existing group. This button triggers the optimization process.
 End Sub
 
+Private Sub optMaximum_Click()
+'
+End Sub
+
+Private Sub optMedium_Click()
+'
+End Sub
+
 Private Sub txbGapHorizontal_Change()
     If mUpdatingHint Then Exit Sub
-    If Not chkHPercent.Value Then Exit Sub
+    If Not chkHPercent.value Then Exit Sub
     If AAGapIsNegative(txbGapHorizontal.Text) Then
         MsgBox "Persen gap horizontal tidak boleh negatif.", vbExclamation, "Auto Align"
-        chkHPercent.Value = False
+        chkHPercent.value = False
         AASetGapPercentText txbGapHorizontal, False
         Exit Sub
     End If
@@ -55,10 +66,10 @@ End Sub
 
 Private Sub txbGapVertical_Change()
     If mUpdatingHint Then Exit Sub
-    If Not chkVPercent.Value Then Exit Sub
+    If Not chkVPercent.value Then Exit Sub
     If AAGapIsNegative(txbGapVertical.Text) Then
         MsgBox "Persen gap vertikal tidak boleh negatif.", vbExclamation, "Auto Align"
-        chkVPercent.Value = False
+        chkVPercent.value = False
         AASetGapPercentText txbGapVertical, False
         Exit Sub
     End If
@@ -66,21 +77,21 @@ Private Sub txbGapVertical_Change()
 End Sub
 
 Private Sub chkHPercent_Click()
-    If chkHPercent.Value And AAGapIsNegative(AAInputText(txbGapHorizontal)) Then
+    If chkHPercent.value And AAGapIsNegative(AAInputText(txbGapHorizontal)) Then
         MsgBox "Persen gap horizontal tidak boleh negatif.", vbExclamation, "Auto Align"
-        chkHPercent.Value = False
+        chkHPercent.value = False
         Exit Sub
     End If
-    AASetGapPercentText txbGapHorizontal, chkHPercent.Value
+    AASetGapPercentText txbGapHorizontal, chkHPercent.value
 End Sub
 
 Private Sub chkVPercent_Click()
-    If chkVPercent.Value And AAGapIsNegative(AAInputText(txbGapVertical)) Then
+    If chkVPercent.value And AAGapIsNegative(AAInputText(txbGapVertical)) Then
         MsgBox "Persen gap vertikal tidak boleh negatif.", vbExclamation, "Auto Align"
-        chkVPercent.Value = False
+        chkVPercent.value = False
         Exit Sub
     End If
-    AASetGapPercentText txbGapVertical, chkVPercent.Value
+    AASetGapPercentText txbGapVertical, chkVPercent.value
 End Sub
 
 Private Sub txbQuantity_Change()
@@ -114,10 +125,10 @@ Private Sub UserForm_Initialize()
     optMinimum.GroupName = "AAModes"
     optMedium.GroupName = "AAModes"
     optMaximum.GroupName = "AAModes"
-    optKissA.Value = False
-    optDieA.Value = False
-    optCustom.Value = True
-    optMinimum.Value = True
+    optKissA.value = True
+    optDieA.value = False
+    optCustom.value = False
+    optMinimum.value = True
     optMedium.Enabled = False
     optMaximum.Enabled = False
     AAUpdateModelControls
@@ -125,8 +136,8 @@ Private Sub UserForm_Initialize()
     txbGapVertical.Enabled = True
     chkHPercent.Enabled = True
     chkVPercent.Enabled = True
-    AASetGapPercentText txbGapHorizontal, chkHPercent.Value
-    AASetGapPercentText txbGapVertical, chkVPercent.Value
+    AASetGapPercentText txbGapHorizontal, chkHPercent.value
+    AASetGapPercentText txbGapVertical, chkVPercent.value
     AARefreshObjects
 End Sub
 
@@ -142,15 +153,15 @@ End Sub
 Private Sub cmdProcess_Click()
     Dim modelMode As Long
 
-    If Not optMinimum.Value Then
+    If Not optMinimum.value Then
         MsgBox "Pilih mode Minimum terlebih dahulu.", vbExclamation, "Auto Align"
         Exit Sub
     End If
-    If optCustom.Value Then
+    If optCustom.value Then
         modelMode = AA_MODEL_CUSTOM
-    ElseIf optKissA.Value Then
+    ElseIf optKissA.value Then
         modelMode = AA_MODEL_KISS_A
-    ElseIf optDieA.Value Then
+    ElseIf optDieA.value Then
         modelMode = AA_MODEL_DIE_A
     Else
         MsgBox "Pilih model area terlebih dahulu.", vbExclamation, "Auto Align"
@@ -178,8 +189,8 @@ Private Sub cmdSetDesign_Click()
 End Sub
 
 Private Sub AAUpdateModelControls()
-    txbAreaWidth.Enabled = optCustom.Value
-    txbAreaHeight.Enabled = optCustom.Value
+    txbAreaWidth.Enabled = optCustom.value
+    txbAreaHeight.Enabled = optCustom.value
     cmdProcess.Enabled = True
     AARefreshHints
 End Sub
@@ -245,8 +256,8 @@ Private Sub AARunMode(ByVal modelMode As Long)
 
     If mPresenter Is Nothing Then Set mPresenter = New AAPresenter
     mPresenter.RunLayout modelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
-        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), chkHPercent.Value, _
-        chkVPercent.Value, feedback, feedbackStyle
+        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), chkHPercent.value, _
+        chkVPercent.value, feedback, feedbackStyle
     AARefreshObjects
     If Len(feedback) > 0 Then MsgBox feedback, feedbackStyle, "Auto Align"
 End Sub
@@ -272,9 +283,9 @@ End Function
 Private Function AAHintText(ByVal box As MSForms.TextBox) As String
     Select Case AAInputIndex(box)
         Case 1
-            If optCustom.Value Then AAHintText = "0" Else AAHintText = "1"
+            If optCustom.value Then AAHintText = "0" Else AAHintText = "1"
         Case 2
-            If optCustom.Value Then AAHintText = "0 / 88%" Else AAHintText = "1 / 88%"
+            If optCustom.value Then AAHintText = "0 / 88%" Else AAHintText = "1 / 88%"
         Case 3: AAHintText = "320"
         Case 4: AAHintText = "470"
         Case 5: AAHintText = "-"
@@ -380,4 +391,28 @@ Private Sub AARefreshObjects()
         lbxObjects.AddItem mPresenter.ObjectListText(i)
     Next i
     AAUpdateQuantityEditor
+End Sub
+
+' Called only by MRTargetBridge; normal menu entry points remain unchanged.
+Public Sub MRBindRunner(ByVal observer As Object, ByVal token As String)
+    Set pMRObserver = observer
+    pMRToken = token
+End Sub
+
+Public Sub MRDetachRunner()
+    Set pMRObserver = Nothing
+    pMRToken = vbNullString
+End Sub
+
+Private Sub UserForm_Terminate()
+    Dim observer As Object, token As String
+    On Error GoTo NotifyFailed
+    Set observer = pMRObserver
+    token = pMRToken
+    MRDetachRunner
+    If Not observer Is Nothing Then CallByName observer, "MacroUnloaded", VbMethod, token
+    Exit Sub
+NotifyFailed:
+    MsgBox "Gagal memberitahu Macro Runner bahwa form sudah ditutup (" & CStr(Err.Number) & "): " & _
+        Err.Description, vbExclamation, "Macro Runner"
 End Sub

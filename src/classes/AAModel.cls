@@ -21,23 +21,26 @@ Public Sub Prepare(ByVal designShape As Shape, ByVal cutShape As Shape, _
     Set mCutShape = cutShape
     Set mSettings = settings
     Set mDesignGeometry = New AAGeometry
-    mDesignGeometry.Capture designShape
-    Set mDesignBoundary = mDesignGeometry
-    If designShape.Type = cdrGroupShape Then _
-        Set mDesignBoundary = mDesignGeometry.OuterBoundary
-    mSharpRectangle = mDesignBoundary.IsSharpRectangle
-    mLayoutSharpRectangle = mSharpRectangle
-    mRectangle = mSharpRectangle Or (designShape.Type = cdrRectangleShape)
-    If Not mRectangle Then mRectangle = mDesignBoundary.IsRoundedRectangle
     Set mCutGeometry = Nothing
     If Not cutShape Is Nothing Then
+        ' Minimum memakai Cut Line sebagai acuan; Design hanya membutuhkan ukuran.
+        mDesignGeometry.CaptureBounds designShape
+        Set mDesignBoundary = mDesignGeometry
         Set mCutGeometry = New AAGeometry
         mCutGeometry.Capture cutShape
-        If Not mSharpRectangle Then ValidateCutSize
-        ' Bentuk Cut Line menentukan pola susunan pasangan.
-        mLayoutSharpRectangle = mCutGeometry.IsSharpRectangle
+        mSharpRectangle = mCutGeometry.IsSharpRectangle
+        mLayoutSharpRectangle = mSharpRectangle
         mRectangle = mLayoutSharpRectangle Or (cutShape.Type = cdrRectangleShape)
         If Not mRectangle Then mRectangle = mCutGeometry.IsRoundedRectangle
+        If Not mSharpRectangle Then ValidateCutSize
+    Else
+        mDesignGeometry.Capture designShape
+        Set mDesignBoundary = mDesignGeometry.OuterBoundary
+        Set mDesignGeometry = mDesignBoundary
+        mSharpRectangle = mDesignBoundary.IsSharpRectangle
+        mLayoutSharpRectangle = mSharpRectangle
+        mRectangle = mSharpRectangle Or (designShape.Type = cdrRectangleShape)
+        If Not mRectangle Then mRectangle = mDesignBoundary.IsRoundedRectangle
     End If
 End Sub
 
@@ -120,7 +123,7 @@ Public Function MakePlacement(ByVal designIndex As Long, ByVal cutIndex As Long,
     If Not mCutGeometry Is Nothing Then
         cutLeft = leftX + (DesignWidth - CutWidth) / 2#
         cutTop = topY - (DesignHeight - CutHeight) / 2#
-        footprint.AddPlaced mCutGeometry, cutLeft, cutTop
+        footprint.AddBounds cutLeft, cutTop - CutHeight, cutLeft + CutWidth, cutTop
     End If
     Set result = New AAPlacement
     result.Configure designIndex, cutIndex, areaIndex, leftX, topY, _
@@ -131,16 +134,35 @@ Public Function MakePlacement(ByVal designIndex As Long, ByVal cutIndex As Long,
 End Function
 
 Public Function SameDesignGeometry(ByVal other As AAModel) As Boolean
-    SameDesignGeometry = mDesignGeometry.SameGeometry(other.DesignGeometry)
+    Dim first As AAGeometry, second As AAGeometry
+    ' Jalur eksplisit ini tetap membandingkan artwork; planner Minimum tidak memakainya.
+    Set first = New AAGeometry
+    Set second = New AAGeometry
+    first.Capture mDesignShape
+    second.Capture other.DesignShape
+    SameDesignGeometry = first.SameGeometry(second)
 End Function
 
 Public Function CanShareCutWith(ByVal other As AAModel) As Boolean
-    If mSharpRectangle Or other.IsSharpRectangle Then
+    If Not mCutGeometry Is Nothing Then
+        If Not other.CutGeometry Is Nothing Then
+            ' Ukuran Design sudah divalidasi; artwork bukan acuan Minimum.
+            CanShareCutWith = mCutGeometry.SameGeometry(other.CutGeometry)
+        End If
+    ElseIf mSharpRectangle Or other.IsSharpRectangle Then
         CanShareCutWith = mDesignBoundary.SameGeometry(other.DesignBoundary)
     Else
         CanShareCutWith = mDesignBoundary.SameForm(other.DesignBoundary)
     End If
 End Function
+
+Friend Property Get CutGeometry() As AAGeometry
+    Set CutGeometry = mCutGeometry
+End Property
+
+Friend Property Get DesignShape() As Shape
+    Set DesignShape = mDesignShape
+End Property
 
 Friend Property Get DesignBoundary() As AAGeometry
     Set DesignBoundary = mDesignBoundary

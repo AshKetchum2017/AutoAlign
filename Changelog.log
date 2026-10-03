@@ -38,3 +38,10 @@ Catatan: Auto, Process, dan antrean objek belum aktif.
 ~ Pasangan memakai bentuk Cut Line sebagai acuan pola, gap, dan collision antarunit; Design standalone memakai bentuk Design. Gap tidak lagi ditambah selisih ukuran, dan Design berpasangan boleh bertumpuk selama Cut Line tetap memenuhi aturan susunan.
 ~ Semua rectangle, sudut siku maupun lengkung, memakai Straight di ketiga model; gap default tetap dibedakan menurut jenis sudut.
 ~ Design dapat memakai Cut Line bersama jika bentuk batas luarnya cocok dan selisih ukuran memenuhi toleransi per sumbu: lebih kecil maksimal 0,2 mm atau lebih besar maksimal 2 mm. Artwork internal group tidak ikut menentukan kecocokan bentuk luar.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-03
+[Optimasi Minimum]
+~ Minimum memakai Cut Line untuk collision dan menghindari mark pada pasangan; Design hanya diperiksa ukurannya dan tetap harus muat di area. Standalone memakai siluet luar Design.
+~ Kurangi penyalinan kurva saat pencarian posisi/pergeseran; daftar dengan seluruh acuan rectangle cukup menghitung Straight.
+~ Gap persen memakai ukuran Cut Line pada pasangan atau ukuran Design pada standalone.
