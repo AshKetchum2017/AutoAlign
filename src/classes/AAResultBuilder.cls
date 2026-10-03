@@ -10,6 +10,7 @@ Public Function Build(ByVal plan As AALayoutPlan, ByRef sourceShapes() As Shape,
     Dim designs() As Shape
     Dim cuts() As Shape
     Dim used() As Boolean
+    Dim originalAngles() As Double
     Dim i As Long
     Dim j As Long
     Dim sourceBuckets As Object
@@ -27,19 +28,23 @@ Public Function Build(ByVal plan As AALayoutPlan, ByRef sourceShapes() As Shape,
     ReDim designs(1 To placements.Count)
     ReDim cuts(1 To placements.Count)
     ReDim used(0 To entryCount - 1)
+    ReDim originalAngles(0 To entryCount - 1)
+    For i = 0 To entryCount - 1
+        originalAngles(i) = sourceShapes(i).RotationAngle
+    Next i
 
     For i = 1 To placements.Count
         Set placement = placements(i)
         Set designs(i) = TakeShape(sourceShapes(placement.DesignIndex), _
             used(placement.DesignIndex))
-        PlaceShape designs(i), placement.DesignLeft, placement.DesignTop, _
-            placement.AreaIndex, settings, pageCenterX, pageCenterY
+        OrientAndPlace designs(i), placement, False, originalAngles(placement.DesignIndex), _
+            settings, pageCenterX, pageCenterY
 
         If placement.CutIndex >= 0 Then
             Set cuts(i) = TakeShape(sourceShapes(placement.CutIndex), _
                 used(placement.CutIndex))
-            PlaceShape cuts(i), placement.CutLeft, placement.CutTop, _
-                placement.AreaIndex, settings, pageCenterX, pageCenterY
+            OrientAndPlace cuts(i), placement, True, originalAngles(placement.CutIndex), _
+                settings, pageCenterX, pageCenterY
         End If
     Next i
 
@@ -110,6 +115,30 @@ Private Sub PlaceShape(ByVal targetShape As Shape, ByVal localLeft As Double, _
     targetShape.LeftX = pageCenterX - settings.AreaWidthMM / 2# + _
         areaIndex * (settings.AreaWidthMM + AA_GROUP_GAP_MM) + localLeft
     targetShape.TopY = pageCenterY - settings.AreaHeightMM / 2# + localTop
+End Sub
+
+Private Sub OrientAndPlace(ByVal targetShape As Shape, ByVal placement As AAPlacement, _
+                           ByVal isCut As Boolean, ByVal originalAngle As Double, _
+                           ByVal settings As AASettings, ByVal pageCenterX As Double, _
+                           ByVal pageCenterY As Double)
+    Dim delta As Double
+    If placement.UsesCenter Then
+        ' Sumber pertama juga dipakai sebagai hasil: duplikat berikutnya harus
+        ' kembali ke rotasi sumber yang disimpan, bukan menumpuk rotasi sebelumnya.
+        delta = originalAngle + placement.RotationDelta - targetShape.RotationAngle
+        delta = delta - 360# * Int(delta / 360#)
+        If Abs(delta) > 0.000001 Then _
+            targetShape.RotateEx delta, targetShape.CenterX, targetShape.CenterY
+        targetShape.CenterX = pageCenterX - settings.AreaWidthMM / 2# + _
+            placement.AreaIndex * (settings.AreaWidthMM + AA_GROUP_GAP_MM) + placement.CenterX
+        targetShape.CenterY = pageCenterY - settings.AreaHeightMM / 2# + placement.CenterY
+    ElseIf isCut Then
+        PlaceShape targetShape, placement.CutLeft, placement.CutTop, _
+            placement.AreaIndex, settings, pageCenterX, pageCenterY
+    Else
+        PlaceShape targetShape, placement.DesignLeft, placement.DesignTop, _
+            placement.AreaIndex, settings, pageCenterX, pageCenterY
+    End If
 End Sub
 
 Private Sub AddToBucket(ByVal buckets As Object, ByVal keyOrder As Collection, _

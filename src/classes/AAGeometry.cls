@@ -295,6 +295,34 @@ Public Function Placed(ByVal leftX As Double, ByVal topY As Double) As AAGeometr
     Set Placed = result
 End Function
 
+Public Function Rotated(ByVal angle As Double, ByVal centerX As Double, _
+                        ByVal centerY As Double) As AAGeometry
+    Dim result As AAGeometry
+    Dim part As Curve, copy As Curve
+    Dim radians As Double, cosine As Double, sine As Double
+    Dim x As Double, y As Double, rx As Double, ry As Double
+    Dim i As Long
+    Set result = New AAGeometry
+    If mCurves.Count > 0 Then
+        For Each part In mCurves
+            Set copy = part.GetCopy
+            If angle <> 0# Then copy.Nodes.All.Rotate angle, True, centerX, centerY
+            result.AddCurve copy
+        Next part
+    Else
+        radians = angle * 4# * Atn(1#) / 180#
+        cosine = Cos(radians): sine = Sin(radians)
+        For i = 0 To 3
+            If i Mod 2 = 0 Then x = mLeft Else x = mRight
+            If i < 2 Then y = mBottom Else y = mTop
+            rx = centerX + (x - centerX) * cosine - (y - centerY) * sine
+            ry = centerY + (x - centerX) * sine + (y - centerY) * cosine
+            result.AddBounds rx, ry, rx, ry
+        Next i
+    End If
+    Set Rotated = result
+End Function
+
 Public Function Overlaps(ByVal other As AAGeometry) As Boolean
     Dim firstCurve As Curve
     Dim secondCurve As Curve

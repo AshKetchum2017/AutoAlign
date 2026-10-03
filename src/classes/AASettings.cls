@@ -18,7 +18,8 @@ Private mModelMode As Long
 Public Sub Configure(ByVal modelMode As Long, ByVal areaWidthText As String, _
                      ByVal areaHeightText As String, ByVal horizontalGapText As String, _
                      ByVal verticalGapText As String, ByVal horizontalPercent As Boolean, _
-                     ByVal verticalPercent As Boolean)
+                     ByVal verticalPercent As Boolean, _
+                     Optional ByVal mediumMode As Boolean = False)
     If modelMode <> AA_MODEL_CUSTOM And modelMode <> AA_MODEL_KISS_A And _
         modelMode <> AA_MODEL_DIE_A Then Err.Raise vbObjectError + 5324, _
         "AASettings", "Model area tidak dikenal."
@@ -51,6 +52,13 @@ Public Sub Configure(ByVal modelMode As Long, ByVal areaWidthText As String, _
         mVerticalGap = ParseDecimal(verticalGapText, "Gap vertikal", mVerticalPercent)
         If mVerticalPercent And mVerticalGap <= 0# Then Err.Raise _
             vbObjectError + 5322, "AASettings", "Persen gap vertikal harus lebih besar dari nol."
+    End If
+    If mediumMode Then
+        If horizontalPercent Or verticalPercent Then Err.Raise vbObjectError + 5327, _
+            "AASettings", "Persen gap belum tersedia pada mode Medium."
+        If (mHasHorizontalGap And mHorizontalGap < 0#) Or _
+           (mHasVerticalGap And mVerticalGap < 0#) Then Err.Raise vbObjectError + 5328, _
+            "AASettings", "Gap Medium tidak boleh negatif. Gunakan nilai minimal 0 mm."
     End If
 End Sub
 

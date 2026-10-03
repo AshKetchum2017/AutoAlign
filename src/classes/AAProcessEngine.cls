@@ -5,7 +5,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
                ByVal horizontalGapText As String, ByVal verticalGapText As String, _
                ByVal horizontalPercent As Boolean, ByVal verticalPercent As Boolean, _
                ByRef lastProcessCompleted As Boolean, ByRef feedback As String, _
-               ByRef feedbackStyle As VbMsgBoxStyle)
+               ByRef feedbackStyle As VbMsgBoxStyle, _
+               Optional ByVal layoutMode As Long = AA_MODE_MINIMUM)
     Dim settings As AASettings
     Dim doc As Document
     Dim targetPage As Page
@@ -52,9 +53,12 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     End If
 
     operation = "memeriksa area dan gap"
+    If layoutMode <> AA_MODE_MINIMUM And layoutMode <> AA_MODE_MEDIUM Then Err.Raise _
+        vbObjectError + 5329, "AAProcessEngine", "Mode penyusunan belum tersedia."
     Set settings = New AASettings
     settings.Configure modelMode, areaWidthText, areaHeightText, _
-        horizontalGapText, verticalGapText, horizontalPercent, verticalPercent
+        horizontalGapText, verticalGapText, horizontalPercent, verticalPercent, _
+        layoutMode = AA_MODE_MEDIUM
 
     operation = "memeriksa dokumen dan halaman sumber"
     If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5310, _
@@ -144,8 +148,13 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
 
     operation = "merencanakan collision dan Quantity"
     Set planner = New AAPlanner
-    Set plan = planner.BuildMinimum(models, designIndexes, designCount, _
-        cutIndexes, cutCount, quantities, settings, doc)
+    If layoutMode = AA_MODE_MEDIUM Then
+        Set plan = planner.BuildMedium(models, designIndexes, designCount, _
+            cutIndexes, cutCount, quantities, settings, doc)
+    Else
+        Set plan = planner.BuildMinimum(models, designIndexes, designCount, _
+            cutIndexes, cutCount, quantities, settings, doc)
+    End If
     If plan.DesignCount = 0 Then
         feedback = "Tidak ada Design yang dapat ditempatkan pada area."
         GoTo CleanExit

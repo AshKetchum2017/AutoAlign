@@ -8,6 +8,55 @@ Private Const AA_MAX_OBJECTS_PER_SOURCE As Long = 5000
 Private Const AA_MAX_CANDIDATES_PER_AREA As Long = 50000
 Private Const AA_MAX_CENTERING_PASSES As Long = 20
 
+Public Function BuildMedium(ByRef models() As AAModel, _
+                            ByRef designIndexes() As Long, ByVal designCount As Long, _
+                            ByRef cutIndexes() As Long, ByVal cutCount As Long, _
+                            ByRef quantities() As Long, ByVal settings As AASettings, _
+                            ByVal sourceDocument As Document) As AALayoutPlan
+    Dim planner As AAMediumPlanner
+    Set planner = New AAMediumPlanner
+    Set BuildMedium = planner.Build(models, designIndexes, designCount, cutIndexes, _
+        cutCount, quantities, settings, sourceDocument, Me)
+End Function
+
+Friend Function ForbiddenFor(ByVal settings As AASettings, _
+                             ByVal sourceDocument As Document) As Collection
+    Set ForbiddenFor = BuildForbidden(settings, sourceDocument)
+End Function
+
+Friend Function FinalizeMedium(ByVal plan As AALayoutPlan, ByVal settings As AASettings, _
+                               ByVal sourceDocument As Document) As Boolean
+    Dim offsets As Object, forbidden As Collection
+    Dim placement As AAPlacement, shift As Variant
+    Dim safe As Boolean
+    If plan.DesignCount = 0 Then
+        FinalizeMedium = True
+        Exit Function
+    End If
+    Set forbidden = BuildForbidden(settings, sourceDocument)
+    Set offsets = CenterOffsets(plan, settings)
+    safe = FindSafeOffsets(plan, offsets, forbidden, settings)
+    If safe Then safe = CenteredPlanFits(plan, offsets, forbidden, settings)
+    For Each placement In plan.Placements
+        shift = offsets(CStr(placement.AreaIndex))
+        placement.Translate CDbl(shift(0)), CDbl(shift(1))
+    Next placement
+    ' Saat pergeseran bersama tidak cukup, caller memperbaiki kandidat individual
+    ' dari posisi yang sudah dipusatkan, tanpa mengubah Shape dokumen.
+    FinalizeMedium = safe
+End Function
+
+Friend Function BetterPlan(ByVal candidate As AALayoutPlan, _
+                           ByVal reference As AALayoutPlan) As Boolean
+    If candidate.AreaCount <> reference.AreaCount Then
+        BetterPlan = (candidate.AreaCount < reference.AreaCount)
+    ElseIf candidate.DesignCount <> reference.DesignCount Then
+        BetterPlan = (candidate.DesignCount > reference.DesignCount)
+    Else
+        BetterPlan = HasFullerEarlierArea(candidate, reference)
+    End If
+End Function
+
 Public Function BuildMinimum(ByRef models() As AAModel, _
                              ByRef designIndexes() As Long, ByVal designCount As Long, _
                              ByRef cutIndexes() As Long, ByVal cutCount As Long, _
@@ -225,7 +274,7 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
     ' Semua rectangle selalu memakai Straight, termasuk sudut lengkung dan Custom.
     ' layoutMode ByVal: sumber lain tetap mengikuti pola rencana yang dibandingkan.
     If model.IsRectangle Then layoutMode = AA_MODE_STRAIGHT
-    model.GetSteps layoutMode, horizontalStep, verticalStep
+    model.GetMinimumSteps layoutMode, horizontalStep, verticalStep
     model.GetBoundaryGaps layoutMode, horizontalGap, verticalGap
     BuildStartingRows occupied, designIndex, verticalGap, _
         cutIndex >= 0, model.CollisionInsetY, settings.AreaHeightMM, startingRows
@@ -342,10 +391,15 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
         Set placedSpacing = placed.CollisionFootprint
         If spacingFootprint.Overlaps(placedSpacing) Then Exit Function
         If placed.DesignIndex <> candidate.DesignIndex Then
-            If spacingFootprint.RightX + horizontalGap > placedSpacing.LeftX + AA_EDGE_TOLERANCE_MM And _
-               spacingFootprint.LeftX - horizontalGap < placedSpacing.RightX - AA_EDGE_TOLERANCE_MM And _
-               spacingFootprint.TopY + verticalGap > placedSpacing.BottomY + AA_EDGE_TOLERANCE_MM And _
-               spacingFootprint.BottomY - verticalGap < placedSpacing.TopY - AA_EDGE_TOLERANCE_MM Then Exit Function
+            If candidate.UsesContourGap And placed.UsesContourGap Then
+                If Not candidate.HasClearance(placed) Then Exit Function
+            Else
+                ' Gap negatif/persen tetap mengikuti kontrak langkah sebelumnya.
+                If spacingFootprint.RightX + horizontalGap > placedSpacing.LeftX + AA_EDGE_TOLERANCE_MM And _
+                   spacingFootprint.LeftX - horizontalGap < placedSpacing.RightX - AA_EDGE_TOLERANCE_MM And _
+                   spacingFootprint.TopY + verticalGap > placedSpacing.BottomY + AA_EDGE_TOLERANCE_MM And _
+                   spacingFootprint.BottomY - verticalGap < placedSpacing.TopY - AA_EDGE_TOLERANCE_MM Then Exit Function
+            End If
         End If
     Next placed
     CandidateFits = True

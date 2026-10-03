@@ -4,6 +4,8 @@ Private Const AA_DEFAULT_ZIGZAG_VERTICAL_FACTOR As Double = 0.88
 Private Const AA_MAX_DESIGN_CUT_DIFFERENCE_MM As Double = 2#
 Private Const AA_DESIGN_UNDERSIZE_TOLERANCE_MM As Double = 0.2
 Private Const AA_SIZE_TOLERANCE_MM As Double = 0.0001
+Private Const AA_CONTACT_TOLERANCE_MM As Double = 0.01
+Private Const AA_CONTACT_SCAN_DIVISIONS As Long = 64
 
 Private mDesignShape As Shape
 Private mCutShape As Shape
@@ -14,12 +16,18 @@ Private mSettings As AASettings
 Private mSharpRectangle As Boolean
 Private mLayoutSharpRectangle As Boolean
 Private mRectangle As Boolean
+Private mVariants As Object
+Private mMediumDesignGeometry As AAGeometry
+Private mMinimumSteps As Object
 
 Public Sub Prepare(ByVal designShape As Shape, ByVal cutShape As Shape, _
                    ByVal settings As AASettings)
     Set mDesignShape = designShape
     Set mCutShape = cutShape
     Set mSettings = settings
+    Set mVariants = CreateObject("Scripting.Dictionary")
+    Set mMinimumSteps = CreateObject("Scripting.Dictionary")
+    Set mMediumDesignGeometry = Nothing
     Set mDesignGeometry = New AAGeometry
     Set mCutGeometry = Nothing
     If Not cutShape Is Nothing Then
@@ -43,6 +51,109 @@ Public Sub Prepare(ByVal designShape As Shape, ByVal cutShape As Shape, _
         If Not mRectangle Then mRectangle = mDesignBoundary.IsRoundedRectangle
     End If
 End Sub
+
+Public Sub GetMinimumSteps(ByVal layoutMode As Long, ByRef horizontalStep As Double, _
+                           ByRef verticalStep As Double)
+    Dim cached As Variant, orientation As AARotationVariant, origin As AAPlacement
+    Dim h As Double, v As Double, key As String, rowOffset As Double
+    GetSteps layoutMode, horizontalStep, verticalStep
+    If mRectangle Then Exit Sub
+    key = CStr(layoutMode)
+    If mMinimumSteps.Exists(key) Then
+        cached = mMinimumSteps(key)
+        horizontalStep = CDbl(cached(0)): verticalStep = CDbl(cached(1))
+        Exit Sub
+    End If
+    GetBoundaryGaps layoutMode, h, v
+    Set orientation = RotationVariant(0#)
+    Set origin = orientation.MakePlacement(0, -1, 0, 0#, orientation.Height, _
+        MaxNonnegative(h), MaxNonnegative(v))
+    ' Persen tetap langkah Top/Left; nilai negatif mempertahankan kontrak lama.
+    If h >= 0# And Not (mSettings.HasHorizontalGap And mSettings.HorizontalPercent) Then
+        horizontalStep = ContactPitch(orientation, origin, True, horizontalStep, 0#, h, v)
+    End If
+    ' ZigZag kosong tetap 88%. Gap literal V memakai kontak dengan kedua tetangga.
+    If v >= 0# And Not (mSettings.HasVerticalGap And mSettings.VerticalPercent) Then
+        If layoutMode = AA_MODE_STRAIGHT Or mSettings.HasVerticalGap Then
+            If layoutMode = AA_MODE_ZIGZAG Then rowOffset = horizontalStep / 2#
+            verticalStep = ContactPitch(orientation, origin, False, _
+                verticalStep, rowOffset, h, v)
+        End If
+    End If
+    mMinimumSteps.Add key, Array(horizontalStep, verticalStep)
+End Sub
+
+Private Function MaxNonnegative(ByVal value As Double) As Double
+    If value > 0# Then MaxNonnegative = value
+End Function
+
+Private Function ContactPitch(ByVal orientation As AARotationVariant, _
+                              ByVal origin As AAPlacement, ByVal horizontal As Boolean, _
+                              ByVal initial As Double, ByVal rowOffset As Double, _
+                              ByVal h As Double, ByVal v As Double) As Double
+    Dim safe As Double, trial As Double, blocked As Double, scanStep As Double
+    Dim referenceSize As Double, mid As Double, lowLimit As Double
+    referenceSize = orientation.ReferenceHeight
+    If horizontal Then referenceSize = orientation.ReferenceWidth
+    safe = referenceSize + MaxNonnegative(h)
+    If v > h Then safe = referenceSize + MaxNonnegative(v)
+    If initial > safe Then safe = initial
+    safe = safe + 2# * orientation.Contour.MaxChordError + AA_SIZE_TOLERANCE_MM
+    ' Pertahankan langkah lama yang sudah aman, termasuk area yang muat tepat.
+    If ContactFits(orientation, origin, horizontal, initial, rowOffset, h, v) Then safe = initial
+    scanStep = referenceSize / AA_CONTACT_SCAN_DIVISIONS
+    If scanStep < 1# Then scanStep = 1#
+    lowLimit = AA_CONTACT_TOLERANCE_MM
+    If initial < lowLimit Then lowLimit = initial
+    Do
+        trial = safe - scanStep
+        If trial < lowLimit Then trial = lowLimit
+        If ContactFits(orientation, origin, horizontal, trial, rowOffset, h, v) Then
+            safe = trial
+            If trial = lowLimit Then Exit Do
+        Else
+            blocked = trial
+            Do While safe - blocked > AA_CONTACT_TOLERANCE_MM
+                mid = (safe + blocked) / 2#
+                If ContactFits(orientation, origin, horizontal, mid, rowOffset, h, v) Then
+                    safe = mid
+                Else
+                    blocked = mid
+                End If
+            Loop
+            Exit Do
+        End If
+    Loop
+    ContactPitch = safe
+End Function
+
+Private Function ContactFits(ByVal orientation As AARotationVariant, _
+                             ByVal origin As AAPlacement, ByVal horizontal As Boolean, _
+                             ByVal pitch As Double, ByVal rowOffset As Double, _
+                             ByVal h As Double, ByVal v As Double) As Boolean
+    Dim candidate As AAPlacement, x As Double, y As Double, side As Long
+    Dim count As Long
+    count = 1
+    If Not horizontal And rowOffset <> 0# Then count = 3
+    For side = 1 To count
+        x = 0#: y = orientation.Height
+        If horizontal Then
+            x = pitch
+        ElseIf side = 3 Then
+            y = y - 2# * pitch
+        Else
+            x = rowOffset
+            If side = 2 Then x = -rowOffset
+            y = y - pitch
+        End If
+        If Not orientation.HasClearanceAt(x, y, origin, MaxNonnegative(h), _
+            MaxNonnegative(v)) Then Exit Function
+        Set candidate = orientation.MakePlacement(0, -1, 0, x, y, _
+            MaxNonnegative(h), MaxNonnegative(v))
+        If candidate.CollisionFootprint.Overlaps(origin.CollisionFootprint) Then Exit Function
+    Next side
+    ContactFits = True
+End Function
 
 Private Sub ValidateCutSize()
     Dim dw As Double, dh As Double
@@ -117,6 +228,7 @@ Public Function MakePlacement(ByVal designIndex As Long, ByVal cutIndex As Long,
     Dim footprint As AAGeometry
     Dim cutLeft As Double
     Dim cutTop As Double
+    Dim h As Double, v As Double, orientation As AARotationVariant
 
     Set footprint = New AAGeometry
     footprint.AddPlaced mDesignGeometry, leftX, topY
@@ -130,6 +242,11 @@ Public Function MakePlacement(ByVal designIndex As Long, ByVal cutIndex As Long,
         cutLeft, cutTop, footprint
     If Not mCutGeometry Is Nothing Then _
         result.SetCollisionFootprint mCutGeometry.Placed(cutLeft, cutTop)
+    GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+    Set orientation = RotationVariant(0#)
+    result.SetContourData orientation.Contour, h, v, _
+        Not (mSettings.HasHorizontalGap And mSettings.HorizontalPercent) And _
+        Not (mSettings.HasVerticalGap And mSettings.VerticalPercent) And h >= 0# And v >= 0#
     Set MakePlacement = result
 End Function
 
@@ -171,6 +288,37 @@ End Property
 Public Property Get IsRectangle() As Boolean
     IsRectangle = mRectangle
 End Property
+
+Public Function RotationVariant(ByVal angle As Double) As AARotationVariant
+    Dim result As AARotationVariant
+    Dim design As AAGeometry, collision As AAGeometry
+    If mVariants.Exists(CStr(angle)) Then
+        Set RotationVariant = mVariants(CStr(angle))
+        Exit Function
+    End If
+    If Not mCutGeometry Is Nothing And angle / 90# <> Int(angle / 90#) Then
+        ' Pada sudut miring, rotasi bounding box saja terlalu besar untuk bentuk
+        ' non-persegi. Baca artwork sekali untuk bounds rotasi, bukan collision.
+        If mMediumDesignGeometry Is Nothing Then
+            Set mMediumDesignGeometry = New AAGeometry
+            mMediumDesignGeometry.Capture mDesignShape
+        End If
+        Set design = mMediumDesignGeometry.Placed(-DesignWidth / 2#, DesignHeight / 2#)
+    Else
+        Set design = mDesignGeometry.Placed(-DesignWidth / 2#, DesignHeight / 2#)
+    End If
+    Set design = design.Rotated(angle, 0#, 0#)
+    If mCutGeometry Is Nothing Then
+        Set collision = design
+    Else
+        Set collision = mCutGeometry.Placed(-CutWidth / 2#, CutHeight / 2#)
+        Set collision = collision.Rotated(angle, 0#, 0#)
+    End If
+    Set result = New AARotationVariant
+    result.Configure angle, design, collision
+    mVariants.Add CStr(angle), result
+    Set RotationVariant = result
+End Function
 
 Friend Property Get DesignGeometry() As AAGeometry
     Set DesignGeometry = mDesignGeometry

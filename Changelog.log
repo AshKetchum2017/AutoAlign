@@ -45,3 +45,8 @@ Catatan: Auto, Process, dan antrean objek belum aktif.
 ~ Minimum memakai Cut Line untuk collision dan menghindari mark pada pasangan; Design hanya diperiksa ukurannya dan tetap harus muat di area. Standalone memakai siluet luar Design.
 ~ Kurangi penyalinan kurva saat pencarian posisi/pergeseran; daftar dengan seluruh acuan rectangle cukup menghitung Straight.
 ~ Gap persen memakai ukuran Cut Line pada pasangan atau ukuran Design pada standalone.
+
+[Mode Medium dan perbaikan gap]
++ Medium mencoba rotasi dan pergeseran terbatas untuk mencari susunan yang muat lebih baik; rectangle memakai empat rotasi siku-siku.
+~ Minimum memakai jarak kontur Cut Line, atau Design standalone, untuk langkah grid. Medium merapatkan hasil menurut gap kontur, tanpa menarik objek tepi menjauh dari tetangganya.
+~ Pencarian Medium mengisi seluruh slot dasar sebelum pergeseran tambahan dan mempercepat pemeriksaan gap pada kurva kompleks.

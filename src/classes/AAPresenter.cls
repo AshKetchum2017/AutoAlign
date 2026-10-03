@@ -70,11 +70,12 @@ Public Sub RunLayout(ByVal modelMode As Long, ByVal areaWidthText As String, _
                      ByVal areaHeightText As String, ByVal horizontalGapText As String, _
                      ByVal verticalGapText As String, ByVal horizontalPercent As Boolean, _
                      ByVal verticalPercent As Boolean, ByRef feedback As String, _
-                     ByRef feedbackStyle As VbMsgBoxStyle)
+                     ByRef feedbackStyle As VbMsgBoxStyle, _
+                     Optional ByVal layoutMode As Long = AA_MODE_MINIMUM)
     Dim engine As AAProcessEngine
 
     Set engine = New AAProcessEngine
     engine.Run mStore, modelMode, areaWidthText, areaHeightText, _
         horizontalGapText, verticalGapText, horizontalPercent, verticalPercent, _
-        mLastProcessCompleted, feedback, feedbackStyle
+        mLastProcessCompleted, feedback, feedbackStyle, layoutMode
 End Sub
