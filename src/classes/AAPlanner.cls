@@ -24,6 +24,20 @@ Friend Function ForbiddenFor(ByVal settings As AASettings, _
     Set ForbiddenFor = BuildForbidden(settings, sourceDocument)
 End Function
 
+Friend Function FinalPlanFits(ByVal plan As AALayoutPlan, _
+                              ByVal settings As AASettings, _
+                              ByVal sourceDocument As Document) As Boolean
+    Dim offsets As Object
+    Dim areaIndex As Long
+
+    Set offsets = CreateObject("Scripting.Dictionary")
+    For areaIndex = 0 To plan.AreaCount - 1
+        offsets.Add CStr(areaIndex), Array(0#, 0#)
+    Next areaIndex
+    FinalPlanFits = CenteredPlanFits(plan, offsets, _
+        BuildForbidden(settings, sourceDocument), settings)
+End Function
+
 Friend Function FinalizeMedium(ByVal plan As AALayoutPlan, ByVal settings As AASettings, _
                                ByVal sourceDocument As Document) As Boolean
     Dim offsets As Object, forbidden As Collection
@@ -216,6 +230,15 @@ Private Function BuildOneRaw(ByRef models() As AAModel, _
             added = FillArea(result, models(designIndex), designIndex, cutIndex, _
                 areaIndex, occupied, forbidden, settings, layoutMode, _
                 AA_MAX_OBJECTS_PER_SOURCE, offsets)
+            If added = 0 And occupied.Count > 0 Then
+                areaIndex = areaIndex + 1
+                Set occupied = New Collection
+                added = FillArea(result, models(designIndex), designIndex, cutIndex, _
+                    areaIndex, occupied, forbidden, settings, layoutMode, _
+                    AA_MAX_OBJECTS_PER_SOURCE, offsets)
+            End If
+            If added = 0 Then Err.Raise vbObjectError + 5231, "AAPlanner", _
+                "Obj. ID sumber tidak dapat muat dalam satu area."
             If cutCount = 1 And result.DesignCount > AA_MAX_OBJECTS_PER_SOURCE Then _
                 Err.Raise vbObjectError + 5210, "AAPlanner", _
                 "Satu Cut Line bersama melebihi batas 5000 objek."

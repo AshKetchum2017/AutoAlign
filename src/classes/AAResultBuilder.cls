@@ -4,7 +4,8 @@ Private Const AA_GROUP_GAP_MM As Double = 50#
 
 Public Function Build(ByVal plan As AALayoutPlan, ByRef sourceShapes() As Shape, _
                       ByVal entryCount As Long, ByVal settings As AASettings, _
-                      ByVal pageCenterX As Double, ByVal pageCenterY As Double) As ShapeRange
+                      ByVal pageCenterX As Double, ByVal pageCenterY As Double, _
+                      Optional ByVal sharedCutOwnerIndex As Long = -1) As ShapeRange
     Dim placements As Collection
     Dim placement As AAPlacement
     Dim designs() As Shape
@@ -40,7 +41,8 @@ Public Function Build(ByVal plan As AALayoutPlan, ByRef sourceShapes() As Shape,
         OrientAndPlace designs(i), placement, False, originalAngles(placement.DesignIndex), _
             settings, pageCenterX, pageCenterY
 
-        If placement.CutIndex >= 0 Then
+        If placement.CutIndex >= 0 And _
+           (sharedCutOwnerIndex < 0 Or placement.DesignIndex = sharedCutOwnerIndex) Then
             Set cuts(i) = TakeShape(sourceShapes(placement.CutIndex), _
                 used(placement.CutIndex))
             OrientAndPlace cuts(i), placement, True, originalAngles(placement.CutIndex), _

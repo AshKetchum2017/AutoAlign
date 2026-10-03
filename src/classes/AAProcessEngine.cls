@@ -14,13 +14,16 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim models() As AAModel
     Dim quantities() As Long
     Dim designIndexes() As Long
+    Dim layoutDesignIndexes() As Long
     Dim cutIndexes() As Long
     Dim entryCount As Long
     Dim designCount As Long
+    Dim layoutDesignCount As Long
     Dim cutCount As Long
     Dim entryIndex As Long
     Dim roleIndex As Long
     Dim cutIndex As Long
+    Dim sharedCutOwnerIndex As Long
     Dim planner As AAPlanner
     Dim plan As AALayoutPlan
     Dim builder As AAResultBuilder
@@ -146,18 +149,40 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         End If
     Next roleIndex
 
+    ReDim layoutDesignIndexes(0 To designCount - 1)
+    For roleIndex = 0 To designCount - 1
+        layoutDesignIndexes(roleIndex) = designIndexes(roleIndex)
+    Next roleIndex
+    layoutDesignCount = designCount
+    If cutCount = 1 And designCount > 1 Then
+        For roleIndex = 0 To designCount - 1
+            entryIndex = designIndexes(roleIndex)
+            If quantities(entryIndex) <> 0 Then
+                layoutDesignIndexes(0) = entryIndex
+                layoutDesignCount = 1
+                Exit For
+            End If
+        Next roleIndex
+    End If
+
     operation = "merencanakan collision dan Quantity"
     Set planner = New AAPlanner
     If layoutMode = AA_MODE_MEDIUM Then
-        Set plan = planner.BuildMedium(models, designIndexes, designCount, _
+        Set plan = planner.BuildMedium(models, layoutDesignIndexes, layoutDesignCount, _
             cutIndexes, cutCount, quantities, settings, doc)
     Else
-        Set plan = planner.BuildMinimum(models, designIndexes, designCount, _
+        Set plan = planner.BuildMinimum(models, layoutDesignIndexes, layoutDesignCount, _
             cutIndexes, cutCount, quantities, settings, doc)
     End If
     If plan.DesignCount = 0 Then
         feedback = "Tidak ada Design yang dapat ditempatkan pada area."
         GoTo CleanExit
+    End If
+    sharedCutOwnerIndex = -1
+    If cutCount = 1 And designCount > 1 Then
+        operation = "menyamakan susunan Cut Line bersama"
+        Set plan = ShareCutLayout(plan, models, designIndexes, designCount, _
+            quantities, planner, settings, doc, sharedCutOwnerIndex)
     End If
 
     ' Preset memakai ukuran sheet baku hanya selama Process. Semua koordinat
@@ -176,7 +201,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     mutationStarted = True
     Set builder = New AAResultBuilder
     Set resultSelection = builder.Build(plan, sourceShapes, entryCount, settings, _
-        originalCenterX, originalCenterY)
+        originalCenterX, originalCenterY, sharedCutOwnerIndex)
     operation = "memilih group hasil"
     resultSelection.CreateSelection
     lastProcessCompleted = True
@@ -240,6 +265,89 @@ RunFailed:
             "Periksa hasil di dokumen sebelum melanjutkan."
     End If
 End Sub
+
+Private Function ShareCutLayout(ByVal sourcePlan As AALayoutPlan, _
+                                ByRef models() As AAModel, _
+                                ByRef designIndexes() As Long, _
+                                ByVal designCount As Long, _
+                                ByRef quantities() As Long, _
+                                ByVal planner As AAPlanner, _
+                                ByVal settings As AASettings, _
+                                ByVal sourceDocument As Document, _
+                                ByRef cutOwnerIndex As Long) As AALayoutPlan
+    Dim template As Collection
+    Dim result As AALayoutPlan
+    Dim placed As AAPlacement
+    Dim copiedPlacement As AAPlacement
+    Dim activeCount As Long, firstIndex As Long
+    Dim firstArea As Long, areaSpan As Long
+    Dim roleIndex As Long, areaIndex As Long, sourceOrdinal As Long
+
+    Set ShareCutLayout = sourcePlan
+    firstIndex = -1
+    For roleIndex = 0 To designCount - 1
+        If quantities(designIndexes(roleIndex)) <> 0 Then
+            activeCount = activeCount + 1
+            If firstIndex < 0 Then firstIndex = designIndexes(roleIndex)
+        End If
+    Next roleIndex
+    If activeCount < 2 Then Exit Function
+
+    Set template = sourcePlan.Placements
+    firstArea = sourcePlan.AreaCount
+    For Each placed In template
+        If placed.DesignIndex <> firstIndex Then Err.Raise vbObjectError + 5330, _
+            "AAProcessEngine", "Susunan Cut Line bersama memiliki Design acuan yang berbeda."
+        If placed.AreaIndex < firstArea Then firstArea = placed.AreaIndex
+    Next placed
+    If template.Count = 0 Then Err.Raise vbObjectError + 5330, _
+        "AAProcessEngine", "Design pertama tidak memiliki susunan untuk Cut Line bersama."
+    areaSpan = sourcePlan.AreaCount - firstArea
+
+    Set result = New AALayoutPlan
+    result.Configure sourcePlan.LayoutMode
+    For roleIndex = 0 To designCount - 1
+        If quantities(designIndexes(roleIndex)) <> 0 Then
+            For Each placed In template
+                If sourceOrdinal = 0 Then
+                    result.Add placed
+                Else
+                    areaIndex = sourceOrdinal * areaSpan + placed.AreaIndex - firstArea
+                    Set copiedPlacement = CopySharedCutPlacement(placed, models(designIndexes(roleIndex)), _
+                        designIndexes(roleIndex), areaIndex)
+                    result.Add copiedPlacement
+                End If
+            Next placed
+            sourceOrdinal = sourceOrdinal + 1
+        End If
+    Next roleIndex
+    If Not planner.FinalPlanFits(result, settings, sourceDocument) Then Err.Raise _
+        vbObjectError + 5331, "AAProcessEngine", _
+        "Design tidak dapat memakai susunan Cut Line bersama pada batas area dan mark."
+    cutOwnerIndex = firstIndex
+    Set ShareCutLayout = result
+End Function
+
+Private Function CopySharedCutPlacement(ByVal source As AAPlacement, _
+                                        ByVal model As AAModel, _
+                                        ByVal designIndex As Long, _
+                                        ByVal areaIndex As Long) As AAPlacement
+    Dim orientation As AARotationVariant
+    Dim leftX As Double, topY As Double
+
+    If source.UsesCenter Then
+        Set orientation = model.RotationVariant(source.RotationDelta)
+        leftX = source.CollisionFootprint.LeftX - orientation.InsetX
+        topY = source.CollisionFootprint.TopY + orientation.InsetY
+        Set CopySharedCutPlacement = orientation.MakePlacement(designIndex, _
+            source.CutIndex, areaIndex, leftX, topY, source.GapH, source.GapV)
+    Else
+        leftX = source.CutLeft - (model.DesignWidth - model.CutWidth) / 2#
+        topY = source.CutTop + (model.DesignHeight - model.CutHeight) / 2#
+        Set CopySharedCutPlacement = model.MakePlacement(designIndex, _
+            source.CutIndex, areaIndex, leftX, topY)
+    End If
+End Function
 
 Private Function FindTopLevelShape(ByVal targetPage As Page, _
                                    ByVal staticID As Long) As Shape

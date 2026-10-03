@@ -317,6 +317,14 @@ Private Function BuildPass(ByRef models() As AAModel, ByRef designIndexes() As L
         If remaining < 0 Then
             added = FillArea(result, models(index), index, cutIndex, areaIndex, _
                 occupied, forbidden, settings, AA_MAX_OBJECTS_PER_SOURCE, firstAngle, zigZag)
+            If added = 0 And occupied.Count > 0 Then
+                areaIndex = areaIndex + 1
+                Set occupied = New Collection
+                added = FillArea(result, models(index), index, cutIndex, areaIndex, _
+                    occupied, forbidden, settings, AA_MAX_OBJECTS_PER_SOURCE, firstAngle, zigZag)
+            End If
+            If added = 0 Then Err.Raise vbObjectError + 5231, _
+                "AAMediumPlanner", "Object tidak muat dalam satu area pada pencarian Medium."
         Else
             sourceCount = 0
             Do While remaining > 0

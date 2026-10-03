@@ -3,7 +3,7 @@ Option Explicit
 Private Type AAObjectEntry
     RoleLabel As String
     StaticID As Long
-    Quantity As Long  ' -1 berarti kosong: isi area yang sedang aktif.
+    Quantity As Long  ' -1 berarti kosong: isi area aktif, lalu area baru jika tidak muat.
 End Type
 
 Private mEntries() As AAObjectEntry
