@@ -41,14 +41,6 @@ Private Sub cmdOptimize_Click()
 ' One of the last scopes of AutoAlign is to optimize the existing group. This button triggers the optimization process.
 End Sub
 
-Private Sub optMaximum_Click()
-
-End Sub
-
-Private Sub optMedium_Click()
-
-End Sub
-
 Private Sub txbGapHorizontal_Change()
     If mUpdatingHint Then Exit Sub
     If Not chkHPercent.Value Then Exit Sub
