@@ -16,6 +16,7 @@ Private mSettings As AASettings
 Private mSharpRectangle As Boolean
 Private mLayoutSharpRectangle As Boolean
 Private mRectangle As Boolean
+Private mTriangle As Boolean
 Private mVariants As Object
 Private mMediumDesignGeometry As AAGeometry
 Private mMinimumSteps As Object
@@ -28,6 +29,7 @@ Public Sub Prepare(ByVal designShape As Shape, ByVal cutShape As Shape, _
     Set mVariants = CreateObject("Scripting.Dictionary")
     Set mMinimumSteps = CreateObject("Scripting.Dictionary")
     Set mMediumDesignGeometry = Nothing
+    mTriangle = False
     Set mDesignGeometry = New AAGeometry
     Set mCutGeometry = Nothing
     If Not cutShape Is Nothing Then
@@ -40,6 +42,7 @@ Public Sub Prepare(ByVal designShape As Shape, ByVal cutShape As Shape, _
         mLayoutSharpRectangle = mSharpRectangle
         mRectangle = mLayoutSharpRectangle Or (cutShape.Type = cdrRectangleShape)
         If Not mRectangle Then mRectangle = mCutGeometry.IsRoundedRectangle
+        mTriangle = mCutGeometry.IsSharpTriangle
         If Not mSharpRectangle Then ValidateCutSize
     Else
         mDesignGeometry.Capture designShape
@@ -49,6 +52,7 @@ Public Sub Prepare(ByVal designShape As Shape, ByVal cutShape As Shape, _
         mLayoutSharpRectangle = mSharpRectangle
         mRectangle = mSharpRectangle Or (designShape.Type = cdrRectangleShape)
         If Not mRectangle Then mRectangle = mDesignBoundary.IsRoundedRectangle
+        mTriangle = mDesignBoundary.IsSharpTriangle
     End If
 End Sub
 
@@ -287,6 +291,10 @@ End Property
 
 Public Property Get IsRectangle() As Boolean
     IsRectangle = mRectangle
+End Property
+
+Public Property Get IsTriangle() As Boolean
+    IsTriangle = mTriangle
 End Property
 
 Public Function RotationVariant(ByVal angle As Double) As AARotationVariant

@@ -85,6 +85,49 @@ Public Function IsSharpRectangle() As Boolean
     IsSharpRectangle = True
 End Function
 
+Public Function IsSharpTriangle() As Boolean
+    Dim part As Curve, path As SubPath, edge As Segment
+    Dim dx() As Double, dy() As Double
+    Dim x1 As Double, y1 As Double, x2 As Double, y2 As Double
+    Dim vx As Double, vy As Double, length As Double, turn As Double
+    Dim sideCount As Long, i As Long, nextSide As Long
+
+    If mCurves.Count <> 1 Then Exit Function
+    Set part = mCurves(1)
+    If part.SubPaths.Count <> 1 Then Exit Function
+    Set path = part.SubPaths(1)
+    If Not path.Closed Or path.Segments.Count < 3 Then Exit Function
+    ReDim dx(1 To path.Segments.Count)
+    ReDim dy(1 To path.Segments.Count)
+    For Each edge In path.Segments
+        If edge.Type <> cdrLineSegment Then Exit Function
+        edge.GetPointPositionAt x1, y1, 0#, cdrParamSegmentOffset
+        edge.GetPointPositionAt x2, y2, 1#, cdrParamSegmentOffset
+        vx = x2 - x1: vy = y2 - y1
+        length = Sqr(vx * vx + vy * vy)
+        If length <= AA_GEOMETRY_TOLERANCE_MM Then Exit Function
+        vx = vx / length: vy = vy / length
+        If sideCount = 0 Then
+            sideCount = 1
+        ElseIf Not SameDirection(dx(sideCount), dy(sideCount), vx, vy) Then
+            sideCount = sideCount + 1
+        End If
+        dx(sideCount) = vx: dy(sideCount) = vy
+    Next edge
+    If sideCount > 1 Then
+        If SameDirection(dx(1), dy(1), dx(sideCount), dy(sideCount)) Then _
+            sideCount = sideCount - 1
+    End If
+    If sideCount <> 3 Then Exit Function
+    turn = dx(1) * dy(2) - dy(1) * dx(2)
+    If Abs(turn) <= AA_RECTANGLE_DIRECTION_TOLERANCE Then Exit Function
+    For i = 2 To 3
+        nextSide = i Mod 3 + 1
+        If (dx(i) * dy(nextSide) - dy(i) * dx(nextSide)) * turn <= 0# Then Exit Function
+    Next i
+    IsSharpTriangle = True
+End Function
+
 Private Function SameDirection(ByVal x1 As Double, ByVal y1 As Double, _
                                ByVal x2 As Double, ByVal y2 As Double) As Boolean
     SameDirection = (Abs(x1 * y2 - y1 * x2) <= _

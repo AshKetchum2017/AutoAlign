@@ -62,13 +62,55 @@ End Function
 
 Friend Function BetterPlan(ByVal candidate As AALayoutPlan, _
                            ByVal reference As AALayoutPlan) As Boolean
+    Dim candidateBoundsArea As Double, referenceBoundsArea As Double
     If candidate.AreaCount <> reference.AreaCount Then
         BetterPlan = (candidate.AreaCount < reference.AreaCount)
     ElseIf candidate.DesignCount <> reference.DesignCount Then
         BetterPlan = (candidate.DesignCount > reference.DesignCount)
     Else
-        BetterPlan = HasFullerEarlierArea(candidate, reference)
+        candidateBoundsArea = OccupiedBoundsArea(candidate)
+        referenceBoundsArea = OccupiedBoundsArea(reference)
+        If candidateBoundsArea <> referenceBoundsArea Then
+            BetterPlan = (candidateBoundsArea < referenceBoundsArea)
+        Else
+            BetterPlan = HasFullerEarlierArea(candidate, reference)
+        End If
     End If
+End Function
+
+Private Function OccupiedBoundsArea(ByVal plan As AALayoutPlan) As Double
+    Dim lefts() As Double, bottoms() As Double
+    Dim rights() As Double, tops() As Double
+    Dim seen() As Boolean
+    Dim placement As AAPlacement, box As AAGeometry
+    Dim areaIndex As Long
+
+    If plan.AreaCount = 0 Then Exit Function
+    ReDim lefts(0 To plan.AreaCount - 1)
+    ReDim bottoms(0 To plan.AreaCount - 1)
+    ReDim rights(0 To plan.AreaCount - 1)
+    ReDim tops(0 To plan.AreaCount - 1)
+    ReDim seen(0 To plan.AreaCount - 1)
+    For Each placement In plan.Placements
+        areaIndex = placement.AreaIndex
+        Set box = placement.CollisionFootprint
+        If seen(areaIndex) Then
+            If box.LeftX < lefts(areaIndex) Then lefts(areaIndex) = box.LeftX
+            If box.BottomY < bottoms(areaIndex) Then bottoms(areaIndex) = box.BottomY
+            If box.RightX > rights(areaIndex) Then rights(areaIndex) = box.RightX
+            If box.TopY > tops(areaIndex) Then tops(areaIndex) = box.TopY
+        Else
+            lefts(areaIndex) = box.LeftX: bottoms(areaIndex) = box.BottomY
+            rights(areaIndex) = box.RightX: tops(areaIndex) = box.TopY
+            seen(areaIndex) = True
+        End If
+    Next placement
+    For areaIndex = 0 To plan.AreaCount - 1
+        If seen(areaIndex) Then _
+            OccupiedBoundsArea = OccupiedBoundsArea + _
+                (rights(areaIndex) - lefts(areaIndex)) * _
+                (tops(areaIndex) - bottoms(areaIndex))
+    Next areaIndex
 End Function
 
 Public Function BuildMinimum(ByRef models() As AAModel, _

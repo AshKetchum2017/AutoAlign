@@ -53,3 +53,7 @@ Catatan: Auto, Process, dan antrean objek belum aktif.
 
 [Cut Line bersama]
 ~ Dua atau lebih Design yang memakai satu Cut Line mengikuti susunan Design pertama pada container terpisah; satu susunan Cut Line dibuat untuk dipakai bersama.
+
+[Medium: trapesium dan kurva custom]
+~ Kandidat rotasi berlawanan juga dicoba untuk trapesium dan kurva custom sederhana, lalu dibandingkan dengan susunan Medium sebelumnya.
+~ Saat jumlah objek dan container sama, Medium memilih susunan dengan luas bounding box acuan collision lebih kecil.

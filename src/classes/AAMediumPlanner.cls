@@ -13,6 +13,8 @@ Private Const AA_MAX_REFINEMENT_SLOTS As Long = 2048
 Private Const AA_COMPACTION_TOLERANCE_MM As Double = 0.01
 Private Const AA_MAX_COMPACTION_PROBES_PER_AREA As Long = 4096
 Private Const AA_COMPACTION_PASSES As Long = 2
+Private Const AA_MAX_PAIR_CONTOUR_EDGES As Long = 32
+Private Const AA_PAIR_CONTACT_SCAN_STEPS As Long = 64
 
 Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, _
                       ByVal designCount As Long, ByRef cutIndexes() As Long, _
@@ -21,8 +23,10 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                       ByVal sharedPlanner As AAPlanner) As AALayoutPlan
     Dim best As AALayoutPlan, minimum As AALayoutPlan, candidate As AALayoutPlan
     Dim forbidden As Collection, angles As Collection, angle As Variant
+    Dim firstVariant As AARotationVariant
     Dim firstIndex As Long, i As Long, pattern As Long, lastError As String
-    Dim hasZigZag As Boolean
+    Dim pairAngle As Long, rowMode As Long, pairCutIndex As Long
+    Dim hasZigZag As Boolean, pairEligible As Boolean
     Set forbidden = sharedPlanner.ForbiddenFor(settings, sourceDocument)
     On Error Resume Next
     Set minimum = sharedPlanner.BuildMinimum(models, designIndexes, designCount, _
@@ -33,6 +37,48 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     If Not minimum Is Nothing Then
         Set candidate = AdaptMinimum(minimum, models)
         If ValidPlan(candidate, forbidden, settings) Then Set best = candidate
+    End If
+    If designCount = 1 Then
+        firstIndex = designIndexes(0)
+        If quantities(firstIndex) < 0 And Not models(firstIndex).IsRectangle Then
+            pairEligible = models(firstIndex).IsTriangle
+            If Not pairEligible Then
+                On Error Resume Next
+                Set firstVariant = models(firstIndex).RotationVariant(0#)
+                If Err.Number = 0 And Not firstVariant Is Nothing Then
+                    pairEligible = (firstVariant.Contour.Edges.Count <= AA_MAX_PAIR_CONTOUR_EDGES)
+                End If
+                Err.Clear
+                On Error GoTo 0
+            End If
+            If pairEligible Then
+                pairCutIndex = -1
+                If cutCount = 1 Then pairCutIndex = cutIndexes(0)
+                For pairAngle = 0 To 315 Step 45
+                    For rowMode = 0 To 1
+                        Set candidate = Nothing
+                        On Error Resume Next
+                        Set candidate = BuildOppositeLattice(models(firstIndex), firstIndex, _
+                            pairCutIndex, settings, forbidden, CDbl(pairAngle), rowMode)
+                        If Err.Number <> 0 Then lastError = Err.Description
+                        Err.Clear
+                        On Error GoTo 0
+                        If Not candidate Is Nothing Then
+                            If Not sharedPlanner.FinalizeMedium(candidate, settings, sourceDocument) Then
+                                Set candidate = RepairCentered(candidate, models, forbidden, settings)
+                            End If
+                            If Not candidate Is Nothing Then
+                                If best Is Nothing Then
+                                    Set best = candidate
+                                ElseIf sharedPlanner.BetterPlan(candidate, best) Then
+                                    Set best = candidate
+                                End If
+                            End If
+                        End If
+                    Next rowMode
+                Next pairAngle
+            End If
+        End If
     End If
     firstIndex = designIndexes(0)
     For i = 0 To designCount - 1
@@ -82,7 +128,9 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
             Set candidate = RepairCentered(candidate, models, forbidden, settings)
         End If
         If Not candidate Is Nothing Then
-            If ValidPlan(candidate, forbidden, settings) Then Set best = candidate
+            If ValidPlan(candidate, forbidden, settings) Then
+                If sharedPlanner.BetterPlan(candidate, best) Then Set best = candidate
+            End If
         End If
     End If
     Set Build = best
@@ -363,6 +411,175 @@ Private Function AnglesFor(ByVal model As AAModel, ByVal firstAngle As Double) A
         If CDbl(angle) <> firstAngle Then result.Add CDbl(angle)
     Next angle
     Set AnglesFor = result
+End Function
+
+Private Function BuildOppositeLattice(ByVal model As AAModel, _
+                                      ByVal designIndex As Long, ByVal cutIndex As Long, _
+                                      ByVal settings As AASettings, _
+                                      ByVal forbidden As Collection, _
+                                      ByVal firstAngle As Double, _
+                                      ByVal rowMode As Long) As AALayoutPlan
+    Dim forward As AARotationVariant, reverse As AARotationVariant
+    Dim result As AALayoutPlan, occupied As Collection
+    Dim orientation As AARotationVariant, candidate As AAPlacement
+    Dim h As Double, v As Double, stepX As Double, stepY As Double
+    Dim x As Double, y As Double, rowShift As Double
+    Dim rowIndex As Long, columnIndex As Long, probes As Long
+    Dim scanContacts As Boolean
+
+    model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+    If h < 0# Or v < 0# Then Exit Function
+    Set forward = model.RotationVariant(firstAngle)
+    Set reverse = model.RotationVariant((firstAngle + 180#) Mod 360#)
+    scanContacts = Not model.IsTriangle
+    If scanContacts Then
+        If forward.Contour.Edges.Count > AA_MAX_PAIR_CONTOUR_EDGES Then Exit Function
+    End If
+    stepX = OppositeHorizontalPitch(forward, reverse, h, v, scanContacts)
+    If stepX <= AA_COMPACTION_TOLERANCE_MM Then Exit Function
+    If rowMode = 1 Then rowShift = stepX / 2#
+    stepY = OppositeVerticalPitch(forward, reverse, stepX, rowShift, h, v, scanContacts)
+    If stepY <= AA_COMPACTION_TOLERANCE_MM Then Exit Function
+    Set result = New AALayoutPlan
+    result.Configure AA_MODE_MEDIUM
+    Set occupied = New Collection
+    y = settings.AreaHeightMM
+    Do While y >= MinValue(forward.Height, reverse.Height) - AA_EDGE_TOLERANCE_MM
+        x = 0#
+        If rowIndex Mod 2 = 1 Then x = rowShift
+        columnIndex = 0
+        Do While x <= settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM
+            probes = probes + 1
+            If probes > AA_MAX_SLOTS_PER_AREA Then Exit Do
+            If columnIndex Mod 2 = 0 Then
+                Set orientation = forward
+            Else
+                Set orientation = reverse
+            End If
+            Set candidate = TryExactSlot(orientation, designIndex, cutIndex, 0, _
+                x, y, occupied, forbidden, settings, h, v)
+            If Not candidate Is Nothing Then
+                result.Add candidate
+                occupied.Add candidate
+                If result.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit Do
+            End If
+            x = x + stepX
+            columnIndex = columnIndex + 1
+        Loop
+        If result.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Or _
+           probes > AA_MAX_SLOTS_PER_AREA Then Exit Do
+        y = y - stepY
+        rowIndex = rowIndex + 1
+    Loop
+    If result.DesignCount > 0 Then Set BuildOppositeLattice = result
+End Function
+
+Private Function OppositeHorizontalPitch(ByVal forward As AARotationVariant, _
+                                         ByVal reverse As AARotationVariant, _
+                                         ByVal h As Double, ByVal v As Double, _
+                                         ByVal scanContacts As Boolean) As Double
+    Dim low As Double, high As Double, middle As Double, topY As Double
+    Dim scanUpper As Double, trial As Double, i As Long
+    topY = MaxValue(forward.Height, reverse.Height)
+    high = MaxValue(forward.Width, reverse.Width) + MaxValue(h, v) + 2#
+    If Not OppositeRowClear(forward, reverse, high, topY, h, v) Then Exit Function
+    If scanContacts Then
+        scanUpper = high
+        For i = 1 To AA_PAIR_CONTACT_SCAN_STEPS
+            trial = scanUpper * i / AA_PAIR_CONTACT_SCAN_STEPS
+            If OppositeRowClear(forward, reverse, trial, topY, h, v) Then
+                low = scanUpper * (i - 1) / AA_PAIR_CONTACT_SCAN_STEPS
+                high = trial
+                Exit For
+            End If
+        Next i
+    End If
+    For i = 1 To 12
+        middle = (low + high) / 2#
+        If OppositeRowClear(forward, reverse, middle, topY, h, v) Then
+            high = middle
+        Else
+            low = middle
+        End If
+    Next i
+    OppositeHorizontalPitch = high
+End Function
+
+Private Function OppositeRowClear(ByVal forward As AARotationVariant, _
+                                  ByVal reverse As AARotationVariant, _
+                                  ByVal stepX As Double, ByVal topY As Double, _
+                                  ByVal h As Double, ByVal v As Double) As Boolean
+    Dim first As AAPlacement, second As AAPlacement, third As AAPlacement
+    Set first = forward.MakePlacement(0, -1, 0, 0#, topY, h, v)
+    Set second = reverse.MakePlacement(0, -1, 0, stepX, topY, h, v)
+    Set third = forward.MakePlacement(0, -1, 0, 2# * stepX, topY, h, v)
+    If Not OppositeClear(first, second) Then Exit Function
+    If Not OppositeClear(second, third) Then Exit Function
+    OppositeRowClear = OppositeClear(first, third)
+End Function
+
+Private Function OppositeVerticalPitch(ByVal forward As AARotationVariant, _
+                                       ByVal reverse As AARotationVariant, _
+                                       ByVal stepX As Double, ByVal rowShift As Double, _
+                                       ByVal h As Double, ByVal v As Double, _
+                                       ByVal scanContacts As Boolean) As Double
+    Dim low As Double, high As Double, middle As Double
+    Dim scanUpper As Double, trial As Double, i As Long
+    high = MaxValue(forward.Height, reverse.Height) + MaxValue(h, v) + 2#
+    If Not OppositeRowsClear(forward, reverse, stepX, rowShift, high, h, v) Then Exit Function
+    If scanContacts Then
+        scanUpper = high
+        For i = 1 To AA_PAIR_CONTACT_SCAN_STEPS
+            trial = scanUpper * i / AA_PAIR_CONTACT_SCAN_STEPS
+            If OppositeRowsClear(forward, reverse, stepX, rowShift, trial, h, v) Then
+                low = scanUpper * (i - 1) / AA_PAIR_CONTACT_SCAN_STEPS
+                high = trial
+                Exit For
+            End If
+        Next i
+    End If
+    For i = 1 To 12
+        middle = (low + high) / 2#
+        If OppositeRowsClear(forward, reverse, stepX, rowShift, middle, h, v) Then
+            high = middle
+        Else
+            low = middle
+        End If
+    Next i
+    OppositeVerticalPitch = high
+End Function
+
+Private Function OppositeRowsClear(ByVal forward As AARotationVariant, _
+                                   ByVal reverse As AARotationVariant, _
+                                   ByVal stepX As Double, ByVal rowShift As Double, _
+                                   ByVal stepY As Double, ByVal h As Double, _
+                                   ByVal v As Double) As Boolean
+    Dim upper(0 To 4) As AAPlacement, lower(0 To 4) As AAPlacement
+    Dim orientation As AARotationVariant
+    Dim topY As Double, i As Long, j As Long
+    topY = 2# * MaxValue(forward.Height, reverse.Height) + stepY
+    For i = 0 To 4
+        If i Mod 2 = 0 Then
+            Set orientation = forward
+        Else
+            Set orientation = reverse
+        End If
+        Set upper(i) = orientation.MakePlacement(0, -1, 0, i * stepX, topY, h, v)
+        Set lower(i) = orientation.MakePlacement(0, -1, 0, _
+            rowShift + i * stepX, topY - stepY, h, v)
+    Next i
+    For i = 0 To 4
+        For j = 0 To 4
+            If Not OppositeClear(upper(i), lower(j)) Then Exit Function
+        Next j
+    Next i
+    OppositeRowsClear = True
+End Function
+
+Private Function OppositeClear(ByVal first As AAPlacement, _
+                               ByVal second As AAPlacement) As Boolean
+    If Not first.HasClearance(second) Then Exit Function
+    OppositeClear = Not first.CollisionFootprint.Overlaps(second.CollisionFootprint)
 End Function
 
 Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, _
