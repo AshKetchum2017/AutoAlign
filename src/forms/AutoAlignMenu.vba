@@ -312,15 +312,43 @@ Private Sub AARunMode(ByVal modelMode As Long)
     Dim feedback As String
     Dim feedbackStyle As VbMsgBoxStyle
     Dim layoutMode As Long
+    Dim errorNumber As Long, errorSource As String, errorDescription As String
 
     If mPresenter Is Nothing Then Set mPresenter = New AAPresenter
     layoutMode = AA_MODE_MINIMUM
     If optMedium.value Then layoutMode = AA_MODE_MEDIUM
+    MRNotifyProcessTiming True
+    On Error GoTo ProcessFailed
     mPresenter.RunLayout modelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
         AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), chkHPercent.value, _
         chkVPercent.value, feedback, feedbackStyle, layoutMode
     AARefreshObjects
+    On Error GoTo 0
+    MRNotifyProcessTiming False
     If Len(feedback) > 0 Then MsgBox feedback, feedbackStyle, "Auto Align"
+    Exit Sub
+
+ProcessFailed:
+    errorNumber = Err.Number
+    errorSource = Err.Source
+    errorDescription = Err.Description
+    MRNotifyProcessTiming False
+    On Error GoTo 0
+    Err.Raise errorNumber, errorSource, errorDescription
+End Sub
+
+Private Sub MRNotifyProcessTiming(ByVal started As Boolean)
+    If pMRObserver Is Nothing Then Exit Sub
+    On Error GoTo NotifyFailed
+    If started Then
+        CallByName pMRObserver, "AutoAlignProcessStarted", VbMethod, pMRToken
+    Else
+        CallByName pMRObserver, "AutoAlignProcessFinished", VbMethod, pMRToken
+    End If
+    Exit Sub
+NotifyFailed:
+    MsgBox "Gagal mencatat durasi Auto Align di Macro Runner (" & CStr(Err.Number) & "): " & _
+        Err.Description, vbExclamation, "Macro Runner"
 End Sub
 
 ' Placeholder hanya presentasi; AAInputText selalu mengembalikannya sebagai kosong.
