@@ -33,6 +33,8 @@ Public Sub Finish(ByVal sortMembers As Boolean)
         Set mResult = mShapes(1)
     Else
         Set mResult = mShapes.Group
+        If mResult Is Nothing Then Err.Raise vbObjectError + 5242, _
+            "AAGroupBucket", "CorelDRAW tidak mengembalikan group hasil."
         If sortMembers Then AAOrderGroupMembers mResult, mMembers
     End If
     If mResult.Layer.Index <> mLayer.Index Then mResult.MoveToLayer mLayer

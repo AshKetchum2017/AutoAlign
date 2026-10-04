@@ -57,3 +57,11 @@ Catatan: Auto, Process, dan antrean objek belum aktif.
 [Medium: trapesium dan kurva custom]
 ~ Kandidat rotasi berlawanan juga dicoba untuk trapesium dan kurva custom sederhana, lalu dibandingkan dengan susunan Medium sebelumnya.
 ~ Saat jumlah objek dan container sama, Medium memilih susunan dengan luas bounding box acuan collision lebih kecil.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-04
+[Medium: segitiga fillet]
+~ Segitiga dengan tiga sisi lurus dan sudut fillet dapat memakai kandidat susunan rotasi berlawanan; pemeriksaan gap dan collision tetap mengikuti kontur sebenarnya.
+
+[Process dari Shape Tool]
+~ Process dapat membuat dan mengelompokkan hasil saat Shape Tool aktif; setelah selesai, Pick Tool tetap aktif agar worksheet langsung dapat diedit.

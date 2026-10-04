@@ -43,6 +43,7 @@ Public Sub Prepare(ByVal designShape As Shape, ByVal cutShape As Shape, _
         mRectangle = mLayoutSharpRectangle Or (cutShape.Type = cdrRectangleShape)
         If Not mRectangle Then mRectangle = mCutGeometry.IsRoundedRectangle
         mTriangle = mCutGeometry.IsSharpTriangle
+        If Not mTriangle Then mTriangle = mCutGeometry.IsRoundedTriangle
         If Not mSharpRectangle Then ValidateCutSize
     Else
         mDesignGeometry.Capture designShape
@@ -53,6 +54,7 @@ Public Sub Prepare(ByVal designShape As Shape, ByVal cutShape As Shape, _
         mRectangle = mSharpRectangle Or (designShape.Type = cdrRectangleShape)
         If Not mRectangle Then mRectangle = mDesignBoundary.IsRoundedRectangle
         mTriangle = mDesignBoundary.IsSharpTriangle
+        If Not mTriangle Then mTriangle = mDesignBoundary.IsRoundedTriangle
     End If
 End Sub
 

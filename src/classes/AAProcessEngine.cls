@@ -197,6 +197,13 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         pageSizeChanged = False
     End If
 
+    operation = "menyiapkan tool untuk pengelompokan hasil"
+    If Application.ActiveTool <> cdrToolPick Then
+        Application.ActiveTool = cdrToolPick
+        If Application.ActiveTool <> cdrToolPick Then Err.Raise _
+            vbObjectError + 5332, "AAProcessEngine", _
+            "Pick Tool tidak dapat diaktifkan untuk mengelompokkan hasil."
+    End If
     operation = "membuat dan mengelompokkan hasil"
     mutationStarted = True
     Set builder = New AAResultBuilder

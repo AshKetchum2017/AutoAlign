@@ -128,6 +128,70 @@ Public Function IsSharpTriangle() As Boolean
     IsSharpTriangle = True
 End Function
 
+Public Function IsRoundedTriangle() As Boolean
+    Dim part As Curve, path As SubPath, edge As Segment
+    Dim dx(1 To 3) As Double, dy(1 To 3) As Double
+    Dim x1 As Double, y1 As Double, x2 As Double, y2 As Double
+    Dim vx As Double, vy As Double, length As Double, turn As Double
+    Dim firstCurve As Long, sideCount As Long, curveGroups As Long
+    Dim segmentIndex As Long, i As Long, nextSide As Long
+    Dim previousWasLine As Boolean
+
+    If mCurves.Count <> 1 Then Exit Function
+    Set part = mCurves(1)
+    If part.SubPaths.Count <> 1 Then Exit Function
+    Set path = part.SubPaths(1)
+    If Not path.Closed Or path.Segments.Count < 6 Then Exit Function
+
+    For i = 1 To path.Segments.Count
+        If path.Segments(i).Type <> cdrLineSegment Then
+            firstCurve = i
+            Exit For
+        End If
+    Next i
+    If firstCurve = 0 Then Exit Function
+
+    ' Mulai setelah segmen lengkung agar sisi yang memuat start point tidak
+    ' terhitung dua kali saat path berputar kembali ke awal.
+    For i = 1 To path.Segments.Count
+        segmentIndex = (firstCurve + i - 1) Mod path.Segments.Count + 1
+        Set edge = path.Segments(segmentIndex)
+        If edge.Type = cdrLineSegment Then
+            edge.GetPointPositionAt x1, y1, 0#, cdrParamSegmentOffset
+            edge.GetPointPositionAt x2, y2, 1#, cdrParamSegmentOffset
+            vx = x2 - x1: vy = y2 - y1
+            length = Sqr(vx * vx + vy * vy)
+            If length <= AA_GEOMETRY_TOLERANCE_MM Then Exit Function
+            vx = vx / length: vy = vy / length
+            If previousWasLine Then
+                If Not SameDirection(dx(sideCount), dy(sideCount), vx, vy) Then Exit Function
+            Else
+                sideCount = sideCount + 1
+                If sideCount > 3 Then Exit Function
+            End If
+            dx(sideCount) = vx: dy(sideCount) = vy
+            previousWasLine = True
+        Else
+            If previousWasLine Then curveGroups = curveGroups + 1
+            previousWasLine = False
+        End If
+    Next i
+    If sideCount <> 3 Or curveGroups <> 3 Then Exit Function
+
+    turn = dx(1) * dy(2) - dy(1) * dx(2)
+    If Abs(turn) <= AA_RECTANGLE_DIRECTION_TOLERANCE Then Exit Function
+    For i = 2 To 3
+        nextSide = i Mod 3 + 1
+        If (dx(i) * dy(nextSide) - dy(i) * dx(nextSide)) * turn <= 0# Then Exit Function
+    Next i
+    For Each edge In path.Segments
+        If edge.Type <> cdrLineSegment Then
+            If Not ConvexCorner(edge, turn) Then Exit Function
+        End If
+    Next edge
+    IsRoundedTriangle = True
+End Function
+
 Private Function SameDirection(ByVal x1 As Double, ByVal y1 As Double, _
                                ByVal x2 As Double, ByVal y2 As Double) As Boolean
     SameDirection = (Abs(x1 * y2 - y1 * x2) <= _
