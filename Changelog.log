@@ -65,3 +65,6 @@ Catatan: Auto, Process, dan antrean objek belum aktif.
 
 [Process dari Shape Tool]
 ~ Process dapat membuat dan mengelompokkan hasil saat Shape Tool aktif; setelah selesai, Pick Tool tetap aktif agar worksheet langsung dapat diedit.
+
+[Medium: pasangan dengan offset vertikal]
+~ Medium mencoba susunan pasangan rotasi 0°/180° dan 90°/270° dengan offset vertikal sesuai Gap V, lalu membandingkannya dengan susunan sebelumnya.
