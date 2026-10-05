@@ -48,10 +48,12 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     feedback = vbNullString
     feedbackStyle = vbExclamation
     On Error GoTo RunFailed
+    AADebugProcessStart layoutMode, modelMode
 
     entryCount = objects.Count
     If entryCount = 0 Then
         feedback = "Daftarkan object Design terlebih dahulu."
+        AADebugWrite "Process", "stopped: no registered objects"
         Exit Sub
     End If
 
@@ -62,6 +64,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     settings.Configure modelMode, areaWidthText, areaHeightText, _
         horizontalGapText, verticalGapText, horizontalPercent, verticalPercent, _
         layoutMode = AA_MODE_MEDIUM
+    AADebugSettings settings
 
     operation = "memeriksa dokumen dan halaman sumber"
     If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5310, _
@@ -108,6 +111,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     If cutCount <> 0 And cutCount <> 1 And cutCount <> designCount Then _
         Err.Raise vbObjectError + 5319, "AAProcessEngine", _
             "Jumlah Cut Line harus satu atau sama dengan jumlah Design."
+    AADebugWrite "Model", "Design=" & CStr(designCount) & " Cut=" & CStr(cutCount)
 
     operation = "memulai CommandGroup"
     previousUnit = doc.Unit
@@ -141,6 +145,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         Else
             models(entryIndex).Prepare sourceShapes(entryIndex), Nothing, settings
         End If
+        AADebugModel entryIndex, models(entryIndex), quantities(entryIndex)
         If cutCount = 1 And roleIndex > 0 Then
             If Not models(entryIndex).CanShareCutWith( _
                    models(designIndexes(0))) Then Err.Raise _
@@ -164,6 +169,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
             End If
         Next roleIndex
     End If
+    AADebugWrite "Model", "LayoutDesign=" & CStr(layoutDesignCount)
 
     operation = "merencanakan collision dan Quantity"
     Set planner = New AAPlanner
@@ -174,8 +180,10 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         Set plan = planner.BuildMinimum(models, layoutDesignIndexes, layoutDesignCount, _
             cutIndexes, cutCount, quantities, settings, doc)
     End If
+    AADebugPlan "Process layout", plan
     If plan.DesignCount = 0 Then
         feedback = "Tidak ada Design yang dapat ditempatkan pada area."
+        AADebugWrite "Process", "no objects placed"
         GoTo CleanExit
     End If
     sharedCutOwnerIndex = -1
@@ -183,6 +191,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         operation = "menyamakan susunan Cut Line bersama"
         Set plan = ShareCutLayout(plan, models, designIndexes, designCount, _
             quantities, planner, settings, doc, sharedCutOwnerIndex)
+        AADebugPlan "Shared Cut Line expanded", plan
     End If
 
     ' Preset memakai ukuran sheet baku hanya selama Process. Semua koordinat
@@ -226,12 +235,16 @@ CleanExit:
         doc.EndCommandGroup
         commandGroupOpen = False
     End If
+    AADebugWrite "Process", "OK"
     Exit Sub
 
 RunFailed:
     errorNumber = Err.Number
     errorSource = Err.Source
     errorDescription = Err.Description
+    AADebugCandidateEnd
+    AADebugWrite "Process", "FAILED during " & operation & "; Error " & _
+        CStr(errorNumber) & " (" & errorSource & "): " & errorDescription
     On Error Resume Next
     If pageSizeChanged Then targetPage.SetSize originalPageWidth, originalPageHeight
     If unitsSaved Then
@@ -313,6 +326,7 @@ Private Function ShareCutLayout(ByVal sourcePlan As AALayoutPlan, _
 
     Set result = New AALayoutPlan
     result.Configure sourcePlan.LayoutMode
+    result.SetRegularPattern sourcePlan.HasRegularPattern
     For roleIndex = 0 To designCount - 1
         If quantities(designIndexes(roleIndex)) <> 0 Then
             For Each placed In template

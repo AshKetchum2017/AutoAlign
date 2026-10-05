@@ -3,6 +3,7 @@ Option Explicit
 Private mPlacements As Collection
 Private mLayoutMode As Long
 Private mAreaCount As Long
+Private mHasRegularPattern As Boolean
 
 Private Sub Class_Initialize()
     Set mPlacements = New Collection
@@ -11,6 +12,16 @@ End Sub
 Public Sub Configure(ByVal layoutMode As Long)
     mLayoutMode = layoutMode
 End Sub
+
+' True hanya untuk kandidat yang dibentuk dari pola berulang yang diketahui.
+' Pemusatan bersama dan slot kosong tidak mengubah pola tersebut.
+Public Sub SetRegularPattern(ByVal regular As Boolean)
+    mHasRegularPattern = regular
+End Sub
+
+Public Property Get HasRegularPattern() As Boolean
+    HasRegularPattern = mHasRegularPattern
+End Property
 
 Public Sub Add(ByVal placement As AAPlacement)
     mPlacements.Add placement

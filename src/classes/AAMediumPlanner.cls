@@ -16,6 +16,7 @@ Private Const AA_COMPACTION_PASSES As Long = 2
 Private Const AA_MAX_PAIR_CONTOUR_EDGES As Long = 32
 Private Const AA_PAIR_CONTACT_SCAN_STEPS As Long = 64
 Private Const AA_MAX_PHASE_SLOTS_PER_AREA As Long = 5000
+Private Const AA_PAIR_INSET_RESERVE_MM As Double = 0.001
 
 Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, _
                       ByVal designCount As Long, ByRef cutIndexes() As Long, _
@@ -28,6 +29,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     Dim firstIndex As Long, i As Long, pattern As Long, lastError As String
     Dim pairAngle As Long, rowMode As Long, patternMode As Long, pairCutIndex As Long
     Dim hasZigZag As Boolean, pairEligible As Boolean
+    Dim candidateLabel As String, bestLabel As String, buildError As String
     Set forbidden = sharedPlanner.ForbiddenFor(settings, sourceDocument)
     On Error Resume Next
     Set minimum = sharedPlanner.BuildMinimum(models, designIndexes, designCount, _
@@ -37,7 +39,13 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     On Error GoTo 0
     If Not minimum Is Nothing Then
         Set candidate = AdaptMinimum(minimum, models)
-        If ValidPlan(candidate, forbidden, settings) Then Set best = candidate
+        If ValidPlan(candidate, forbidden, settings) Then
+            ConsiderCandidate candidate, best, "Baseline Minimum", bestLabel, sharedPlanner
+        Else
+            AADebugWrite "Medium", "Baseline Minimum rejected: gap, collision, area or mark"
+        End If
+    Else
+        AADebugWrite "Medium", "Baseline Minimum unavailable: " & lastError
     End If
     If designCount = 1 Then
         firstIndex = designIndexes(0)
@@ -57,31 +65,37 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                 If cutCount = 1 Then pairCutIndex = cutIndexes(0)
                 For pairAngle = 0 To 315 Step 45
                     For rowMode = 0 To 1
-                        For patternMode = 0 To 2
-                            If patternMode = 1 And pairAngle <> 0 And pairAngle <> 90 Then Exit For
+                        For patternMode = 0 To 3
+                            If patternMode = 1 And pairAngle <> 0 And pairAngle <> 90 Then GoTo NextPairPattern
                             If patternMode = 2 Then
                                 If pairAngle <> 0 Or rowMode <> 0 Or _
-                                   Not models(firstIndex).IsTriangle Then Exit For
+                                   Not models(firstIndex).IsTriangle Then GoTo NextPairPattern
+                            End If
+                            ' Offset Y membuat urutan pasangan berpengaruh pada kurva asimetris.
+                            ' Coba kedua urutan di semua sudut siku, termasuk sumber yang sudah diputar.
+                            If patternMode = 3 Then
+                                If rowMode <> 0 Or pairAngle Mod 90 <> 0 Then Exit For
                             End If
                             Set candidate = Nothing
+                            candidateLabel = "Pair angle=" & CStr(pairAngle) & _
+                                " row=" & CStr(rowMode) & " pattern=" & CStr(patternMode)
+                            AADebugCandidateStart candidateLabel
+                            buildError = vbNullString
                             On Error Resume Next
                             Set candidate = BuildOppositeLattice(models(firstIndex), firstIndex, _
                                 pairCutIndex, settings, forbidden, CDbl(pairAngle), rowMode, patternMode)
-                            If Err.Number <> 0 Then lastError = Err.Description
+                            If Err.Number <> 0 Then
+                                buildError = "Error " & CStr(Err.Number) & ": " & Err.Description
+                                lastError = Err.Description
+                            End If
                             Err.Clear
                             On Error GoTo 0
-                            If Not candidate Is Nothing Then
-                                If Not sharedPlanner.FinalizeMedium(candidate, settings, sourceDocument) Then
-                                    Set candidate = RepairCentered(candidate, models, forbidden, settings)
-                                End If
-                                If Not candidate Is Nothing Then
-                                    If best Is Nothing Then
-                                        Set best = candidate
-                                    ElseIf sharedPlanner.BetterPlan(candidate, best) Then
-                                        Set best = candidate
-                                    End If
-                                End If
-                            End If
+                            AADebugCandidateEnd
+                            If Len(buildError) > 0 Then AADebugWrite "Pair", candidateLabel & " -> " & buildError
+                            Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
+                                sourceDocument, sharedPlanner, candidateLabel)
+                            ConsiderCandidate candidate, best, candidateLabel, bestLabel, sharedPlanner
+NextPairPattern:
                         Next patternMode
                     Next rowMode
                 Next pairAngle
@@ -106,42 +120,85 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
         For pattern = 0 To 1
             If pattern = 1 And Not hasZigZag Then GoTo NextPattern
             Set candidate = Nothing
+            candidateLabel = "Pass angle=" & CStr(angle) & " zigzag=" & CStr(pattern = 1)
+            AADebugCandidateStart candidateLabel
+            buildError = vbNullString
             On Error Resume Next
             Set candidate = BuildPass(models, designIndexes, designCount, cutIndexes, _
                 cutCount, quantities, settings, forbidden, CDbl(angle), (pattern = 1))
-            If Err.Number <> 0 Then lastError = Err.Description
+            If Err.Number <> 0 Then
+                buildError = "Error " & CStr(Err.Number) & ": " & Err.Description
+                lastError = Err.Description
+            End If
             Err.Clear
             On Error GoTo 0
-            If Not candidate Is Nothing Then
-                If Not sharedPlanner.FinalizeMedium(candidate, settings, sourceDocument) Then
-                    Set candidate = RepairCentered(candidate, models, forbidden, settings)
-                End If
-                If Not candidate Is Nothing Then
-                    If best Is Nothing Then
-                        Set best = candidate
-                    ElseIf sharedPlanner.BetterPlan(candidate, best) Then
-                        Set best = candidate
-                    End If
-                End If
-            End If
+            AADebugCandidateEnd
+            If Len(buildError) > 0 Then AADebugWrite "Medium", candidateLabel & " -> " & buildError
+            Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
+                sourceDocument, sharedPlanner, candidateLabel)
+            ConsiderCandidate candidate, best, candidateLabel, bestLabel, sharedPlanner
     NextPattern:
         Next pattern
     Next angle
     If best Is Nothing Then Err.Raise vbObjectError + 5241, "AAMediumPlanner", _
         "Tidak ditemukan susunan Medium yang memenuhi area, gap, dan mark." & _
         IIf(Len(lastError) > 0, vbCrLf & lastError, vbNullString)
-    Set candidate = CompactPlan(best, models, forbidden, settings)
-    If Not candidate Is Nothing Then
-        If Not sharedPlanner.FinalizeMedium(candidate, settings, sourceDocument) Then
-            Set candidate = RepairCentered(candidate, models, forbidden, settings)
-        End If
+    If best.HasRegularPattern Then
+        ' Compaction tidak menambah objek dan dapat merusak pola teratur.
+        AADebugWrite "Compact", "skipped: selected plan has a regular pattern"
+    Else
+        candidateLabel = "Compact " & bestLabel
+        AADebugCandidateStart candidateLabel
+        Set candidate = CompactPlan(best, models, forbidden, settings)
+        AADebugCandidateEnd
+        Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
+            sourceDocument, sharedPlanner, candidateLabel)
         If Not candidate Is Nothing Then
             If ValidPlan(candidate, forbidden, settings) Then
-                If sharedPlanner.BetterPlan(candidate, best) Then Set best = candidate
+                ConsiderCandidate candidate, best, candidateLabel, bestLabel, sharedPlanner
+            Else
+                AADebugWrite "Compact", "rejected: final validation"
             End If
         End If
     End If
+    AADebugPlan "Selected " & bestLabel, best
     Set Build = best
+End Function
+
+Private Sub ConsiderCandidate(ByVal candidate As AALayoutPlan, ByRef best As AALayoutPlan, _
+                              ByVal label As String, ByRef bestLabel As String, _
+                              ByVal sharedPlanner As AAPlanner)
+    Dim selected As Boolean
+    If candidate Is Nothing Then Exit Sub
+    AADebugPlan label, candidate
+    If best Is Nothing Then
+        selected = True
+    Else
+        selected = sharedPlanner.BetterPlan(candidate, best)
+    End If
+    If selected Then
+        AADebugWrite "Plan", "Selected " & label & " (previous=" & bestLabel & ")"
+        Set best = candidate
+        bestLabel = label
+    End If
+End Sub
+
+Private Function FinalizeCandidate(ByVal candidate As AALayoutPlan, ByRef models() As AAModel, _
+                                   ByVal forbidden As Collection, ByVal settings As AASettings, _
+                                   ByVal sourceDocument As Document, ByVal sharedPlanner As AAPlanner, _
+                                   ByVal label As String) As AALayoutPlan
+    AADebugPlan label & " raw", candidate
+    If candidate Is Nothing Then Exit Function
+    If Not sharedPlanner.FinalizeMedium(candidate, settings, sourceDocument) Then
+        AADebugWrite "Center", label & " -> individual repair required: area or mark"
+        AADebugCandidateStart label & " repair"
+        Set candidate = RepairCentered(candidate, models, forbidden, settings)
+        AADebugCandidateEnd
+        If candidate Is Nothing Then AADebugWrite "Center", label & " -> rejected: repair failed"
+    Else
+        AADebugWrite "Center", label & " -> OK (common shift)"
+    End If
+    Set FinalizeCandidate = candidate
 End Function
 
 Private Function CompactPlan(ByVal plan As AALayoutPlan, ByRef models() As AAModel, _
@@ -151,6 +208,7 @@ Private Function CompactPlan(ByVal plan As AALayoutPlan, ByRef models() As AAMod
     Dim orientation As AARotationVariant, result As AALayoutPlan
     Dim i As Long, j As Long, pass As Long, probes As Long, areaIndex As Long
     Dim hasCurve As Boolean
+    Dim moved As Long, previousX As Double, previousY As Double
     For Each placed In plan.Placements
         If Not models(placed.DesignIndex).IsRectangle Then hasCurve = True
     Next placed
@@ -166,6 +224,7 @@ Private Function CompactPlan(ByVal plan As AALayoutPlan, ByRef models() As AAMod
     Next i
     For pass = 1 To AA_COMPACTION_PASSES
         areaIndex = -1
+        moved = 0
         For i = 1 To plan.DesignCount
             If current(i).AreaIndex <> areaIndex Then
                 areaIndex = current(i).AreaIndex
@@ -178,10 +237,14 @@ Private Function CompactPlan(ByVal plan As AALayoutPlan, ByRef models() As AAMod
                 If j <> i And current(j).AreaIndex = areaIndex Then occupied.Add current(j)
             Next j
             Set orientation = models(current(i).DesignIndex).RotationVariant(current(i).RotationDelta)
+            previousX = current(i).Footprint.LeftX: previousY = current(i).Footprint.TopY
             Set current(i) = CompactAxis(current(i), orientation, occupied, forbidden, settings, True, probes)
             Set current(i) = CompactAxis(current(i), orientation, occupied, forbidden, settings, False, probes)
+            If Abs(current(i).Footprint.LeftX - previousX) > AA_EDGE_TOLERANCE_MM Or _
+               Abs(current(i).Footprint.TopY - previousY) > AA_EDGE_TOLERANCE_MM Then moved = moved + 1
 NextPlaced:
         Next i
+        AADebugWrite "Compact", "pass=" & CStr(pass) & " moved=" & CStr(moved)
     Next pass
     Set result = New AALayoutPlan
     result.Configure AA_MODE_MEDIUM
@@ -277,6 +340,7 @@ Private Function RepairCentered(ByVal plan As AALayoutPlan, ByRef models() As AA
     Dim current() As AAPlacement, occupied As Collection
     Dim orientation As AARotationVariant, candidate As AAPlacement
     Dim result As AALayoutPlan, i As Long, j As Long, probes As Long, areaIndex As Long
+    Dim moved As Long
     If plan.DesignCount = 0 Then
         Set RepairCentered = plan
         Exit Function
@@ -301,16 +365,23 @@ Private Function RepairCentered(ByVal plan As AALayoutPlan, ByRef models() As AA
                 areaIndex, current(i).SlotLeft, current(i).SlotTop, _
                 occupied, forbidden, settings, current(i).GapH, current(i).GapV, _
                 probes, AA_MAX_PROBES_PER_AREA)
-            If candidate Is Nothing Then Exit Function
+            If candidate Is Nothing Then
+                AADebugWrite "Repair", "failed at object=" & CStr(i) & "; moved=" & CStr(moved)
+                Exit Function
+            End If
+            If Abs(candidate.Footprint.LeftX - current(i).Footprint.LeftX) > AA_EDGE_TOLERANCE_MM Or _
+               Abs(candidate.Footprint.TopY - current(i).Footprint.TopY) > AA_EDGE_TOLERANCE_MM Then moved = moved + 1
             Set current(i) = candidate
         End If
     Next i
     Set result = New AALayoutPlan
     result.Configure AA_MODE_MEDIUM
+    result.SetRegularPattern plan.HasRegularPattern And moved = 0
     For i = 1 To plan.DesignCount
         result.Add current(i)
     Next i
     Set RepairCentered = result
+    AADebugWrite "Repair", "moved=" & CStr(moved) & "; regular=" & CStr(result.HasRegularPattern)
 End Function
 
 Private Function AdaptMinimum(ByVal source As AALayoutPlan, _
@@ -318,14 +389,20 @@ Private Function AdaptMinimum(ByVal source As AALayoutPlan, _
     Dim result As AALayoutPlan, placed As AAPlacement
     Dim orientation As AARotationVariant
     Dim h As Double, v As Double
+    Dim firstIndex As Long, singleDesign As Boolean
     Set result = New AALayoutPlan
     result.Configure AA_MODE_MEDIUM
+    firstIndex = -1
+    singleDesign = True
     For Each placed In source.Placements
+        If firstIndex < 0 Then firstIndex = placed.DesignIndex
+        If placed.DesignIndex <> firstIndex Then singleDesign = False
         models(placed.DesignIndex).GetBoundaryGaps AA_MODE_STRAIGHT, h, v
         Set orientation = models(placed.DesignIndex).RotationVariant(0#)
         result.Add orientation.MakePlacement(placed.DesignIndex, placed.CutIndex, _
             placed.AreaIndex, placed.Footprint.LeftX, placed.Footprint.TopY, h, v)
     Next placed
+    result.SetRegularPattern source.DesignCount > 0 And singleDesign
     Set AdaptMinimum = result
 End Function
 
@@ -441,13 +518,8 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
     If h < 0# Or v < 0# Then Exit Function
     Set forward = model.RotationVariant(firstAngle)
     Set reverse = model.RotationVariant((firstAngle + 180#) Mod 360#)
-    If patternMode = 2 Then
-        Set BuildOppositeLattice = BuildTightPairLattice(forward, reverse, _
-            designIndex, cutIndex, settings, forbidden, h, v)
-        Exit Function
-    End If
     slotLimit = AA_MAX_SLOTS_PER_AREA
-    If patternMode = 1 Then
+    If patternMode = 1 Or patternMode = 3 Then
         ' Pasangan kedua naik sebesar Gap V, dalam batas pergeseran Medium.
         phaseY = MinValue(v, MinValue(forward.ReferenceHeight, _
             reverse.ReferenceHeight) * AA_SHIFT_FACTOR)
@@ -457,6 +529,11 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
     scanContacts = Not model.IsTriangle
     If scanContacts Then
         If forward.Contour.Edges.Count > AA_MAX_PAIR_CONTOUR_EDGES Then Exit Function
+    End If
+    If patternMode = 2 Or patternMode = 3 Then
+        Set BuildOppositeLattice = BuildTightPairLattice(forward, reverse, _
+            designIndex, cutIndex, settings, forbidden, h, v, phaseY, scanContacts)
+        Exit Function
     End If
     stepX = OppositeHorizontalPitch(forward, reverse, h, v, phaseY, scanContacts)
     If stepX <= AA_COMPACTION_TOLERANCE_MM Then Exit Function
@@ -468,6 +545,11 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
     result.Configure AA_MODE_MEDIUM
     Set occupied = New Collection
     y = settings.AreaHeightMM - phaseY
+    result.SetRegularPattern True
+    If AADebugEnabled Then AADebugWrite "Pair", "angle=" & CStr(firstAngle) & _
+        " row=" & CStr(rowMode) & " pattern=" & CStr(patternMode) & _
+        "; phase=" & Format$(phaseY, "0.000000") & "; step=" & _
+        Format$(stepX, "0.000000") & "/" & Format$(stepY, "0.000000")
     Do While y >= MinValue(forward.Height, reverse.Height - phaseY) - _
         AA_EDGE_TOLERANCE_MM
         x = 0#
@@ -506,25 +588,32 @@ Private Function BuildTightPairLattice(ByVal forward As AARotationVariant, _
                                        ByVal designIndex As Long, ByVal cutIndex As Long, _
                                        ByVal settings As AASettings, _
                                        ByVal forbidden As Collection, _
-                                       ByVal h As Double, ByVal v As Double) As AALayoutPlan
+                                       ByVal h As Double, ByVal v As Double, _
+                                       ByVal phaseY As Double, _
+                                       ByVal scanContacts As Boolean) As AALayoutPlan
     Dim result As AALayoutPlan, occupied As Collection
     Dim candidate As AAPlacement
     Dim innerX As Double, pairStep As Double, rowStep As Double
     Dim x As Double, y As Double, probes As Long
 
-    ' Dua segitiga satu pasangan: sela dalam mengikuti kontur,
+    ' Dua objek satu pasangan: sela dalam mengikuti kontur,
     ' sedangkan pasangan berikutnya dipisahkan oleh bounds dan Gap H.
-    innerX = OppositePairInset(forward, reverse, h, v)
+    innerX = OppositePairInset(forward, reverse, h, v, phaseY, scanContacts)
+    If AADebugEnabled Then AADebugWrite "Pair", "angle=" & CStr(forward.Angle) & _
+        "; phase=" & Format$(phaseY, "0.000000") & "; inset=" & Format$(innerX, "0.000000")
     If innerX < 0# Then Exit Function
-    pairStep = innerX + reverse.Width + h
-    rowStep = MaxValue(forward.Height, reverse.Height) + v
+    pairStep = MaxValue(forward.Width, innerX + reverse.Width) + h
+    rowStep = MaxValue(forward.Height + phaseY, reverse.Height) + v
+    If AADebugEnabled Then AADebugWrite "Pair", "pair step=" & Format$(pairStep, "0.000000") & _
+        "; row step=" & Format$(rowStep, "0.000000")
     If pairStep <= AA_COMPACTION_TOLERANCE_MM Or _
        rowStep <= AA_COMPACTION_TOLERANCE_MM Then Exit Function
     Set result = New AALayoutPlan
     result.Configure AA_MODE_MEDIUM
     Set occupied = New Collection
-    y = settings.AreaHeightMM
-    Do While y >= MaxValue(forward.Height, reverse.Height) - AA_EDGE_TOLERANCE_MM
+    y = settings.AreaHeightMM - phaseY
+    result.SetRegularPattern True
+    Do While y >= MaxValue(forward.Height, reverse.Height - phaseY) - AA_EDGE_TOLERANCE_MM
         x = 0#
         Do While x <= settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM
             probes = probes + 1
@@ -539,7 +628,7 @@ Private Function BuildTightPairLattice(ByVal forward As AARotationVariant, _
             probes = probes + 1
             If probes > AA_MAX_PHASE_SLOTS_PER_AREA Then Exit Do
             Set candidate = TryExactSlot(reverse, designIndex, cutIndex, 0, _
-                x + innerX, y, occupied, forbidden, settings, h, v)
+                x + innerX, y + phaseY, occupied, forbidden, settings, h, v)
             If Not candidate Is Nothing Then
                 result.Add candidate
                 occupied.Add candidate
@@ -556,30 +645,57 @@ End Function
 
 Private Function OppositePairInset(ByVal forward As AARotationVariant, _
                                    ByVal reverse As AARotationVariant, _
-                                   ByVal h As Double, ByVal v As Double) As Double
+                                   ByVal h As Double, ByVal v As Double, _
+                                   ByVal phaseY As Double, _
+                                   ByVal scanContacts As Boolean) As Double
     Dim first As AAPlacement, second As AAPlacement
     Dim low As Double, high As Double, middle As Double, topY As Double
+    Dim scanUpper As Double, trial As Double
     Dim i As Long
 
     topY = MaxValue(forward.Height, reverse.Height)
     high = MaxValue(forward.Width, reverse.Width) + MaxValue(h, v) + 2#
     Set first = forward.MakePlacement(0, -1, 0, 0#, topY, h, v)
-    Set second = reverse.MakePlacement(0, -1, 0, 0#, topY, h, v)
+    Set second = reverse.MakePlacement(0, -1, 0, 0#, topY + phaseY, h, v)
     If OppositeClear(first, second) Then Exit Function
-    Set second = reverse.MakePlacement(0, -1, 0, high, topY, h, v)
+    Set second = reverse.MakePlacement(0, -1, 0, high, topY + phaseY, h, v)
     If Not OppositeClear(first, second) Then
         OppositePairInset = -1#
         Exit Function
     End If
+    ' Kurva cekung dapat punya beberapa rentang kontak aman.
+    If scanContacts Then
+        scanUpper = high
+        For i = 1 To AA_PAIR_CONTACT_SCAN_STEPS
+            trial = scanUpper * i / AA_PAIR_CONTACT_SCAN_STEPS
+            Set second = reverse.MakePlacement(0, -1, 0, trial, topY + phaseY, h, v)
+            If OppositeClear(first, second) Then
+                low = scanUpper * (i - 1) / AA_PAIR_CONTACT_SCAN_STEPS
+                high = trial
+                Exit For
+            End If
+        Next i
+    End If
     For i = 1 To 12
         middle = (low + high) / 2#
-        Set second = reverse.MakePlacement(0, -1, 0, middle, topY, h, v)
+        Set second = reverse.MakePlacement(0, -1, 0, middle, topY + phaseY, h, v)
         If OppositeClear(first, second) Then
             high = middle
         Else
             low = middle
         End If
     Next i
+    If scanContacts And (h > 0# Or v > 0#) Then
+        ' Inset pada ambang toleransi dapat gagal setelah bounds kurva dibulatkan.
+        ' Cadangan kecil menjauhkan kontak kurva custom dari ambang tersebut.
+        ' Periksa ulang karena kurva cekung dapat punya rentang aman yang sempit.
+        high = high + AA_PAIR_INSET_RESERVE_MM
+        Set second = reverse.MakePlacement(0, -1, 0, high, topY + phaseY, h, v)
+        If Not OppositeClear(first, second) Then
+            OppositePairInset = -1#
+            Exit Function
+        End If
+    End If
     OppositePairInset = high
 End Function
 
@@ -770,7 +886,10 @@ Private Function TryExactSlot(ByVal orientation As AARotationVariant, ByVal desi
     Dim candidate As AAPlacement
     If x < -AA_EDGE_TOLERANCE_MM Or y - orientation.Height < -AA_EDGE_TOLERANCE_MM Or _
        x + orientation.Width > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
-       y > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then Exit Function
+       y > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then
+        AADebugRejectSlot "bounds"
+        Exit Function
+    End If
     If Not HasClearanceAt(orientation, x, y, occupied, h, v) Then Exit Function
     Set candidate = orientation.MakePlacement(designIndex, cutIndex, areaIndex, x, y, h, v)
     If Fits(candidate, occupied, forbidden, settings, True) Then Set TryExactSlot = candidate
@@ -788,7 +907,10 @@ Private Function HasClearanceAt(ByVal orientation As AARotationVariant, ByVal x 
         gap = MaxValue(MaxValue(h, v), MaxValue(placed.GapH, placed.GapV))
         If leftX < other.RightX + gap And rightX > other.LeftX - gap And _
            bottomY < other.TopY + gap And topY > other.BottomY - gap Then
-            If Not orientation.HasClearanceAt(x, y, placed, h, v) Then Exit Function
+            If Not orientation.HasClearanceAt(x, y, placed, h, v) Then
+                AADebugGapRejected orientation, x, y, placed, h, v
+                Exit Function
+            End If
         End If
     Next placed
     HasClearanceAt = True
@@ -1101,10 +1223,16 @@ Private Function Fits(ByVal candidate As AAPlacement, ByVal occupied As Collecti
     Set box = candidate.Footprint
     If box.LeftX < -AA_EDGE_TOLERANCE_MM Or box.BottomY < -AA_EDGE_TOLERANCE_MM Or _
        box.RightX > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
-       box.TopY > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then Exit Function
+       box.TopY > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then
+        AADebugRejectSlot "bounds"
+        Exit Function
+    End If
     Set collision = candidate.CollisionFootprint
     For Each obstacle In forbidden
-        If collision.Overlaps(obstacle) Then Exit Function
+        If collision.Overlaps(obstacle) Then
+            AADebugRejectSlot "mark"
+            Exit Function
+        End If
     Next obstacle
     For Each placed In occupied
         Set other = placed.CollisionFootprint
@@ -1112,9 +1240,15 @@ Private Function Fits(ByVal candidate As AAPlacement, ByVal occupied As Collecti
         If collision.LeftX < other.RightX + gap And collision.RightX > other.LeftX - gap And _
            collision.BottomY < other.TopY + gap And collision.TopY > other.BottomY - gap Then
             If Not clearanceChecked Then
-                If Not candidate.HasClearance(placed) Then Exit Function
+                If Not candidate.HasClearance(placed) Then
+                    AADebugRejectSlot "gap"
+                    Exit Function
+                End If
             End If
-            If collision.Overlaps(other) Then Exit Function
+            If collision.Overlaps(other) Then
+                AADebugOverlapRejected candidate, placed
+                Exit Function
+            End If
         End If
     Next placed
     Fits = True

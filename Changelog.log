@@ -68,3 +68,20 @@ Catatan: Auto, Process, dan antrean objek belum aktif.
 
 [Medium: pasangan dengan offset vertikal]
 ~ Medium mencoba susunan pasangan rotasi 0°/180° dan 90°/270° dengan offset vertikal sesuai Gap V, lalu membandingkannya dengan susunan sebelumnya.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-05
+[Medium: penempatan hasil rotasi]
+~ Objek asimetris yang diputar kini ditempatkan menurut bounding box hasil perencanaan, sehingga susunan segitiga siku siku tidak saling tumpang tindih.
+
+[Medium: pasangan segitiga rapat]
+~ Medium mencoba pasangan segitiga 0°/180° yang dirapatkan menurut kontur, sehingga lebih banyak objek dapat tersusun tanpa mengubah gap yang ditetapkan.
+
+[Medium: pasangan rapat kurva custom]
+~ Medium mencoba pasangan rapat kurva custom sederhana dengan offset vertikal pada kedua urutan rotasi 0°/180° dan 90°/270°.
+~ Menstabilkan inset pasangan terhadap pembulatan koordinat; uji bentuk L 20 x 20 mm meningkat dari 329 menjadi 416 objek.
+
+[Medium: keteraturan pola saat jumlah sama]
++ Menambahkan mode debug opsional di Immediate Window melalui module AADebug, dengan keluaran ringkas atau detail; default nonaktif.
+~ Medium mengutamakan pola baris/kolom berulang ketika jumlah container dan objek sama; perapatan individual dilewati pada kandidat teratur. Offset tetap di dalam pasangan masih dipertahankan.
+Catatan: mode debug belum dilakukan pengujian runtime.

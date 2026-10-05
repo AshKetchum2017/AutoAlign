@@ -67,6 +67,9 @@ Friend Function BetterPlan(ByVal candidate As AALayoutPlan, _
         BetterPlan = (candidate.AreaCount < reference.AreaCount)
     ElseIf candidate.DesignCount <> reference.DesignCount Then
         BetterPlan = (candidate.DesignCount > reference.DesignCount)
+    ElseIf candidate.LayoutMode = AA_MODE_MEDIUM And reference.LayoutMode = AA_MODE_MEDIUM And _
+           candidate.HasRegularPattern <> reference.HasRegularPattern Then
+        BetterPlan = candidate.HasRegularPattern
     Else
         candidateBoundsArea = OccupiedBoundsArea(candidate)
         referenceBoundsArea = OccupiedBoundsArea(reference)
