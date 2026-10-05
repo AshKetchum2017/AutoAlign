@@ -26,7 +26,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     Dim forbidden As Collection, angles As Collection, angle As Variant
     Dim firstVariant As AARotationVariant
     Dim firstIndex As Long, i As Long, pattern As Long, lastError As String
-    Dim pairAngle As Long, rowMode As Long, phaseMode As Long, pairCutIndex As Long
+    Dim pairAngle As Long, rowMode As Long, patternMode As Long, pairCutIndex As Long
     Dim hasZigZag As Boolean, pairEligible As Boolean
     Set forbidden = sharedPlanner.ForbiddenFor(settings, sourceDocument)
     On Error Resume Next
@@ -57,12 +57,16 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                 If cutCount = 1 Then pairCutIndex = cutIndexes(0)
                 For pairAngle = 0 To 315 Step 45
                     For rowMode = 0 To 1
-                        For phaseMode = 0 To 1
-                            If phaseMode = 1 And pairAngle <> 0 And pairAngle <> 90 Then Exit For
+                        For patternMode = 0 To 2
+                            If patternMode = 1 And pairAngle <> 0 And pairAngle <> 90 Then Exit For
+                            If patternMode = 2 Then
+                                If pairAngle <> 0 Or rowMode <> 0 Or _
+                                   Not models(firstIndex).IsTriangle Then Exit For
+                            End If
                             Set candidate = Nothing
                             On Error Resume Next
                             Set candidate = BuildOppositeLattice(models(firstIndex), firstIndex, _
-                                pairCutIndex, settings, forbidden, CDbl(pairAngle), rowMode, phaseMode)
+                                pairCutIndex, settings, forbidden, CDbl(pairAngle), rowMode, patternMode)
                             If Err.Number <> 0 Then lastError = Err.Description
                             Err.Clear
                             On Error GoTo 0
@@ -78,7 +82,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                                     End If
                                 End If
                             End If
-                        Next phaseMode
+                        Next patternMode
                     Next rowMode
                 Next pairAngle
             End If
@@ -423,7 +427,7 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
                                       ByVal forbidden As Collection, _
                                       ByVal firstAngle As Double, _
                                       ByVal rowMode As Long, _
-                                      ByVal phaseMode As Long) As AALayoutPlan
+                                      ByVal patternMode As Long) As AALayoutPlan
     Dim forward As AARotationVariant, reverse As AARotationVariant
     Dim result As AALayoutPlan, occupied As Collection
     Dim orientation As AARotationVariant, candidate As AAPlacement
@@ -437,8 +441,13 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
     If h < 0# Or v < 0# Then Exit Function
     Set forward = model.RotationVariant(firstAngle)
     Set reverse = model.RotationVariant((firstAngle + 180#) Mod 360#)
+    If patternMode = 2 Then
+        Set BuildOppositeLattice = BuildTightPairLattice(forward, reverse, _
+            designIndex, cutIndex, settings, forbidden, h, v)
+        Exit Function
+    End If
     slotLimit = AA_MAX_SLOTS_PER_AREA
-    If phaseMode = 1 Then
+    If patternMode = 1 Then
         ' Pasangan kedua naik sebesar Gap V, dalam batas pergeseran Medium.
         phaseY = MinValue(v, MinValue(forward.ReferenceHeight, _
             reverse.ReferenceHeight) * AA_SHIFT_FACTOR)
@@ -490,6 +499,88 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
         rowIndex = rowIndex + 1
     Loop
     If result.DesignCount > 0 Then Set BuildOppositeLattice = result
+End Function
+
+Private Function BuildTightPairLattice(ByVal forward As AARotationVariant, _
+                                       ByVal reverse As AARotationVariant, _
+                                       ByVal designIndex As Long, ByVal cutIndex As Long, _
+                                       ByVal settings As AASettings, _
+                                       ByVal forbidden As Collection, _
+                                       ByVal h As Double, ByVal v As Double) As AALayoutPlan
+    Dim result As AALayoutPlan, occupied As Collection
+    Dim candidate As AAPlacement
+    Dim innerX As Double, pairStep As Double, rowStep As Double
+    Dim x As Double, y As Double, probes As Long
+
+    ' Dua segitiga satu pasangan: sela dalam mengikuti kontur,
+    ' sedangkan pasangan berikutnya dipisahkan oleh bounds dan Gap H.
+    innerX = OppositePairInset(forward, reverse, h, v)
+    If innerX < 0# Then Exit Function
+    pairStep = innerX + reverse.Width + h
+    rowStep = MaxValue(forward.Height, reverse.Height) + v
+    If pairStep <= AA_COMPACTION_TOLERANCE_MM Or _
+       rowStep <= AA_COMPACTION_TOLERANCE_MM Then Exit Function
+    Set result = New AALayoutPlan
+    result.Configure AA_MODE_MEDIUM
+    Set occupied = New Collection
+    y = settings.AreaHeightMM
+    Do While y >= MaxValue(forward.Height, reverse.Height) - AA_EDGE_TOLERANCE_MM
+        x = 0#
+        Do While x <= settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM
+            probes = probes + 1
+            If probes > AA_MAX_PHASE_SLOTS_PER_AREA Then Exit Do
+            Set candidate = TryExactSlot(forward, designIndex, cutIndex, 0, _
+                x, y, occupied, forbidden, settings, h, v)
+            If Not candidate Is Nothing Then
+                result.Add candidate
+                occupied.Add candidate
+                If result.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit Do
+            End If
+            probes = probes + 1
+            If probes > AA_MAX_PHASE_SLOTS_PER_AREA Then Exit Do
+            Set candidate = TryExactSlot(reverse, designIndex, cutIndex, 0, _
+                x + innerX, y, occupied, forbidden, settings, h, v)
+            If Not candidate Is Nothing Then
+                result.Add candidate
+                occupied.Add candidate
+                If result.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit Do
+            End If
+            x = x + pairStep
+        Loop
+        If result.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Or _
+           probes > AA_MAX_PHASE_SLOTS_PER_AREA Then Exit Do
+        y = y - rowStep
+    Loop
+    If result.DesignCount > 0 Then Set BuildTightPairLattice = result
+End Function
+
+Private Function OppositePairInset(ByVal forward As AARotationVariant, _
+                                   ByVal reverse As AARotationVariant, _
+                                   ByVal h As Double, ByVal v As Double) As Double
+    Dim first As AAPlacement, second As AAPlacement
+    Dim low As Double, high As Double, middle As Double, topY As Double
+    Dim i As Long
+
+    topY = MaxValue(forward.Height, reverse.Height)
+    high = MaxValue(forward.Width, reverse.Width) + MaxValue(h, v) + 2#
+    Set first = forward.MakePlacement(0, -1, 0, 0#, topY, h, v)
+    Set second = reverse.MakePlacement(0, -1, 0, 0#, topY, h, v)
+    If OppositeClear(first, second) Then Exit Function
+    Set second = reverse.MakePlacement(0, -1, 0, high, topY, h, v)
+    If Not OppositeClear(first, second) Then
+        OppositePairInset = -1#
+        Exit Function
+    End If
+    For i = 1 To 12
+        middle = (low + high) / 2#
+        Set second = reverse.MakePlacement(0, -1, 0, middle, topY, h, v)
+        If OppositeClear(first, second) Then
+            high = middle
+        Else
+            low = middle
+        End If
+    Next i
+    OppositePairInset = high
 End Function
 
 Private Function OppositeHorizontalPitch(ByVal forward As AARotationVariant, _

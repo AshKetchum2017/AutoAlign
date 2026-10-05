@@ -131,10 +131,10 @@ Private Sub OrientAndPlace(ByVal targetShape As Shape, ByVal placement As AAPlac
         delta = delta - 360# * Int(delta / 360#)
         If Abs(delta) > 0.000001 Then _
             targetShape.RotateEx delta, targetShape.CenterX, targetShape.CenterY
-        targetShape.CenterX = pageCenterX - settings.AreaWidthMM / 2# + _
-            placement.AreaIndex * (settings.AreaWidthMM + AA_GROUP_GAP_MM) + placement.CenterX
-        targetShape.CenterY = pageCenterY - settings.AreaHeightMM / 2# + placement.CenterY
-    ElseIf isCut Then
+    End If
+    ' Acuan planner adalah bounds sesudah rotasi. Pada bentuk asimetris,
+    ' pusat bounds tersebut tidak sama dengan pusat rotasi sumber.
+    If isCut Then
         PlaceShape targetShape, placement.CutLeft, placement.CutTop, _
             placement.AreaIndex, settings, pageCenterX, pageCenterY
     Else

@@ -62,6 +62,7 @@ Public Sub GetMinimumSteps(ByVal layoutMode As Long, ByRef horizontalStep As Dou
                            ByRef verticalStep As Double)
     Dim cached As Variant, orientation As AARotationVariant, origin As AAPlacement
     Dim h As Double, v As Double, key As String, rowOffset As Double
+    Dim contactH As Double, contactV As Double
     GetSteps layoutMode, horizontalStep, verticalStep
     If mRectangle Then Exit Sub
     key = CStr(layoutMode)
@@ -72,18 +73,23 @@ Public Sub GetMinimumSteps(ByVal layoutMode As Long, ByRef horizontalStep As Dou
     End If
     GetBoundaryGaps layoutMode, h, v
     Set orientation = RotationVariant(0#)
-    Set origin = orientation.MakePlacement(0, -1, 0, 0#, orientation.Height, _
-        MaxNonnegative(h), MaxNonnegative(v))
     ' Persen tetap langkah Top/Left; nilai negatif mempertahankan kontrak lama.
     If h >= 0# And Not (mSettings.HasHorizontalGap And mSettings.HorizontalPercent) Then
-        horizontalStep = ContactPitch(orientation, origin, True, horizontalStep, 0#, h, v)
+        ' Tetangga dalam satu baris memakai Gap H, termasuk segmen miring kurva.
+        Set origin = orientation.MakePlacement(0, -1, 0, 0#, orientation.Height, h, h)
+        horizontalStep = ContactPitch(orientation, origin, True, horizontalStep, 0#, h, h)
     End If
     ' ZigZag kosong tetap 88%. Gap literal V memakai kontak dengan kedua tetangga.
     If v >= 0# And Not (mSettings.HasVerticalGap And mSettings.VerticalPercent) Then
         If layoutMode = AA_MODE_STRAIGHT Or mSettings.HasVerticalGap Then
             If layoutMode = AA_MODE_ZIGZAG Then rowOffset = horizontalStep / 2#
+            contactH = h: contactV = v
+            ' Baris lurus memakai Gap V; ZigZag diagonal memakai kedua gap.
+            If rowOffset = 0# Then contactH = v
+            Set origin = orientation.MakePlacement(0, -1, 0, 0#, orientation.Height, _
+                MaxNonnegative(contactH), MaxNonnegative(contactV))
             verticalStep = ContactPitch(orientation, origin, False, _
-                verticalStep, rowOffset, h, v)
+                verticalStep, rowOffset, contactH, contactV)
         End If
     End If
     mMinimumSteps.Add key, Array(horizontalStep, verticalStep)
