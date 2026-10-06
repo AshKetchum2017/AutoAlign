@@ -44,6 +44,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim errorSource As String
     Dim errorDescription As String
     Dim operation As String
+    Dim hasQuantityGroups As Boolean
 
     feedback = vbNullString
     feedbackStyle = vbExclamation
@@ -83,6 +84,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     ReDim cutIndexes(0 To entryCount - 1)
     operation = "mencari semua object terdaftar"
     For entryIndex = 0 To entryCount - 1
+        objects.ValidateQuantityAt entryIndex
+        If objects.QuantityGroupAt(entryIndex) > 0 Then hasQuantityGroups = True
         Set sourceShapes(entryIndex) = FindTopLevelShape(targetPage, _
             objects.StaticIDAt(entryIndex))
         If sourceShapes(entryIndex) Is Nothing Then
@@ -159,7 +162,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         layoutDesignIndexes(roleIndex) = designIndexes(roleIndex)
     Next roleIndex
     layoutDesignCount = designCount
-    If cutCount = 1 And designCount > 1 Then
+    If Not hasQuantityGroups And cutCount = 1 And designCount > 1 Then
         For roleIndex = 0 To designCount - 1
             entryIndex = designIndexes(roleIndex)
             If quantities(entryIndex) <> 0 Then
@@ -173,7 +176,11 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
 
     operation = "merencanakan collision dan Quantity"
     Set planner = New AAPlanner
-    If layoutMode = AA_MODE_MEDIUM Then
+    If hasQuantityGroups Then
+        operation = "merencanakan kelompok Quantity"
+        Set plan = BuildQuantityGroups(objects, models, designIndexes, designCount, _
+            cutIndexes, cutCount, quantities, settings, doc, layoutMode, planner)
+    ElseIf layoutMode = AA_MODE_MEDIUM Then
         Set plan = planner.BuildMedium(models, layoutDesignIndexes, layoutDesignCount, _
             cutIndexes, cutCount, quantities, settings, doc)
     Else
@@ -187,7 +194,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         GoTo CleanExit
     End If
     sharedCutOwnerIndex = -1
-    If cutCount = 1 And designCount > 1 Then
+    If Not hasQuantityGroups And cutCount = 1 And designCount > 1 Then
         operation = "menyamakan susunan Cut Line bersama"
         Set plan = ShareCutLayout(plan, models, designIndexes, designCount, _
             quantities, planner, settings, doc, sharedCutOwnerIndex)
@@ -285,6 +292,201 @@ RunFailed:
             "Periksa hasil di dokumen sebelum melanjutkan."
     End If
 End Sub
+
+Private Function BuildQuantityGroups(ByVal objects As AAObjectStore, ByRef models() As AAModel, _
+                                     ByRef designIndexes() As Long, ByVal designCount As Long, _
+                                     ByRef cutIndexes() As Long, ByVal cutCount As Long, _
+                                     ByRef quantities() As Long, ByVal settings As AASettings, _
+                                     ByVal sourceDocument As Document, ByVal layoutMode As Long, _
+                                     ByVal planner As AAPlanner) As AALayoutPlan
+    Dim groups As Object, groupNumbers() As Long, keys As Variant
+    Dim selectedDesigns() As Long, selectedCuts() As Long, layoutDesigns() As Long
+    Dim result As AALayoutPlan, part As AALayoutPlan, balanced As AAQuantityPlanner
+    Dim roleIndex As Long, i As Long, j As Long, groupNumber As Long, swap As Long
+    Dim selectedCount As Long, selectedCutCount As Long, layoutCount As Long, cutOwner As Long
+    Set groups = CreateObject("Scripting.Dictionary")
+    For roleIndex = 0 To designCount - 1
+        groupNumber = objects.QuantityGroupAt(designIndexes(roleIndex))
+        If groupNumber > 0 Then groups(CStr(groupNumber)) = groupNumber
+    Next roleIndex
+    keys = groups.Keys
+    ReDim groupNumbers(0 To groups.Count - 1)
+    For i = 0 To groups.Count - 1
+        groupNumbers(i) = CLng(keys(i))
+    Next i
+    For i = 1 To UBound(groupNumbers)
+        j = i
+        Do While j > 0
+            If groupNumbers(j - 1) <= groupNumbers(j) Then Exit Do
+            swap = groupNumbers(j - 1)
+            groupNumbers(j - 1) = groupNumbers(j)
+            groupNumbers(j) = swap
+            j = j - 1
+        Loop
+    Next i
+    Set result = New AALayoutPlan
+    result.Configure layoutMode
+    result.SetRegularPattern True
+    Set balanced = New AAQuantityPlanner
+    ' /n diproses menurut nomor; Quantity lama diproses sesudahnya, terpisah.
+    For i = 0 To groups.Count
+        groupNumber = 0
+        If i < groups.Count Then groupNumber = groupNumbers(i)
+        ReDim selectedDesigns(0 To designCount - 1)
+        ReDim selectedCuts(0 To designCount - 1)
+        selectedCount = 0: selectedCutCount = 0
+        For roleIndex = 0 To designCount - 1
+            If objects.QuantityGroupAt(designIndexes(roleIndex)) = groupNumber Then
+                selectedDesigns(selectedCount) = designIndexes(roleIndex)
+                If cutCount = designCount And cutCount > 1 Then _
+                    selectedCuts(selectedCount) = cutIndexes(roleIndex)
+                selectedCount = selectedCount + 1
+            End If
+        Next roleIndex
+        If selectedCount = 0 Then GoTo NextGroup
+        If cutCount = 1 Then
+            selectedCuts(0) = cutIndexes(0)
+            selectedCutCount = 1
+        ElseIf cutCount > 1 Then
+            selectedCutCount = selectedCount
+        End If
+        If groupNumber > 0 Then
+            AADebugWrite "Quantity", "group=/" & CStr(groupNumber) & "; members=" & CStr(selectedCount)
+        Else
+            AADebugWrite "Quantity", "legacy quantities; members=" & CStr(selectedCount)
+        End If
+        cutOwner = -1
+        If groupNumber > 0 Then
+            Set part = balanced.BuildGroup(models, selectedDesigns, selectedCount, _
+                selectedCuts, selectedCutCount, settings, sourceDocument, layoutMode, planner)
+            If part.AreaCount <> 1 Then Err.Raise vbObjectError + 5334, "AAProcessEngine", _
+                "Kelompok /" & CStr(groupNumber) & " harus menghasilkan tepat satu container."
+        Else
+            ReDim layoutDesigns(0 To selectedCount - 1)
+            layoutCount = selectedCount
+            For j = 0 To selectedCount - 1
+                layoutDesigns(j) = selectedDesigns(j)
+            Next j
+            If selectedCutCount = 1 And selectedCount > 1 Then
+                For j = 0 To selectedCount - 1
+                    If quantities(selectedDesigns(j)) <> 0 Then
+                        layoutDesigns(0) = selectedDesigns(j)
+                        layoutCount = 1
+                        Exit For
+                    End If
+                Next j
+            End If
+            If layoutMode = AA_MODE_MEDIUM Then
+                Set part = planner.BuildMedium(models, layoutDesigns, layoutCount, selectedCuts, _
+                    selectedCutCount, quantities, settings, sourceDocument)
+            Else
+                Set part = planner.BuildMinimum(models, layoutDesigns, layoutCount, selectedCuts, _
+                    selectedCutCount, quantities, settings, sourceDocument)
+            End If
+            If selectedCutCount = 1 And selectedCount > 1 And part.DesignCount > 0 Then _
+                Set part = ShareCutLayout(part, models, selectedDesigns, selectedCount, quantities, _
+                    planner, settings, sourceDocument, cutOwner)
+        End If
+        AppendQuantityPlan result, part, cutOwner
+NextGroup:
+    Next i
+    If cutCount = 1 Then SuppressDuplicateCutTemplates result
+    If Not planner.FinalPlanFits(result, settings, sourceDocument) Then Err.Raise _
+        vbObjectError + 5331, "AAProcessEngine", "Kelompok Quantity tidak memenuhi batas area atau mark."
+    Set BuildQuantityGroups = result
+End Function
+
+Private Sub AppendQuantityPlan(ByVal result As AALayoutPlan, ByVal part As AALayoutPlan, _
+                               ByVal cutOwner As Long)
+    Dim placed As AAPlacement, areaBase As Long
+    If part.DesignCount = 0 Then Exit Sub
+    areaBase = result.AreaCount
+    result.SetRegularPattern result.HasRegularPattern And part.HasRegularPattern
+    For Each placed In part.Placements
+        placed.SetAreaIndex areaBase + placed.AreaIndex
+        ' Cut template Quantity lama hanya dicetak pada Design pemiliknya.
+        If cutOwner >= 0 And placed.DesignIndex <> cutOwner Then placed.SuppressCutLine
+        result.Add placed
+    Next placed
+End Sub
+
+Private Sub SuppressDuplicateCutTemplates(ByVal plan As AALayoutPlan)
+    Dim templates As Collection, slots As Object, reference As Object
+    Dim copies As Collection
+    Dim placed As AAPlacement, key As String, areaIndex As Long, i As Long
+    Dim duplicate As Boolean
+    Set templates = New Collection
+    For areaIndex = 0 To plan.AreaCount - 1
+        Set slots = CreateObject("Scripting.Dictionary")
+        For Each placed In plan.Placements
+            If placed.AreaIndex = areaIndex And placed.CutIndex >= 0 And placed.CreatesCutLine Then
+                ' Susunan dibandingkan tanpa urutan Design; jangan menyamakan
+                ' layout yang hanya punya jumlah sama atau posisi yang mendekati.
+                key = CStr(placed.CutIndex) & "|" & Format$(placed.CutLeft, "0.000000000") & _
+                    "|" & Format$(placed.CutTop, "0.000000000")
+                If Not slots.Exists(key) Then
+                    Set copies = New Collection
+                    slots.Add key, copies
+                End If
+                Set copies = slots(key)
+                copies.Add placed
+            End If
+        Next placed
+        If slots.Count > 0 Then
+            duplicate = False
+            For i = 1 To templates.Count
+                Set reference = templates(i)
+                If SameCutSlots(slots, reference) Then
+                    duplicate = True
+                    Exit For
+                End If
+            Next i
+            If duplicate Then
+                For Each placed In plan.Placements
+                    If placed.AreaIndex = areaIndex Then placed.SuppressCutLine
+                Next placed
+                AADebugWrite "Cut", "area=" & CStr(areaIndex) & "; reused template=" & CStr(i)
+            Else
+                templates.Add slots
+                AADebugWrite "Cut", "area=" & CStr(areaIndex) & "; new template=" & CStr(templates.Count)
+            End If
+        End If
+    Next areaIndex
+End Sub
+
+Private Function SameCutSlots(ByVal first As Object, ByVal second As Object) As Boolean
+    Dim key As Variant
+    Dim a As Collection, b As Collection, matched() As Boolean
+    Dim i As Long, j As Long, found As Boolean
+    Dim firstPlacement As AAPlacement, secondPlacement As AAPlacement
+    If first.Count <> second.Count Then Exit Function
+    For Each key In first.Keys
+        If Not second.Exists(key) Then Exit Function
+        Set a = first(key): Set b = second(key)
+        If a.Count <> b.Count Then Exit Function
+        ReDim matched(1 To b.Count)
+        For i = 1 To a.Count
+            Set firstPlacement = a(i)
+            found = False
+            For j = 1 To b.Count
+                If Not matched(j) Then
+                    Set secondPlacement = b(j)
+                    ' Rotasi berbeda masih bisa identik pada bentuk simetris.
+                    found = (firstPlacement.RotationDelta = secondPlacement.RotationDelta)
+                    If Not found Then found = firstPlacement.CollisionFootprint.SameGeometry( _
+                        secondPlacement.CollisionFootprint)
+                    If found Then
+                        matched(j) = True
+                        found = True
+                        Exit For
+                    End If
+                End If
+            Next j
+            If Not found Then Exit Function
+        Next i
+    Next key
+    SameCutSlots = True
+End Function
 
 Private Function ShareCutLayout(ByVal sourcePlan As AALayoutPlan, _
                                 ByRef models() As AAModel, _

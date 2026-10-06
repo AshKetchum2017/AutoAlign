@@ -22,7 +22,8 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                       ByVal designCount As Long, ByRef cutIndexes() As Long, _
                       ByVal cutCount As Long, ByRef quantities() As Long, _
                       ByVal settings As AASettings, ByVal sourceDocument As Document, _
-                      ByVal sharedPlanner As AAPlanner) As AALayoutPlan
+                      ByVal sharedPlanner As AAPlanner, _
+                      Optional ByVal singleAreaOnly As Boolean = False) As AALayoutPlan
     Dim best As AALayoutPlan, minimum As AALayoutPlan, candidate As AALayoutPlan
     Dim forbidden As Collection, angles As Collection, angle As Variant
     Dim firstVariant As AARotationVariant
@@ -33,7 +34,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     Set forbidden = sharedPlanner.ForbiddenFor(settings, sourceDocument)
     On Error Resume Next
     Set minimum = sharedPlanner.BuildMinimum(models, designIndexes, designCount, _
-        cutIndexes, cutCount, quantities, settings, sourceDocument)
+        cutIndexes, cutCount, quantities, settings, sourceDocument, singleAreaOnly)
     If Err.Number <> 0 Then lastError = Err.Description
     Err.Clear
     On Error GoTo 0
@@ -125,7 +126,7 @@ NextPairPattern:
             buildError = vbNullString
             On Error Resume Next
             Set candidate = BuildPass(models, designIndexes, designCount, cutIndexes, _
-                cutCount, quantities, settings, forbidden, CDbl(angle), (pattern = 1))
+                cutCount, quantities, settings, forbidden, CDbl(angle), (pattern = 1), singleAreaOnly)
             If Err.Number <> 0 Then
                 buildError = "Error " & CStr(Err.Number) & ": " & Err.Description
                 lastError = Err.Description
@@ -427,7 +428,8 @@ Private Function BuildPass(ByRef models() As AAModel, ByRef designIndexes() As L
                            ByVal designCount As Long, ByRef cutIndexes() As Long, _
                            ByVal cutCount As Long, ByRef quantities() As Long, _
                            ByVal settings As AASettings, ByVal forbidden As Collection, _
-                           ByVal firstAngle As Double, ByVal zigZag As Boolean) As AALayoutPlan
+                           ByVal firstAngle As Double, ByVal zigZag As Boolean, _
+                           ByVal singleAreaOnly As Boolean) As AALayoutPlan
     Dim result As AALayoutPlan, occupied As Collection
     Dim roleIndex As Long, index As Long, cutIndex As Long, areaIndex As Long
     Dim remaining As Long, added As Long, sourceCount As Long, requested As Boolean
@@ -450,6 +452,7 @@ Private Function BuildPass(ByRef models() As AAModel, ByRef designIndexes() As L
         If remaining < 0 Then
             added = FillArea(result, models(index), index, cutIndex, areaIndex, _
                 occupied, forbidden, settings, AA_MAX_OBJECTS_PER_SOURCE, firstAngle, zigZag)
+            If singleAreaOnly Then GoTo NextSource
             If added = 0 And occupied.Count > 0 Then
                 areaIndex = areaIndex + 1
                 Set occupied = New Collection
@@ -466,6 +469,7 @@ Private Function BuildPass(ByRef models() As AAModel, ByRef designIndexes() As L
                 If added = 0 And occupied.Count = 0 Then Err.Raise vbObjectError + 5231, _
                     "AAMediumPlanner", "Object tidak muat dalam satu area pada pencarian Medium."
                 remaining = remaining - added
+                If singleAreaOnly And remaining > 0 Then Exit For
                 sourceCount = sourceCount + added
                 If sourceCount > AA_MAX_OBJECTS_PER_SOURCE Then Err.Raise vbObjectError + 5210, _
                     "AAMediumPlanner", "Satu Design melebihi batas 5000 objek."

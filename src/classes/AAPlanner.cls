@@ -12,11 +12,12 @@ Public Function BuildMedium(ByRef models() As AAModel, _
                             ByRef designIndexes() As Long, ByVal designCount As Long, _
                             ByRef cutIndexes() As Long, ByVal cutCount As Long, _
                             ByRef quantities() As Long, ByVal settings As AASettings, _
-                            ByVal sourceDocument As Document) As AALayoutPlan
+                            ByVal sourceDocument As Document, _
+                            Optional ByVal singleAreaOnly As Boolean = False) As AALayoutPlan
     Dim planner As AAMediumPlanner
     Set planner = New AAMediumPlanner
     Set BuildMedium = planner.Build(models, designIndexes, designCount, cutIndexes, _
-        cutCount, quantities, settings, sourceDocument, Me)
+        cutCount, quantities, settings, sourceDocument, Me, singleAreaOnly)
 End Function
 
 Friend Function ForbiddenFor(ByVal settings As AASettings, _
@@ -120,7 +121,8 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
                              ByRef designIndexes() As Long, ByVal designCount As Long, _
                              ByRef cutIndexes() As Long, ByVal cutCount As Long, _
                              ByRef quantities() As Long, ByVal settings As AASettings, _
-                             ByVal sourceDocument As Document) As AALayoutPlan
+                             ByVal sourceDocument As Document, _
+                             Optional ByVal singleAreaOnly As Boolean = False) As AALayoutPlan
     Dim straightPlan As AALayoutPlan
     Dim zigZagPlan As AALayoutPlan
     Dim straightError As String
@@ -128,17 +130,17 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
 
     If AllActiveRectangles(models, designIndexes, designCount, quantities) Then
         Set BuildMinimum = BuildOne(models, designIndexes, designCount, cutIndexes, _
-            cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT)
+            cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT, singleAreaOnly)
         Exit Function
     End If
 
     On Error Resume Next
     Set straightPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
-        cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT)
+        cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT, singleAreaOnly)
     If Err.Number <> 0 Then straightError = Err.Description
     Err.Clear
     Set zigZagPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
-        cutCount, quantities, settings, sourceDocument, AA_MODE_ZIGZAG)
+        cutCount, quantities, settings, sourceDocument, AA_MODE_ZIGZAG, singleAreaOnly)
     If Err.Number <> 0 Then zigZagError = Err.Description
     On Error GoTo 0
 
@@ -200,7 +202,7 @@ Private Function BuildOne(ByRef models() As AAModel, _
                           ByRef cutIndexes() As Long, ByVal cutCount As Long, _
                           ByRef quantities() As Long, ByVal settings As AASettings, _
                           ByVal sourceDocument As Document, _
-                          ByVal layoutMode As Long) As AALayoutPlan
+                          ByVal layoutMode As Long, ByVal singleAreaOnly As Boolean) As AALayoutPlan
     Dim result As AALayoutPlan
     Dim forbidden As Collection
     Dim offsets As Object
@@ -214,7 +216,7 @@ Private Function BuildOne(ByRef models() As AAModel, _
     ' Coba geser seluruh isi area sebelum merencanakan ulang Quantity.
     For passIndex = 1 To AA_MAX_CENTERING_PASSES
         Set result = BuildOneRaw(models, designIndexes, designCount, cutIndexes, _
-            cutCount, quantities, settings, layoutMode, forbidden, offsets)
+            cutCount, quantities, settings, layoutMode, forbidden, offsets, singleAreaOnly)
         If result.DesignCount = 0 Then
             Set BuildOne = result
             Exit Function
@@ -241,7 +243,7 @@ Private Function BuildOneRaw(ByRef models() As AAModel, _
                              ByRef cutIndexes() As Long, ByVal cutCount As Long, _
                              ByRef quantities() As Long, ByVal settings As AASettings, _
                              ByVal layoutMode As Long, ByVal forbidden As Collection, _
-                             ByVal offsets As Object) As AALayoutPlan
+                             ByVal offsets As Object, ByVal singleAreaOnly As Boolean) As AALayoutPlan
     Dim result As AALayoutPlan
     Dim occupied As Collection
     Dim roleIndex As Long
@@ -275,6 +277,7 @@ Private Function BuildOneRaw(ByRef models() As AAModel, _
             added = FillArea(result, models(designIndex), designIndex, cutIndex, _
                 areaIndex, occupied, forbidden, settings, layoutMode, _
                 AA_MAX_OBJECTS_PER_SOURCE, offsets)
+            If singleAreaOnly Then GoTo NextDesign
             If added = 0 And occupied.Count > 0 Then
                 areaIndex = areaIndex + 1
                 Set occupied = New Collection
@@ -296,6 +299,7 @@ Private Function BuildOneRaw(ByRef models() As AAModel, _
                     vbObjectError + 5231, "AAPlanner", _
                     "Obj. ID sumber tidak dapat muat dalam satu area."
                 remaining = remaining - added
+                If singleAreaOnly And remaining > 0 Then Exit For
                 sourceCount = sourceCount + added
                 If sourceCount > AA_MAX_OBJECTS_PER_SOURCE Then Err.Raise _
                     vbObjectError + 5210, "AAPlanner", _

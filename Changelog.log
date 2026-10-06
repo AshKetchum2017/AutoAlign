@@ -85,3 +85,12 @@ Catatan: Auto, Process, dan antrean objek belum aktif.
 + Menambahkan mode debug opsional di Immediate Window melalui module AADebug, dengan keluaran ringkas atau detail; default nonaktif.
 ~ Medium mengutamakan pola baris/kolom berulang ketika jumlah container dan objek sama; perapatan individual dilewati pada kandidat teratur. Offset tetap di dalam pasangan masih dipertahankan.
 Catatan: mode debug belum dilakukan pengujian runtime.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-06
+[Quantity kelompok dan pilihan banyak Design]
++ Quantity /n membagi Design dalam satu container per nomor kelompok pada Minimum dan Medium; selisih jumlah antar Design maksimal satu. Berlaku untuk standalone, Cut Line bersama, dan Cut Line masing-masing; token / tanpa nomor ditolak.
+~ Design dengan siluet acuan sama mengisi slot template yang sama, tanpa gap tambahan antar Design; kelompok dengan susunan Cut Line identik memakai satu template Cut Line.
++ ListBox mendukung pilihan Ctrl/Shift; Quantity dapat diterapkan sekaligus pada semua Design terpilih.
+~ Pendaftaran batch objek mengikuti baris dari pusat Y tertinggi dengan toleransi 1 mm terhadap objek pertama dalam baris, lalu LeftX dari kiri ke kanan; berlaku untuk Design dan Cut Line.
+Catatan: compile, seleksi, dan susunan kelompok dikonfirmasi berhasil pada kasus lingkaran; bentuk lain belum diuji.

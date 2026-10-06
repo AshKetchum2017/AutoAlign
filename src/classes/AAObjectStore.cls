@@ -1,9 +1,12 @@
 Option Explicit
 
+Private Const AA_REGISTRATION_ROW_TOLERANCE_MM As Double = 1#
+
 Private Type AAObjectEntry
     RoleLabel As String
     StaticID As Long
     Quantity As Long  ' -1 berarti kosong: isi area aktif, lalu area baru jika tidak muat.
+    QuantityGroup As Long  ' 0: perilaku lama; positif: /n; -1: prefix / belum lengkap.
 End Type
 
 Private mEntries() As AAObjectEntry
@@ -40,13 +43,30 @@ End Property
 
 Public Function QuantityTextAt(ByVal index As Long) As String
     CheckIndex index
-    If mEntries(index).Quantity >= 0 Then _
+    If mEntries(index).QuantityGroup < 0 Then
+        QuantityTextAt = "/"
+    ElseIf mEntries(index).QuantityGroup > 0 Then
+        QuantityTextAt = "/" & CStr(mEntries(index).QuantityGroup)
+    ElseIf mEntries(index).Quantity >= 0 Then
         QuantityTextAt = CStr(mEntries(index).Quantity)
+    End If
 End Function
+
+Public Property Get QuantityGroupAt(ByVal index As Long) As Long
+    CheckIndex index
+    QuantityGroupAt = mEntries(index).QuantityGroup
+End Property
+
+Public Sub ValidateQuantityAt(ByVal index As Long)
+    CheckIndex index
+    If mEntries(index).QuantityGroup < 0 Then Err.Raise vbObjectError + 5315, _
+        "AAObjectStore", "Token / harus disertai nomor kelompok positif, misalnya /1."
+End Sub
 
 Public Sub SetQuantityTextAt(ByVal index As Long, ByVal rawText As String)
     Dim valueText As String
     Dim i As Long
+    Dim grouped As Boolean, number As Long
 
     CheckIndex index
     If mEntries(index).RoleLabel <> AA_ROLE_DESIGN Then Err.Raise _
@@ -54,15 +74,32 @@ Public Sub SetQuantityTextAt(ByVal index As Long, ByVal rawText As String)
     valueText = Trim$(rawText)
     If Len(valueText) = 0 Then
         mEntries(index).Quantity = -1
+        mEntries(index).QuantityGroup = 0
+        Exit Sub
+    End If
+    grouped = (Left$(valueText, 1) = "/")
+    If grouped Then valueText = Mid$(valueText, 2)
+    ' Izinkan prefix saat mengetik; Process wajib menolak / tanpa nomor.
+    If grouped And Len(valueText) = 0 Then
+        mEntries(index).Quantity = -1
+        mEntries(index).QuantityGroup = -1
         Exit Sub
     End If
     For i = 1 To Len(valueText)
         If Mid$(valueText, i, 1) < "0" Or Mid$(valueText, i, 1) > "9" Then _
             Err.Raise vbObjectError + 5309, "AAObjectStore", _
-                "Quantity harus berupa bilangan bulat nol atau lebih."
+                "Quantity harus berupa bilangan bulat nol atau lebih, atau /n dengan nomor kelompok positif."
     Next i
     On Error GoTo InvalidQuantity
-    mEntries(index).Quantity = CLng(valueText)
+    number = CLng(valueText)
+    If grouped And number = 0 Then GoTo InvalidQuantity
+    If grouped Then
+        mEntries(index).Quantity = -1
+        mEntries(index).QuantityGroup = number
+    Else
+        mEntries(index).Quantity = number
+        mEntries(index).QuantityGroup = 0
+    End If
     Exit Sub
 InvalidQuantity:
     Err.Raise vbObjectError + 5309, "AAObjectStore", _
@@ -73,6 +110,7 @@ Public Function RegisterSelection(ByVal roleLabel As String, ByVal selectedShape
                                   ByVal sourceDoc As Document, ByVal sourcePage As Page) As Long
     Dim selectedShape As Shape
     Dim selectionIndex As Long
+    Dim order() As Long
 
     If roleLabel <> AA_ROLE_DESIGN And roleLabel <> AA_ROLE_CUT_LINE Then Err.Raise _
         vbObjectError + 5301, "AAObjectStore", "Jenis item tidak dikenal."
@@ -98,19 +136,92 @@ Public Function RegisterSelection(ByVal roleLabel As String, ByVal selectedShape
             "AAObjectStore", "Layer object yang dipilih tidak dapat diedit."
     Next selectionIndex
 
+    ' Selesaikan pembacaan posisi/pengurutan sebelum mengubah data daftar.
+    BuildSelectionOrder selectedShapes, sourceDoc, order
     If mCount = 0 Then
         Set mSourceDocument = sourceDoc
         mSourcePageIndex = sourcePage.Index
     End If
-    ' Konsisten dengan urutan seleksi yang dipakai AutoDistribute.
-    For selectionIndex = selectedShapes.Count To 1 Step -1
-        Set selectedShape = selectedShapes(selectionIndex)
+    For selectionIndex = 1 To selectedShapes.Count
+        Set selectedShape = selectedShapes(order(selectionIndex))
         If Not ContainsID(CLng(selectedShape.StaticID)) Then
             AppendEntry roleLabel, CLng(selectedShape.StaticID)
             RegisterSelection = RegisterSelection + 1
         End If
     Next selectionIndex
 End Function
+
+Private Sub BuildSelectionOrder(ByVal selectedShapes As ShapeRange, _
+                                ByVal sourceDoc As Document, ByRef order() As Long)
+    Dim leftX() As Double, centerY() As Double, staticIDs() As Long
+    Dim selectedShape As Shape
+    Dim x As Double, y As Double, width As Double, height As Double
+    Dim sourceUnit As cdrUnit
+    Dim itemCount As Long, i As Long, j As Long, candidate As Long
+    Dim firstInRow As Long, lastInRow As Long, rowY As Double
+
+    itemCount = selectedShapes.Count
+    ReDim order(1 To itemCount)
+    order(1) = 1
+    If itemCount = 1 Then Exit Sub
+    ReDim leftX(1 To itemCount)
+    ReDim centerY(1 To itemCount)
+    ReDim staticIDs(1 To itemCount)
+    sourceUnit = sourceDoc.Unit
+    For i = 1 To itemCount
+        Set selectedShape = selectedShapes(i)
+        selectedShape.GetBoundingBox x, y, width, height
+        leftX(i) = Application.ConvertUnits(x, sourceUnit, cdrMillimeter)
+        centerY(i) = Application.ConvertUnits(y + height / 2#, sourceUnit, cdrMillimeter)
+        staticIDs(i) = CLng(selectedShape.StaticID)
+        order(i) = i
+    Next i
+
+    ' Y tertinggi menetapkan awal tiap baris. Posisi sama memakai StaticID
+    ' agar urutan tetap konsisten meskipun urutan SelectionRange berbeda.
+    For i = 2 To itemCount
+        candidate = order(i)
+        j = i - 1
+        Do While j >= 1
+            If centerY(order(j)) > centerY(candidate) Then Exit Do
+            If centerY(order(j)) = centerY(candidate) Then
+                If staticIDs(order(j)) <= staticIDs(candidate) Then Exit Do
+            End If
+            order(j + 1) = order(j)
+            j = j - 1
+        Loop
+        order(j + 1) = candidate
+    Next i
+
+    firstInRow = 1
+    Do While firstInRow <= itemCount
+        rowY = centerY(order(firstInRow))
+        lastInRow = firstInRow
+        Do While lastInRow < itemCount
+            ' Cadangan 1e-9 mm hanya mengatasi pembulatan konversi tepat 1 mm.
+            If rowY - centerY(order(lastInRow + 1)) > _
+                AA_REGISTRATION_ROW_TOLERANCE_MM + 0.000000001 Then Exit Do
+            lastInRow = lastInRow + 1
+        Loop
+        For i = firstInRow + 1 To lastInRow
+            candidate = order(i)
+            j = i - 1
+            Do While j >= firstInRow
+                If leftX(order(j)) < leftX(candidate) Then Exit Do
+                If leftX(order(j)) = leftX(candidate) Then
+                    If centerY(order(j)) > centerY(candidate) Then Exit Do
+                    If centerY(order(j)) = centerY(candidate) Then
+                        If staticIDs(order(j)) <= staticIDs(candidate) Then Exit Do
+                    End If
+                End If
+                order(j + 1) = order(j)
+                j = j - 1
+            Loop
+            order(j + 1) = candidate
+        Next i
+        firstInRow = lastInRow + 1
+    Loop
+End Sub
 
 Public Sub RemoveAt(ByVal index As Long)
     Dim i As Long
@@ -143,6 +254,7 @@ Private Sub AppendEntry(ByVal roleLabel As String, ByVal staticID As Long)
     mEntries(mCount).RoleLabel = roleLabel
     mEntries(mCount).StaticID = staticID
     mEntries(mCount).Quantity = -1
+    mEntries(mCount).QuantityGroup = 0
     mCount = mCount + 1
 End Sub
 

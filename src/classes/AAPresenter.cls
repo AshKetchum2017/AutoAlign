@@ -14,7 +14,7 @@ End Property
 Public Function ObjectListText(ByVal index As Long) As String
     ObjectListText = mStore.RoleAt(index) & " | Obj. ID: /" & CStr(mStore.StaticIDAt(index))
     If mStore.RoleAt(index) = AA_ROLE_DESIGN Then
-        If mStore.QuantityAt(index) >= 0 Then _
+        If Len(mStore.QuantityTextAt(index)) > 0 Then _
             ObjectListText = ObjectListText & " | Qty: " & mStore.QuantityTextAt(index)
     End If
 End Function
@@ -29,6 +29,10 @@ End Function
 
 Public Sub SetObjectQuantityText(ByVal index As Long, ByVal valueText As String)
     mStore.SetQuantityTextAt index, valueText
+End Sub
+
+Public Sub ValidateObjectQuantity(ByVal index As Long)
+    mStore.ValidateQuantityAt index
 End Sub
 
 Public Sub ClearObjects()

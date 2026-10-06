@@ -16,6 +16,19 @@ Private mContour As AAContour
 Private mGapH As Double, mGapV As Double
 Private mSlotLeft As Double, mSlotTop As Double
 Private mUsesContourGap As Boolean
+Private mSuppressCutLine As Boolean
+
+Public Sub SuppressCutLine()
+    mSuppressCutLine = True
+End Sub
+
+Public Property Get CreatesCutLine() As Boolean
+    CreatesCutLine = Not mSuppressCutLine
+End Property
+
+Public Sub SetAreaIndex(ByVal areaIndex As Long)
+    mAreaIndex = areaIndex
+End Sub
 
 Public Sub Configure(ByVal designIndex As Long, ByVal cutIndex As Long, _
                      ByVal areaIndex As Long, ByVal designLeft As Double, _

@@ -23,6 +23,10 @@ Private Sub lbxObjects_Click()
     AAUpdateQuantityEditor
 End Sub
 
+Private Sub lbxObjects_Change()
+    AAUpdateQuantityEditor
+End Sub
+
 Private Sub optCustom_Click()
     If optCustom.value Then
         optKissA.value = False
@@ -108,24 +112,31 @@ Private Sub chkVPercent_Click()
 End Sub
 
 Private Sub txbQuantity_Change()
-    Dim previousText As String
+    Dim i As Long
 
     If mUpdatingHint Or mUpdatingQuantity Or mQuantityIndex < 0 Then Exit Sub
-    previousText = mPresenter.ObjectQuantityTextAt(mQuantityIndex)
     On Error GoTo InvalidQuantity
-    mPresenter.SetObjectQuantityText mQuantityIndex, AAInputText(txbQuantity)
-    lbxObjects.List(mQuantityIndex) = mPresenter.ObjectListText(mQuantityIndex)
+    mUpdatingQuantity = True
+    For i = 0 To lbxObjects.ListCount - 1
+        If lbxObjects.Selected(i) Then
+            If mPresenter.ObjectRoleAt(i) = AA_ROLE_DESIGN Then
+                mPresenter.SetObjectQuantityText i, AAInputText(txbQuantity)
+                lbxObjects.List(i) = mPresenter.ObjectListText(i)
+            End If
+        End If
+    Next i
+    mUpdatingQuantity = False
     Exit Sub
 InvalidQuantity:
     MsgBox Err.Description, vbExclamation, "Auto Align"
-    mUpdatingQuantity = True
-    txbQuantity.Text = previousText
     mUpdatingQuantity = False
+    AAUpdateQuantityEditor
 End Sub
 
 Private Sub UserForm_Initialize()
     Set mPresenter = New AAPresenter
     mQuantityIndex = -1
+    lbxObjects.MultiSelect = fmMultiSelectExtended
     mInputColor(1) = txbGapHorizontal.ForeColor
     mInputColor(2) = txbGapVertical.ForeColor
     mInputColor(3) = txbAreaWidth.ForeColor
@@ -255,28 +266,31 @@ End Sub
 
 Private Sub AAUpdateQuantityEditor()
     Dim i As Long
-    Dim selectedCount As Long
-    Dim selectedIndex As Long
+    Dim commonText As String
+    Dim mixedQuantity As Boolean
 
+    If mUpdatingQuantity Or mPresenter Is Nothing Then Exit Sub
     mQuantityIndex = -1
     For i = 0 To lbxObjects.ListCount - 1
         If lbxObjects.Selected(i) Then
-            selectedCount = selectedCount + 1
-            selectedIndex = i
+            If mPresenter.ObjectRoleAt(i) = AA_ROLE_DESIGN Then
+                If mQuantityIndex < 0 Then
+                    mQuantityIndex = i
+                    commonText = mPresenter.ObjectQuantityTextAt(i)
+                ElseIf commonText <> mPresenter.ObjectQuantityTextAt(i) Then
+                    mixedQuantity = True
+                End If
+            End If
         End If
     Next i
-    If selectedCount = 1 Then
-        If mPresenter.ObjectRoleAt(selectedIndex) = AA_ROLE_DESIGN Then _
-            mQuantityIndex = selectedIndex
-    End If
     mUpdatingQuantity = True
     If mHintReady Then
         mHintActive(5) = False
         txbQuantity.ForeColor = mInputColor(5)
     End If
     txbQuantity.Enabled = (mQuantityIndex >= 0)
-    If mQuantityIndex >= 0 Then
-        txbQuantity.Text = mPresenter.ObjectQuantityTextAt(mQuantityIndex)
+    If mQuantityIndex >= 0 And Not mixedQuantity Then
+        txbQuantity.Text = commonText
     Else
         txbQuantity.Text = vbNullString
     End If
@@ -409,7 +423,7 @@ Private Sub AARefreshHints()
     txbGapVertical.ControlTipText = "Default: Straight (mm) / ZigZag (persen tinggi). KissA/DieA: rectangle bersudut runcing memakai gap 0 pada kedua pola."
     If optMedium.value Then txbGapVertical.ControlTipText = _
         "Medium: gap kontur dalam mm. Sisi miring memakai nilai terbesar H/V. Persen dan gap negatif belum tersedia."
-    txbQuantity.ControlTipText = "Kosong (-): isi sisa area. 0: lewati Design."
+    txbQuantity.ControlTipText = "Kosong (-): isi sisa area. 0: lewati Design. /n: bagi rata dalam satu container kelompok n. Berlaku untuk semua Design terpilih (Ctrl/Shift)."
 End Sub
 
 Private Sub AAEnterInput(ByVal box As MSForms.TextBox)
@@ -466,7 +480,19 @@ Private Sub txbQuantity_Enter()
 End Sub
 
 Private Sub txbQuantity_Exit(ByVal Cancel As MSForms.ReturnBoolean)
+    Dim i As Long
+    On Error GoTo InvalidQuantity
+    For i = 0 To lbxObjects.ListCount - 1
+        If lbxObjects.Selected(i) Then
+            If mPresenter.ObjectRoleAt(i) = AA_ROLE_DESIGN Then _
+                mPresenter.ValidateObjectQuantity i
+        End If
+    Next i
     AAExitInput txbQuantity
+    Exit Sub
+InvalidQuantity:
+    Cancel = True
+    MsgBox Err.Description, vbExclamation, "Auto Align"
 End Sub
 
 Private Sub AARegisterObjects(ByVal roleLabel As String)
@@ -481,10 +507,12 @@ End Sub
 Private Sub AARefreshObjects()
     Dim i As Long
 
+    mUpdatingQuantity = True
     lbxObjects.Clear
     For i = 0 To mPresenter.ObjectCount - 1
         lbxObjects.AddItem mPresenter.ObjectListText(i)
     Next i
+    mUpdatingQuantity = False
     AAUpdateQuantityEditor
 End Sub
 

@@ -41,7 +41,7 @@ Public Function Build(ByVal plan As AALayoutPlan, ByRef sourceShapes() As Shape,
         OrientAndPlace designs(i), placement, False, originalAngles(placement.DesignIndex), _
             settings, pageCenterX, pageCenterY
 
-        If placement.CutIndex >= 0 And _
+        If placement.CutIndex >= 0 And placement.CreatesCutLine And _
            (sharedCutOwnerIndex < 0 Or placement.DesignIndex = sharedCutOwnerIndex) Then
             Set cuts(i) = TakeShape(sourceShapes(placement.CutIndex), _
                 used(placement.CutIndex))
