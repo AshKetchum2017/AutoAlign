@@ -25,7 +25,9 @@ Private mMaxError As Double
 Private mEdgeBins As Object
 Private mWideEdges As Collection
 Private mSeen() As Long, mQueryStamp As Long
-Private mLastQueryKey As String
+' Empat batas sel merupakan key cache; mLastNearby Nothing menandai cache tidak valid.
+Private mLastLeftCell As Long, mLastRightCell As Long
+Private mLastBottomCell As Long, mLastTopCell As Long
 Private mLastNearby As Collection
 Private mEmptyEdges As Collection
 Private mMinX As Double, mMinY As Double, mMaxX As Double, mMaxY As Double
@@ -214,7 +216,7 @@ End Function
 Private Function CandidateEdgeIndexes(ByVal leftX As Double, ByVal bottomY As Double, _
                                ByVal rightX As Double, ByVal topY As Double) As Collection
     Dim leftCell As Long, rightCell As Long, bottomCell As Long, topCell As Long
-    Dim x As Long, y As Long, index As Variant, key As String, queryKey As String
+    Dim x As Long, y As Long, index As Variant, key As String
     Dim result As Collection, bucket As Collection
     If leftX > mMaxX Or rightX < mMinX Or bottomY > mMaxY Or topY < mMinY Then
         Set CandidateEdgeIndexes = mEmptyEdges
@@ -232,14 +234,15 @@ Private Function CandidateEdgeIndexes(ByVal leftX As Double, ByVal bottomY As Do
         Exit Function
     End If
     If mEdgeBins Is Nothing Then BuildEdgeIndex
-    queryKey = CStr(leftCell) & "|" & CStr(rightCell) & "|" & _
-        CStr(bottomCell) & "|" & CStr(topCell)
     If Not mLastNearby Is Nothing Then
-        If queryKey = mLastQueryKey Then
+        If leftCell = mLastLeftCell And rightCell = mLastRightCell And _
+           bottomCell = mLastBottomCell And topCell = mLastTopCell Then
+            If AADebugProfiling Then AADebugQueryCacheHits = AADebugQueryCacheHits + 1#
             Set CandidateEdgeIndexes = mLastNearby
             Exit Function
         End If
     End If
+    If AADebugProfiling Then AADebugQueryCacheMisses = AADebugQueryCacheMisses + 1#
     If mQueryStamp >= 2147483646 Then
         ReDim mSeen(1 To mEdgeCount)
         mQueryStamp = 0
@@ -264,7 +267,8 @@ Private Function CandidateEdgeIndexes(ByVal leftX As Double, ByVal bottomY As Do
             End If
         Next y
     Next x
-    mLastQueryKey = queryKey
+    mLastLeftCell = leftCell: mLastRightCell = rightCell
+    mLastBottomCell = bottomCell: mLastTopCell = topCell
     Set mLastNearby = result
     Set CandidateEdgeIndexes = result
 End Function

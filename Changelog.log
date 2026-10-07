@@ -99,11 +99,17 @@ Catatan: compile, seleksi, dan susunan kelompok dikonfirmasi berhasil pada kasus
 2026-10-07
 [Medium: profiling dan optimasi kurva kompleks]
 + Debug ringkas menampilkan waktu tiap tahap Process dan jumlah pemeriksaan gap, overlap, serta penempatan di Immediate Window.
-~ Pemeriksaan segmen kurva kompleks dipercepat; dua uji Medium/KissA turun sekitar 38,9% waktu total, tetap menghasilkan 288 objek dengan ukuran susunan yang sama. Pengukuran ulang memakai contour 1 mm dikonfirmasi tanpa collision antar Cut Line.
+~ Pemeriksaan segmen kurva kompleks dipercepat.
 
 [Contour dan diagnostik memori]
 + Debug menampilkan snapshot memori proses CorelDRAW, delta private memory, dan maksimum sampel per run.
 ~ Penyimpanan segmen memakai array typed tanpa salinan Collection koordinat lama.
 
 [Medium: filter kelompok segmen]
-~ Kelompok segmen yang terbukti jauh dilewati sebelum pemeriksaan detail; uji standalone turun 71,230 menjadi 57,072 detik dan bitmap + Cut Line 81,762 menjadi 58,778 detik, dengan 288 objek serta ukuran susunan tetap.
+~ Kelompok segmen yang terbukti jauh dilewati sebelum pemeriksaan detail.
+
+[Medium: cache query numerik]
+~ Cache query segmen memakai batas sel numerik.
+
+[Medium: indeks spasial objek]
+~ Pemeriksaan tetangga memakai indeks spasial.

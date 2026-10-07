@@ -16,12 +16,17 @@ Public Const AA_PERF_PLACEMENT As Long = 4
 Public Const AA_PERF_WELD As Long = 5
 ' Flag dibaca langsung oleh fungsi geometri yang sering dipanggil.
 Public AADebugProfiling As Boolean
+' Counter ditambah langsung di query agar tidak ada call/printing per query.
+Public AADebugQueryCacheHits As Double, AADebugQueryCacheMisses As Double
 Private mPerfSeconds(1 To 5) As Double, mPerfCalls(1 To 5) As Double
 Private mClockFrequency As Currency, mClockStart As Currency
 Private mClockTimerStart As Double, mClockUsesCounter As Boolean
 Private mCandidateStarted As Double, mCandidateTiming As Boolean
 Private mGroupsChecked As Double, mGroupsSkipped As Double
 Private mGroupEdgesSkipped As Double, mGroupEdgesDetailed As Double
+Private mOccupiedQueries As Double, mOccupiedAvailable As Double, mOccupiedOffered As Double
+Private mOccupiedFallbacks As Double, mOccupiedCacheHits As Double
+Private mOccupiedBuilds As Double, mOccupiedAdded As Double
 
 ' Immediate Window: AADebugOn (ringkas), AADebugOn True (detail), AADebugOff.
 ' Tidak disimpan: reset project mengembalikan debug ke kondisi nonaktif.
@@ -158,8 +163,12 @@ Private Sub AADebugPerfReset()
     For i = 1 To 5
         mPerfCalls(i) = 0#: mPerfSeconds(i) = 0#
     Next i
+    AADebugQueryCacheHits = 0#: AADebugQueryCacheMisses = 0#
     mGroupsChecked = 0#: mGroupsSkipped = 0#
     mGroupEdgesSkipped = 0#: mGroupEdgesDetailed = 0#
+    mOccupiedQueries = 0#: mOccupiedAvailable = 0#: mOccupiedOffered = 0#
+    mOccupiedFallbacks = 0#: mOccupiedCacheHits = 0#
+    mOccupiedBuilds = 0#: mOccupiedAdded = 0#
     mClockTimerStart = Timer
     mClockUsesCounter = False
     If QueryPerformanceFrequency(mClockFrequency) <> 0 Then
@@ -236,6 +245,23 @@ Public Sub AADebugEdgeGroups(ByVal checked As Long, ByVal skipped As Long, _
     mGroupEdgesDetailed = mGroupEdgesDetailed + detailEdges
 End Sub
 
+Public Sub AADebugOccupiedBuild(ByVal building As Boolean, ByVal added As Long)
+    If Not AADebugProfiling Then Exit Sub
+    If building Then mOccupiedBuilds = mOccupiedBuilds + 1#
+    mOccupiedAdded = mOccupiedAdded + added
+End Sub
+
+' offered menghitung kandidat yang disediakan, bukan pemeriksaan detail aktual.
+Public Sub AADebugOccupiedQuery(ByVal available As Long, ByVal offered As Long, _
+                               ByVal fallback As Boolean, ByVal cacheHit As Boolean)
+    If Not AADebugProfiling Then Exit Sub
+    mOccupiedQueries = mOccupiedQueries + 1#
+    mOccupiedAvailable = mOccupiedAvailable + available
+    mOccupiedOffered = mOccupiedOffered + offered
+    If fallback Then mOccupiedFallbacks = mOccupiedFallbacks + 1#
+    If cacheHit Then mOccupiedCacheHits = mOccupiedCacheHits + 1#
+End Sub
+
 Public Sub AADebugPerfFinish(ByVal status As String)
     Dim i As Long, label As String
     If Not AADebugProfiling Then Exit Sub
@@ -260,6 +286,12 @@ Public Sub AADebugPerfFinish(ByVal status As String)
         "; skipped=" & Format$(mGroupsSkipped, "0") & _
         "; edges skipped=" & Format$(mGroupEdgesSkipped, "0") & _
         "; edges detailed=" & Format$(mGroupEdgesDetailed, "0")
+    AADebugWrite "Perf", "edge query cache (indexed): hits=" & Format$(AADebugQueryCacheHits, "0") & _
+        "; misses=" & Format$(AADebugQueryCacheMisses, "0")
+    AADebugWrite "Perf", "occupied index: queries=" & Format$(mOccupiedQueries, "0") & _
+        "; builds=" & Format$(mOccupiedBuilds, "0") & "; added=" & Format$(mOccupiedAdded, "0") & _
+        "; cache hits=" & Format$(mOccupiedCacheHits, "0") & "; fallbacks=" & Format$(mOccupiedFallbacks, "0") & _
+        "; available=" & Format$(mOccupiedAvailable, "0") & "; offered=" & Format$(mOccupiedOffered, "0")
     AADebugMemoryFinish status
     AADebugProfiling = False
     mCandidateTiming = False

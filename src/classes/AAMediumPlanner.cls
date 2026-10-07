@@ -18,6 +18,8 @@ Private Const AA_PAIR_CONTACT_SCAN_STEPS As Long = 64
 Private Const AA_MAX_PHASE_SLOTS_PER_AREA As Long = 5000
 Private Const AA_PAIR_INSET_RESERVE_MM As Double = 0.001
 
+Private mOccupiedIndex As AAOccupiedIndex
+
 Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, _
                       ByVal designCount As Long, ByRef cutIndexes() As Long, _
                       ByVal cutCount As Long, ByRef quantities() As Long, _
@@ -168,6 +170,7 @@ NextPairPattern:
         End If
     End If
     AADebugPlan "Selected " & bestLabel, best
+    Set mOccupiedIndex = Nothing
     Set Build = best
 End Function
 
@@ -196,6 +199,8 @@ Private Function FinalizeCandidate(ByVal candidate As AALayoutPlan, ByRef models
     Dim perfStarted As Double
     AADebugPlan label & " raw", candidate
     If candidate Is Nothing Then Exit Function
+    ' FinalizeMedium memindahkan placement; indeks yang memegangnya harus dibatalkan.
+    If Not mOccupiedIndex Is Nothing Then mOccupiedIndex.Clear
     perfStarted = AADebugPerfBegin()
     If Not sharedPlanner.FinalizeMedium(candidate, settings, sourceDocument) Then
         AADebugWrite "Center", label & " -> individual repair required: area or mark"
@@ -907,14 +912,24 @@ Private Function TryExactSlot(ByVal orientation As AARotationVariant, ByVal desi
     If Fits(candidate, occupied, forbidden, settings, True) Then Set TryExactSlot = candidate
 End Function
 
+' Tetangga disaring saja; semua predicate dan urutan pemeriksaan tetap di caller.
+Private Function NearbyOccupied(ByVal occupied As Collection, ByVal leftX As Double, _
+                                ByVal bottomY As Double, ByVal rightX As Double, _
+                                ByVal topY As Double, ByVal gap As Double) As Collection
+    If mOccupiedIndex Is Nothing Then Set mOccupiedIndex = New AAOccupiedIndex
+    Set NearbyOccupied = mOccupiedIndex.Nearby(occupied, leftX, bottomY, rightX, topY, gap)
+End Function
+
 Private Function HasClearanceAt(ByVal orientation As AARotationVariant, ByVal x As Double, _
                                 ByVal y As Double, ByVal occupied As Collection, _
                                 ByVal h As Double, ByVal v As Double) As Boolean
     Dim placed As AAPlacement, other As AAGeometry, gap As Double
+    Dim nearby As Collection
     Dim leftX As Double, rightX As Double, topY As Double, bottomY As Double
     leftX = x + orientation.InsetX: rightX = leftX + orientation.ReferenceWidth
     topY = y - orientation.InsetY: bottomY = topY - orientation.ReferenceHeight
-    For Each placed In occupied
+    Set nearby = NearbyOccupied(occupied, leftX, bottomY, rightX, topY, MaxValue(h, v))
+    For Each placed In nearby
         Set other = placed.CollisionFootprint
         gap = MaxValue(MaxValue(h, v), MaxValue(placed.GapH, placed.GapV))
         If leftX < other.RightX + gap And rightX > other.LeftX - gap And _
@@ -1130,6 +1145,7 @@ Private Function TrySlot(ByVal orientation As AARotationVariant, ByVal designInd
     Dim candidate As AAPlacement, best As AAPlacement
     Dim distance As Double, bestDistance As Double
     Dim obstacle As AAGeometry, placed As AAPlacement
+    Dim nearby As Collection
     Dim collisionLeft As Double, collisionTop As Double, gapH As Double, gapV As Double
     minX = MaxValue(-orientation.ReferenceWidth * AA_SHIFT_FACTOR, -x)
     maxX = MinValue(orientation.ReferenceWidth * AA_SHIFT_FACTOR, settings.AreaWidthMM - orientation.Width - x)
@@ -1146,7 +1162,10 @@ Private Function TrySlot(ByVal orientation As AARotationVariant, ByVal designInd
         AddShiftValue ys, obstacle.TopY - collisionTop + orientation.ReferenceHeight, minY, maxY
         AddShiftValue ys, obstacle.BottomY - collisionTop, minY, maxY
     Next obstacle
-    For Each placed In occupied
+    Set nearby = NearbyOccupied(occupied, collisionLeft + minX, _
+        collisionTop - orientation.ReferenceHeight + minY, _
+        collisionLeft + orientation.ReferenceWidth + maxX, collisionTop + maxY, MaxValue(h, v))
+    For Each placed In nearby
         Set obstacle = placed.CollisionFootprint
         gapH = MaxValue(h, placed.GapH): gapV = MaxValue(v, placed.GapV)
         If obstacle.RightX + gapH >= collisionLeft + minX And _
@@ -1232,6 +1251,7 @@ Private Function Fits(ByVal candidate As AAPlacement, ByVal occupied As Collecti
                       Optional ByVal clearanceChecked As Boolean = False) As Boolean
     Dim box As AAGeometry, collision As AAGeometry, other As AAGeometry
     Dim placed As AAPlacement, obstacle As AAGeometry, gap As Double
+    Dim nearby As Collection
     Set box = candidate.Footprint
     If box.LeftX < -AA_EDGE_TOLERANCE_MM Or box.BottomY < -AA_EDGE_TOLERANCE_MM Or _
        box.RightX > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
@@ -1246,7 +1266,9 @@ Private Function Fits(ByVal candidate As AAPlacement, ByVal occupied As Collecti
             Exit Function
         End If
     Next obstacle
-    For Each placed In occupied
+    Set nearby = NearbyOccupied(occupied, collision.LeftX, collision.BottomY, _
+        collision.RightX, collision.TopY, MaxValue(candidate.GapH, candidate.GapV))
+    For Each placed In nearby
         Set other = placed.CollisionFootprint
         gap = MaxValue(MaxValue(candidate.GapH, candidate.GapV), MaxValue(placed.GapH, placed.GapV))
         If collision.LeftX < other.RightX + gap And collision.RightX > other.LeftX - gap And _
