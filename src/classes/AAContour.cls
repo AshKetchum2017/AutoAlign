@@ -10,11 +10,14 @@ Private Const AA_INDEX_CELL_MM As Double = 1#
 Private Const AA_MAX_CELLS_PER_EDGE As Long = 256
 Private Const AA_MAX_QUERY_CELLS As Long = 4096
 Private Const AA_INDEX_MIN_EDGES As Long = 32
+Private Const AA_EDGE_GROUP_SIZE As Long = 16
 
 Private mEdgeCount As Long
 ' Data Double dan batas segmen disiapkan sekali.
 ' Kolom: x1, y1, x2, y2, error, minX, minY, maxX, maxY.
 Private mEdgeData() As Double, mEdgeCapacity As Long
+' Metadata kelompok: minX, minY, maxX, maxY, max error; koordinat tetap di mEdgeData.
+Private mEdgeGroups() As Double, mEdgeGroupCount As Long
 Private mEdgeIndexes As Collection
 Private mAnchors As Collection
 Private mLeft As Double, mTop As Double
@@ -132,6 +135,32 @@ Private Sub AddEdge(ByVal x1 As Double, ByVal y1 As Double, _
     If errorMM > mMaxError Then mMaxError = errorMM
     Set mEdgeBins = Nothing
     Set mLastNearby = Nothing
+    mEdgeGroupCount = 0
+End Sub
+
+' Kelompok mengikuti urutan segmen agar loop detail dan early exit tetap berurutan.
+' Dibangun sekali saat diperlukan, lalu dibatalkan jika Capture menambah segmen.
+Private Sub BuildEdgeGroups()
+    Dim first As Long, last As Long, index As Long, group As Long
+    mEdgeGroupCount = (mEdgeCount + AA_EDGE_GROUP_SIZE - 1) \ AA_EDGE_GROUP_SIZE
+    ReDim mEdgeGroups(0 To 4, 1 To mEdgeGroupCount)
+    For first = 1 To mEdgeCount Step AA_EDGE_GROUP_SIZE
+        group = group + 1
+        last = first + AA_EDGE_GROUP_SIZE - 1
+        If last > mEdgeCount Then last = mEdgeCount
+        mEdgeGroups(0, group) = mEdgeData(5, first)
+        mEdgeGroups(1, group) = mEdgeData(6, first)
+        mEdgeGroups(2, group) = mEdgeData(7, first)
+        mEdgeGroups(3, group) = mEdgeData(8, first)
+        mEdgeGroups(4, group) = mEdgeData(4, first)
+        For index = first + 1 To last
+            mEdgeGroups(0, group) = MinValue(mEdgeGroups(0, group), mEdgeData(5, index))
+            mEdgeGroups(1, group) = MinValue(mEdgeGroups(1, group), mEdgeData(6, index))
+            mEdgeGroups(2, group) = MaxValue(mEdgeGroups(2, group), mEdgeData(7, index))
+            mEdgeGroups(3, group) = MaxValue(mEdgeGroups(3, group), mEdgeData(8, index))
+            mEdgeGroups(4, group) = MaxValue(mEdgeGroups(4, group), mEdgeData(4, index))
+        Next index
+    Next first
 End Sub
 
 ' Indeks hanya menyaring pasangan segmen. Rumus jarak dan error chord tetap
@@ -260,9 +289,11 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
                         ByVal dy As Double, ByVal otherDX As Double, _
                         ByVal otherDY As Double, ByVal gapH As Double, _
                         ByVal gapV As Double) As Boolean
-    Dim index As Long
+    Dim index As Long, first As Long, last As Long, group As Long, groupSize As Long
+    Dim grouped As Boolean, skipGroup As Boolean
+    Dim checked As Long, skipped As Long, skippedEdges As Long, detailEdges As Long
     Dim ax As Double, ay As Double, bx As Double, by As Double
-    Dim largestGap As Double
+    Dim largestGap As Double, otherError As Double
     Dim perfStarted As Double
     If AADebugProfiling Then perfStarted = AADebugPerfBegin()
     largestGap = gapH
@@ -284,15 +315,51 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
         If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
         Exit Function
     End If
-    For index = 1 To mEdgeCount
-        ax = mEdgeData(0, index) + dx: ay = mEdgeData(1, index) + dy
-        bx = mEdgeData(2, index) + dx: by = mEdgeData(3, index) + dy
-        If Not other.IsClearOfEdge(ax, ay, bx, by, mEdgeData(4, index), _
-            otherDX, otherDY, gapH, gapV, largestGap) Then
-            If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
-            Exit Function
+    grouped = (mEdgeCount > AA_INDEX_MIN_EDGES)
+    groupSize = mEdgeCount
+    If grouped Then
+        If mEdgeGroupCount = 0 Then BuildEdgeGroups
+        groupSize = AA_EDGE_GROUP_SIZE
+        otherError = other.MaxChordError
+    End If
+    For first = 1 To mEdgeCount Step groupSize
+        group = group + 1
+        last = first + groupSize - 1
+        If last > mEdgeCount Then last = mEdgeCount
+        skipGroup = False
+        If grouped Then
+            ' Padding tambahan menjaga keputusan pada batas dan error pembulatan.
+            skipGroup = other.IsSeparatedFrom( _
+                mEdgeGroups(0, group) + dx - otherDX, _
+                mEdgeGroups(1, group) + dy - otherDY, _
+                mEdgeGroups(2, group) + dx - otherDX, _
+                mEdgeGroups(3, group) + dy - otherDY, _
+                largestGap + mEdgeGroups(4, group) + otherError + AA_DISTANCE_TOLERANCE_MM)
+            If AADebugProfiling Then checked = checked + 1
         End If
-    Next index
+        If skipGroup Then
+            If AADebugProfiling Then
+                skipped = skipped + 1
+                skippedEdges = skippedEdges + last - first + 1
+            End If
+        Else
+            For index = first To last
+                ax = mEdgeData(0, index) + dx: ay = mEdgeData(1, index) + dy
+                bx = mEdgeData(2, index) + dx: by = mEdgeData(3, index) + dy
+                If AADebugProfiling And grouped Then detailEdges = detailEdges + 1
+                If Not other.IsClearOfEdge(ax, ay, bx, by, mEdgeData(4, index), _
+                    otherDX, otherDY, gapH, gapV, largestGap) Then
+                    If AADebugProfiling Then
+                        If grouped Then AADebugEdgeGroups checked, skipped, skippedEdges, detailEdges
+                        AADebugPerfEnd AA_PERF_GAP, perfStarted
+                    End If
+                    Exit Function
+                End If
+            Next index
+        End If
+    Next first
+    If AADebugProfiling And grouped Then _
+        AADebugEdgeGroups checked, skipped, skippedEdges, detailEdges
     ClearOf = True
     If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
 End Function

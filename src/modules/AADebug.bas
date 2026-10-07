@@ -20,6 +20,8 @@ Private mPerfSeconds(1 To 5) As Double, mPerfCalls(1 To 5) As Double
 Private mClockFrequency As Currency, mClockStart As Currency
 Private mClockTimerStart As Double, mClockUsesCounter As Boolean
 Private mCandidateStarted As Double, mCandidateTiming As Boolean
+Private mGroupsChecked As Double, mGroupsSkipped As Double
+Private mGroupEdgesSkipped As Double, mGroupEdgesDetailed As Double
 
 ' Immediate Window: AADebugOn (ringkas), AADebugOn True (detail), AADebugOff.
 ' Tidak disimpan: reset project mengembalikan debug ke kondisi nonaktif.
@@ -156,6 +158,8 @@ Private Sub AADebugPerfReset()
     For i = 1 To 5
         mPerfCalls(i) = 0#: mPerfSeconds(i) = 0#
     Next i
+    mGroupsChecked = 0#: mGroupsSkipped = 0#
+    mGroupEdgesSkipped = 0#: mGroupEdgesDetailed = 0#
     mClockTimerStart = Timer
     mClockUsesCounter = False
     If QueryPerformanceFrequency(mClockFrequency) <> 0 Then
@@ -222,6 +226,16 @@ Public Sub AADebugContourCaptured(ByVal nodes As Long, ByVal edges As Long, ByVa
         "; flatness=" & CStr(flatnessMM) & " mm"
 End Sub
 
+' Satu update per ClearOf yang memakai kelompok, bukan satu call per segmen.
+Public Sub AADebugEdgeGroups(ByVal checked As Long, ByVal skipped As Long, _
+                            ByVal skippedEdges As Long, ByVal detailEdges As Long)
+    If Not AADebugProfiling Then Exit Sub
+    mGroupsChecked = mGroupsChecked + checked
+    mGroupsSkipped = mGroupsSkipped + skipped
+    mGroupEdgesSkipped = mGroupEdgesSkipped + skippedEdges
+    mGroupEdgesDetailed = mGroupEdgesDetailed + detailEdges
+End Sub
+
 Public Sub AADebugPerfFinish(ByVal status As String)
     Dim i As Long, label As String
     If Not AADebugProfiling Then Exit Sub
@@ -242,6 +256,10 @@ Public Sub AADebugPerfFinish(ByVal status As String)
                 "; time=" & Format$(mPerfSeconds(i), "0.000") & " s"
         End If
     Next i
+    AADebugWrite "Perf", "edge group filter: checked=" & Format$(mGroupsChecked, "0") & _
+        "; skipped=" & Format$(mGroupsSkipped, "0") & _
+        "; edges skipped=" & Format$(mGroupEdgesSkipped, "0") & _
+        "; edges detailed=" & Format$(mGroupEdgesDetailed, "0")
     AADebugMemoryFinish status
     AADebugProfiling = False
     mCandidateTiming = False
