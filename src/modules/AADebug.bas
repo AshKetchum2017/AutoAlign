@@ -295,7 +295,7 @@ Public Sub AADebugModel(ByVal index As Long, ByVal model As AAModel, ByVal quant
     Set orientation = model.RotationVariant(0#)
     AADebugWrite "Model", "index=" & CStr(index) & "; quantity=" & CStr(quantity) & _
         "; size=" & Format$(orientation.Width, "0.000000") & "x" & _
-        Format$(orientation.Height, "0.000000") & "; edges=" & CStr(orientation.Contour.Edges.Count) & _
+        Format$(orientation.Height, "0.000000") & "; edges=" & CStr(orientation.Contour.EdgeCount) & _
         "; rectangle=" & CStr(model.IsRectangle) & "; triangle=" & CStr(model.IsTriangle) & _
         "; straight gap=" & Format$(h, "0.000000") & "/" & Format$(v, "0.000000")
 TraceFailed:

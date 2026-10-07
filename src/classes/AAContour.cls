@@ -11,8 +11,8 @@ Private Const AA_MAX_CELLS_PER_EDGE As Long = 256
 Private Const AA_MAX_QUERY_CELLS As Long = 4096
 Private Const AA_INDEX_MIN_EDGES As Long = 32
 
-Private mEdges As Collection
-' Data Double dan batas segmen disiapkan sekali; Collection lama untuk metadata.
+Private mEdgeCount As Long
+' Data Double dan batas segmen disiapkan sekali.
 ' Kolom: x1, y1, x2, y2, error, minX, minY, maxX, maxY.
 Private mEdgeData() As Double, mEdgeCapacity As Long
 Private mEdgeIndexes As Collection
@@ -28,7 +28,6 @@ Private mEmptyEdges As Collection
 Private mMinX As Double, mMinY As Double, mMaxX As Double, mMaxY As Double
 
 Private Sub Class_Initialize()
-    Set mEdges = New Collection
     Set mEdgeIndexes = New Collection
     Set mAnchors = New Collection
     Set mEmptyEdges = New Collection
@@ -68,7 +67,7 @@ Public Sub Capture(ByVal geometry As AAGeometry)
     Next i
     If AADebugProfiling Then
         AADebugPerfEnd AA_PERF_CONTOUR, perfStarted
-        AADebugContourCaptured mAnchors.Count, mEdges.Count, AA_FLATNESS_MM
+        AADebugContourCaptured mAnchors.Count, mEdgeCount, AA_FLATNESS_MM
     End If
 End Sub
 
@@ -101,9 +100,9 @@ End Sub
 Private Sub AddEdge(ByVal x1 As Double, ByVal y1 As Double, _
                     ByVal x2 As Double, ByVal y2 As Double, ByVal errorMM As Double)
     Dim index As Long
-    If mEdges.Count >= AA_MAX_EDGES Then Err.Raise vbObjectError + 5240, _
+    If mEdgeCount >= AA_MAX_EDGES Then Err.Raise vbObjectError + 5240, _
         "AAContour", "Kurva terlalu kompleks untuk pemeriksaan gap Medium."
-    index = mEdges.Count + 1
+    index = mEdgeCount + 1
     If index > mEdgeCapacity Then
         If mEdgeCapacity = 0 Then
             mEdgeCapacity = AA_INDEX_MIN_EDGES
@@ -119,9 +118,9 @@ Private Sub AddEdge(ByVal x1 As Double, ByVal y1 As Double, _
     mEdgeData(4, index) = errorMM
     mEdgeData(5, index) = MinValue(x1, x2): mEdgeData(7, index) = MaxValue(x1, x2)
     mEdgeData(6, index) = MinValue(y1, y2): mEdgeData(8, index) = MaxValue(y1, y2)
-    mEdges.Add Array(x1, y1, x2, y2, errorMM)
+    mEdgeCount = index
     mEdgeIndexes.Add index
-    If mEdges.Count = 1 Then
+    If mEdgeCount = 1 Then
         mMinX = MinValue(x1, x2): mMaxX = MaxValue(x1, x2)
         mMinY = MinValue(y1, y2): mMaxY = MaxValue(y1, y2)
     Else
@@ -143,9 +142,9 @@ Private Sub BuildEdgeIndex()
     Dim leftCell As Long, rightCell As Long, bottomCell As Long, topCell As Long
     Set mEdgeBins = CreateObject("Scripting.Dictionary")
     Set mWideEdges = New Collection
-    ReDim mSeen(1 To mEdges.Count)
+    ReDim mSeen(1 To mEdgeCount)
     mQueryStamp = 0
-    For i = 1 To mEdges.Count
+    For i = 1 To mEdgeCount
         leftCell = Int(mEdgeData(5, i) / AA_INDEX_CELL_MM)
         rightCell = Int(mEdgeData(7, i) / AA_INDEX_CELL_MM)
         bottomCell = Int(mEdgeData(6, i) / AA_INDEX_CELL_MM)
@@ -192,7 +191,7 @@ Private Function CandidateEdgeIndexes(ByVal leftX As Double, ByVal bottomY As Do
         Set CandidateEdgeIndexes = mEmptyEdges
         Exit Function
     End If
-    If mEdges.Count <= AA_INDEX_MIN_EDGES Then
+    If mEdgeCount <= AA_INDEX_MIN_EDGES Then
         Set CandidateEdgeIndexes = mEdgeIndexes
         Exit Function
     End If
@@ -213,7 +212,7 @@ Private Function CandidateEdgeIndexes(ByVal leftX As Double, ByVal bottomY As Do
         End If
     End If
     If mQueryStamp >= 2147483646 Then
-        ReDim mSeen(1 To mEdges.Count)
+        ReDim mSeen(1 To mEdgeCount)
         mQueryStamp = 0
     End If
     mQueryStamp = mQueryStamp + 1
@@ -241,8 +240,8 @@ Private Function CandidateEdgeIndexes(ByVal leftX As Double, ByVal bottomY As Do
     Set CandidateEdgeIndexes = result
 End Function
 
-Friend Property Get Edges() As Collection
-    Set Edges = mEdges
+Friend Property Get EdgeCount() As Long
+    EdgeCount = mEdgeCount
 End Property
 
 Public Property Get Anchors() As Collection
@@ -273,7 +272,7 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
         If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
         Exit Function
     End If
-    If mEdges.Count = 0 Or other.Edges.Count = 0 Then
+    If mEdgeCount = 0 Or other.EdgeCount = 0 Then
         ClearOf = True
         If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
         Exit Function
@@ -285,7 +284,7 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
         If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
         Exit Function
     End If
-    For index = 1 To mEdges.Count
+    For index = 1 To mEdgeCount
         ax = mEdgeData(0, index) + dx: ay = mEdgeData(1, index) + dy
         bx = mEdgeData(2, index) + dx: by = mEdgeData(3, index) + dy
         If Not other.IsClearOfEdge(ax, ay, bx, by, mEdgeData(4, index), _

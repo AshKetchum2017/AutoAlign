@@ -59,7 +59,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                 On Error Resume Next
                 Set firstVariant = models(firstIndex).RotationVariant(0#)
                 If Err.Number = 0 And Not firstVariant Is Nothing Then
-                    pairEligible = (firstVariant.Contour.Edges.Count <= AA_MAX_PAIR_CONTOUR_EDGES)
+                    pairEligible = (firstVariant.Contour.EdgeCount <= AA_MAX_PAIR_CONTOUR_EDGES)
                 End If
                 Err.Clear
                 On Error GoTo 0
@@ -540,7 +540,7 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
     End If
     scanContacts = Not model.IsTriangle
     If scanContacts Then
-        If forward.Contour.Edges.Count > AA_MAX_PAIR_CONTOUR_EDGES Then Exit Function
+        If forward.Contour.EdgeCount > AA_MAX_PAIR_CONTOUR_EDGES Then Exit Function
     End If
     If patternMode = 2 Or patternMode = 3 Then
         Set BuildOppositeLattice = BuildTightPairLattice(forward, reverse, _
