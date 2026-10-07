@@ -94,3 +94,9 @@ Catatan: mode debug belum dilakukan pengujian runtime.
 + ListBox mendukung pilihan Ctrl/Shift; Quantity dapat diterapkan sekaligus pada semua Design terpilih.
 ~ Pendaftaran batch objek mengikuti baris dari pusat Y tertinggi dengan toleransi 1 mm terhadap objek pertama dalam baris, lalu LeftX dari kiri ke kanan; berlaku untuk Design dan Cut Line.
 Catatan: compile, seleksi, dan susunan kelompok dikonfirmasi berhasil pada kasus lingkaran; bentuk lain belum diuji.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-07
+[Medium: profiling dan optimasi kurva kompleks]
++ Debug ringkas menampilkan waktu tiap tahap Process dan jumlah pemeriksaan gap, overlap, serta penempatan di Immediate Window.
+~ Pemeriksaan segmen kurva kompleks dipercepat; dua uji Medium/KissA turun sekitar 38,9% waktu total, tetap menghasilkan 288 objek dengan ukuran susunan yang sama. Pengukuran ulang memakai contour 1 mm dikonfirmasi tanpa collision antar Cut Line.

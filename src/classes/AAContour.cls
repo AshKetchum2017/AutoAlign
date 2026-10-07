@@ -6,12 +6,16 @@ Private Const AA_FLATNESS_MM As Double = 0.002
 Private Const AA_DISTANCE_TOLERANCE_MM As Double = 0.0001
 Private Const AA_MAX_SUBDIVISION As Long = 18
 Private Const AA_MAX_EDGES As Long = 20000
-Private Const AA_INDEX_CELL_MM As Double = 5#
+Private Const AA_INDEX_CELL_MM As Double = 1#
 Private Const AA_MAX_CELLS_PER_EDGE As Long = 256
 Private Const AA_MAX_QUERY_CELLS As Long = 4096
 Private Const AA_INDEX_MIN_EDGES As Long = 32
 
 Private mEdges As Collection
+' Data Double dan batas segmen disiapkan sekali; Collection lama untuk metadata.
+' Kolom: x1, y1, x2, y2, error, minX, minY, maxX, maxY.
+Private mEdgeData() As Double, mEdgeCapacity As Long
+Private mEdgeIndexes As Collection
 Private mAnchors As Collection
 Private mLeft As Double, mTop As Double
 Private mMaxError As Double
@@ -25,6 +29,7 @@ Private mMinX As Double, mMinY As Double, mMaxX As Double, mMaxY As Double
 
 Private Sub Class_Initialize()
     Set mEdges = New Collection
+    Set mEdgeIndexes = New Collection
     Set mAnchors = New Collection
     Set mEmptyEdges = New Collection
 End Sub
@@ -95,9 +100,27 @@ End Sub
 
 Private Sub AddEdge(ByVal x1 As Double, ByVal y1 As Double, _
                     ByVal x2 As Double, ByVal y2 As Double, ByVal errorMM As Double)
+    Dim index As Long
     If mEdges.Count >= AA_MAX_EDGES Then Err.Raise vbObjectError + 5240, _
         "AAContour", "Kurva terlalu kompleks untuk pemeriksaan gap Medium."
+    index = mEdges.Count + 1
+    If index > mEdgeCapacity Then
+        If mEdgeCapacity = 0 Then
+            mEdgeCapacity = AA_INDEX_MIN_EDGES
+            ReDim mEdgeData(0 To 8, 1 To mEdgeCapacity)
+        Else
+            mEdgeCapacity = mEdgeCapacity * 2
+            If mEdgeCapacity > AA_MAX_EDGES Then mEdgeCapacity = AA_MAX_EDGES
+            ReDim Preserve mEdgeData(0 To 8, 1 To mEdgeCapacity)
+        End If
+    End If
+    mEdgeData(0, index) = x1: mEdgeData(1, index) = y1
+    mEdgeData(2, index) = x2: mEdgeData(3, index) = y2
+    mEdgeData(4, index) = errorMM
+    mEdgeData(5, index) = MinValue(x1, x2): mEdgeData(7, index) = MaxValue(x1, x2)
+    mEdgeData(6, index) = MinValue(y1, y2): mEdgeData(8, index) = MaxValue(y1, y2)
     mEdges.Add Array(x1, y1, x2, y2, errorMM)
+    mEdgeIndexes.Add index
     If mEdges.Count = 1 Then
         mMinX = MinValue(x1, x2): mMaxX = MaxValue(x1, x2)
         mMinY = MinValue(y1, y2): mMaxY = MaxValue(y1, y2)
@@ -115,7 +138,7 @@ End Sub
 ' Indeks hanya menyaring pasangan segmen. Rumus jarak dan error chord tetap
 ' sama; segmen panjang dan query lebar memakai jalur konservatif tanpa filter.
 Private Sub BuildEdgeIndex()
-    Dim edge As Variant, bucket As Collection, key As String
+    Dim bucket As Collection, key As String
     Dim i As Long, x As Long, y As Long
     Dim leftCell As Long, rightCell As Long, bottomCell As Long, topCell As Long
     Set mEdgeBins = CreateObject("Scripting.Dictionary")
@@ -123,11 +146,10 @@ Private Sub BuildEdgeIndex()
     ReDim mSeen(1 To mEdges.Count)
     mQueryStamp = 0
     For i = 1 To mEdges.Count
-        edge = mEdges(i)
-        leftCell = Int(MinValue(CDbl(edge(0)), CDbl(edge(2))) / AA_INDEX_CELL_MM)
-        rightCell = Int(MaxValue(CDbl(edge(0)), CDbl(edge(2))) / AA_INDEX_CELL_MM)
-        bottomCell = Int(MinValue(CDbl(edge(1)), CDbl(edge(3))) / AA_INDEX_CELL_MM)
-        topCell = Int(MaxValue(CDbl(edge(1)), CDbl(edge(3))) / AA_INDEX_CELL_MM)
+        leftCell = Int(mEdgeData(5, i) / AA_INDEX_CELL_MM)
+        rightCell = Int(mEdgeData(7, i) / AA_INDEX_CELL_MM)
+        bottomCell = Int(mEdgeData(6, i) / AA_INDEX_CELL_MM)
+        topCell = Int(mEdgeData(8, i) / AA_INDEX_CELL_MM)
         If (CDbl(rightCell) - leftCell + 1#) * (CDbl(topCell) - bottomCell + 1#) > _
             AA_MAX_CELLS_PER_EDGE Then
             mWideEdges.Add i
@@ -161,24 +183,24 @@ Friend Function IsSeparatedFrom(ByVal leftX As Double, ByVal bottomY As Double, 
     IsSeparatedFrom = (dx * dx + dy * dy >= margin * margin)
 End Function
 
-Friend Function CandidateEdges(ByVal leftX As Double, ByVal bottomY As Double, _
+Private Function CandidateEdgeIndexes(ByVal leftX As Double, ByVal bottomY As Double, _
                                ByVal rightX As Double, ByVal topY As Double) As Collection
     Dim leftCell As Long, rightCell As Long, bottomCell As Long, topCell As Long
     Dim x As Long, y As Long, index As Variant, key As String, queryKey As String
     Dim result As Collection, bucket As Collection
     If leftX > mMaxX Or rightX < mMinX Or bottomY > mMaxY Or topY < mMinY Then
-        Set CandidateEdges = mEmptyEdges
+        Set CandidateEdgeIndexes = mEmptyEdges
         Exit Function
     End If
     If mEdges.Count <= AA_INDEX_MIN_EDGES Then
-        Set CandidateEdges = mEdges
+        Set CandidateEdgeIndexes = mEdgeIndexes
         Exit Function
     End If
     leftCell = Int(leftX / AA_INDEX_CELL_MM): rightCell = Int(rightX / AA_INDEX_CELL_MM)
     bottomCell = Int(bottomY / AA_INDEX_CELL_MM): topCell = Int(topY / AA_INDEX_CELL_MM)
     If (CDbl(rightCell) - leftCell + 1#) * (CDbl(topCell) - bottomCell + 1#) > _
         AA_MAX_QUERY_CELLS Then
-        Set CandidateEdges = mEdges
+        Set CandidateEdgeIndexes = mEdgeIndexes
         Exit Function
     End If
     If mEdgeBins Is Nothing Then BuildEdgeIndex
@@ -186,7 +208,7 @@ Friend Function CandidateEdges(ByVal leftX As Double, ByVal bottomY As Double, _
         CStr(bottomCell) & "|" & CStr(topCell)
     If Not mLastNearby Is Nothing Then
         If queryKey = mLastQueryKey Then
-            Set CandidateEdges = mLastNearby
+            Set CandidateEdgeIndexes = mLastNearby
             Exit Function
         End If
     End If
@@ -197,7 +219,7 @@ Friend Function CandidateEdges(ByVal leftX As Double, ByVal bottomY As Double, _
     mQueryStamp = mQueryStamp + 1
     Set result = New Collection
     For Each index In mWideEdges
-        result.Add mEdges(CLng(index))
+        result.Add CLng(index)
         mSeen(CLng(index)) = mQueryStamp
     Next index
     For x = leftCell To rightCell
@@ -207,7 +229,7 @@ Friend Function CandidateEdges(ByVal leftX As Double, ByVal bottomY As Double, _
                 Set bucket = mEdgeBins(key)
                 For Each index In bucket
                     If mSeen(CLng(index)) <> mQueryStamp Then
-                        result.Add mEdges(CLng(index))
+                        result.Add CLng(index)
                         mSeen(CLng(index)) = mQueryStamp
                     End If
                 Next index
@@ -216,7 +238,7 @@ Friend Function CandidateEdges(ByVal leftX As Double, ByVal bottomY As Double, _
     Next x
     mLastQueryKey = queryKey
     Set mLastNearby = result
-    Set CandidateEdges = result
+    Set CandidateEdgeIndexes = result
 End Function
 
 Friend Property Get Edges() As Collection
@@ -239,12 +261,9 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
                         ByVal dy As Double, ByVal otherDX As Double, _
                         ByVal otherDY As Double, ByVal gapH As Double, _
                         ByVal gapV As Double) As Boolean
-    Dim a As Variant, b As Variant
+    Dim index As Long
     Dim ax As Double, ay As Double, bx As Double, by As Double
-    Dim cx As Double, cy As Double, ex As Double, ey As Double
-    Dim vx As Double, vy As Double, distance As Double, gap As Double
-    Dim largestGap As Double, allowance As Double
-    Dim nearby As Collection, searchAllowance As Double
+    Dim largestGap As Double
     Dim perfStarted As Double
     If AADebugProfiling Then perfStarted = AADebugPerfBegin()
     largestGap = gapH
@@ -266,43 +285,63 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
         If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
         Exit Function
     End If
-    For Each a In mEdges
-        ax = CDbl(a(0)) + dx: ay = CDbl(a(1)) + dy
-        bx = CDbl(a(2)) + dx: by = CDbl(a(3)) + dy
-        searchAllowance = largestGap + CDbl(a(4)) + other.MaxChordError
-        Set nearby = other.CandidateEdges( _
-            MinValue(ax, bx) - otherDX - searchAllowance, _
-            MinValue(ay, by) - otherDY - searchAllowance, _
-            MaxValue(ax, bx) - otherDX + searchAllowance, _
-            MaxValue(ay, by) - otherDY + searchAllowance)
-        For Each b In nearby
-            cx = CDbl(b(0)) + otherDX: cy = CDbl(b(1)) + otherDY
-            ex = CDbl(b(2)) + otherDX: ey = CDbl(b(3)) + otherDY
-            allowance = largestGap + CDbl(a(4)) + CDbl(b(4))
-            If MinValue(ax, bx) <= MaxValue(cx, ex) + allowance And _
-               MaxValue(ax, bx) >= MinValue(cx, ex) - allowance And _
-               MinValue(ay, by) <= MaxValue(cy, ey) + allowance And _
-               MaxValue(ay, by) >= MinValue(cy, ey) - allowance Then
-                distance = EdgeDistance(ax, ay, bx, by, cx, cy, ex, ey, vx, vy)
-                gap = largestGap
-                ' Normal horizontal -> H; normal vertikal -> V; miring -> max(H,V).
-                If Abs(vy) <= AA_DISTANCE_TOLERANCE_MM Then
-                    gap = gapH
-                ElseIf Abs(vx) <= AA_DISTANCE_TOLERANCE_MM Then
-                    gap = gapV
-                End If
-                If gap > 0# Then
-                    If distance < gap + CDbl(a(4)) + CDbl(b(4)) - _
-                        AA_DISTANCE_TOLERANCE_MM Then
-                        If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
-                        Exit Function
-                    End If
-                End If
-            End If
-        Next b
-    Next a
+    For index = 1 To mEdges.Count
+        ax = mEdgeData(0, index) + dx: ay = mEdgeData(1, index) + dy
+        bx = mEdgeData(2, index) + dx: by = mEdgeData(3, index) + dy
+        If Not other.IsClearOfEdge(ax, ay, bx, by, mEdgeData(4, index), _
+            otherDX, otherDY, gapH, gapV, largestGap) Then
+            If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
+            Exit Function
+        End If
+    Next index
     ClearOf = True
     If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
+End Function
+
+' Jalankan loop pada data Double milik kontur tujuan agar koordinat/batas
+' tidak disalin sebagai Variant untuk setiap pasangan segmen.
+Friend Function IsClearOfEdge(ByVal ax As Double, ByVal ay As Double, _
+                             ByVal bx As Double, ByVal by As Double, _
+                             ByVal errorMM As Double, ByVal dx As Double, ByVal dy As Double, _
+                             ByVal gapH As Double, ByVal gapV As Double, _
+                             ByVal largestGap As Double) As Boolean
+    Dim nearby As Collection, item As Variant, index As Long
+    Dim minX As Double, minY As Double, maxX As Double, maxY As Double
+    Dim cx As Double, cy As Double, ex As Double, ey As Double
+    Dim searchAllowance As Double, allowance As Double, edgeError As Double
+    Dim vx As Double, vy As Double, distance As Double, gap As Double
+    minX = MinValue(ax, bx): maxX = MaxValue(ax, bx)
+    minY = MinValue(ay, by): maxY = MaxValue(ay, by)
+    searchAllowance = largestGap + errorMM + mMaxError
+    Set nearby = CandidateEdgeIndexes(minX - dx - searchAllowance, _
+        minY - dy - searchAllowance, maxX - dx + searchAllowance, _
+        maxY - dy + searchAllowance)
+    For Each item In nearby
+        index = CLng(item)
+        edgeError = mEdgeData(4, index)
+        allowance = largestGap + errorMM + edgeError
+        If minX <= mEdgeData(7, index) + dx + allowance And _
+           maxX >= mEdgeData(5, index) + dx - allowance And _
+           minY <= mEdgeData(8, index) + dy + allowance And _
+           maxY >= mEdgeData(6, index) + dy - allowance Then
+            cx = mEdgeData(0, index) + dx: cy = mEdgeData(1, index) + dy
+            ex = mEdgeData(2, index) + dx: ey = mEdgeData(3, index) + dy
+            distance = EdgeDistance(ax, ay, bx, by, cx, cy, ex, ey, vx, vy)
+            gap = largestGap
+            ' Normal horizontal -> H; normal vertikal -> V; miring -> max(H,V).
+            If Abs(vy) <= AA_DISTANCE_TOLERANCE_MM Then
+                gap = gapH
+            ElseIf Abs(vx) <= AA_DISTANCE_TOLERANCE_MM Then
+                gap = gapV
+            End If
+            If gap > 0# Then
+                If distance < gap + errorMM + edgeError - AA_DISTANCE_TOLERANCE_MM Then
+                    Exit Function
+                End If
+            End If
+        End If
+    Next item
+    IsClearOfEdge = True
 End Function
 
 Private Function EdgeDistance(ByVal ax As Double, ByVal ay As Double, _
