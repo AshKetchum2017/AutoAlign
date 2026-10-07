@@ -167,6 +167,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
 
     ReDim layoutDesignIndexes(0 To designCount - 1)
     AADebugStageEnd perfStage, perfStarted
+    AADebugMemory "After prepare geometry"
     perfStage = vbNullString
     For roleIndex = 0 To designCount - 1
         layoutDesignIndexes(roleIndex) = designIndexes(roleIndex)
@@ -201,6 +202,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     End If
     AADebugStageEnd perfStage, perfStarted
     perfStage = vbNullString
+    AADebugMemory "After planning"
     AADebugPlan "Process layout", plan
     If plan.DesignCount = 0 Then
         feedback = "Tidak ada Design yang dapat ditempatkan pada area."
@@ -216,6 +218,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
             quantities, planner, settings, doc, sharedCutOwnerIndex)
         AADebugPlan "Shared Cut Line expanded", plan
         AADebugStageEnd perfStage, perfStarted
+        AADebugMemory "After shared Cut Line expansion"
         perfStage = vbNullString
     End If
 
@@ -248,6 +251,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     operation = "memilih group hasil"
     resultSelection.CreateSelection
     AADebugStageEnd perfStage, perfStarted
+    AADebugMemory "After build and group results"
     perfStage = vbNullString
     lastProcessCompleted = True
 

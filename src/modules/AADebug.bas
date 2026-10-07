@@ -30,12 +30,59 @@ Private mCandidate As String
 Private mBoundsRejected As Long, mGapRejected As Long
 Private mMarkRejected As Long, mOverlapRejected As Long
 
+Private Type PROCESS_MEMORY_COUNTERS_EX
+    cb As Long
+    PageFaultCount As Long
+#If VBA7 Then
+    PeakWorkingSetSize As LongPtr
+    WorkingSetSize As LongPtr
+    QuotaPeakPagedPoolUsage As LongPtr
+    QuotaPagedPoolUsage As LongPtr
+    QuotaPeakNonPagedPoolUsage As LongPtr
+    QuotaNonPagedPoolUsage As LongPtr
+    PagefileUsage As LongPtr
+    PeakPagefileUsage As LongPtr
+    PrivateUsage As LongPtr
+#Else
+    PeakWorkingSetSize As Long
+    WorkingSetSize As Long
+    QuotaPeakPagedPoolUsage As Long
+    QuotaPagedPoolUsage As Long
+    QuotaPeakNonPagedPoolUsage As Long
+    QuotaNonPagedPoolUsage As Long
+    PagefileUsage As Long
+    PeakPagefileUsage As Long
+    PrivateUsage As Long
+#End If
+End Type
+
+#If VBA7 Then
+Private Declare PtrSafe Function GetCurrentProcess Lib "kernel32" () As LongPtr
+Private Declare PtrSafe Function GetProcessMemoryInfo Lib "psapi.dll" ( _
+    ByVal hProcess As LongPtr, _
+    ByRef counters As PROCESS_MEMORY_COUNTERS_EX, _
+    ByVal cb As Long) As Long
+#Else
+Private Declare Function GetCurrentProcess Lib "kernel32" () As Long
+Private Declare Function GetProcessMemoryInfo Lib "psapi.dll" ( _
+    ByVal hProcess As Long, _
+    ByRef counters As PROCESS_MEMORY_COUNTERS_EX, _
+    ByVal cb As Long) As Long
+#End If
+
+Private mMemoryTracking As Boolean, mMemoryTakeBaseline As Boolean
+Private mMemoryHasBaseline As Boolean
+Private mMemoryStartPrivate As Double
+Private mMemoryMaxPrivate As Double, mMemoryMaxWorking As Double
+Private mMemorySamples As Long
+
 Public Sub AADebugOn(Optional ByVal detailed As Boolean = False)
     mEnabled = True
     mDetailed = detailed
     mSlotsActive = False
     AADebugProfiling = False
     mCandidateTiming = False
+    AADebugMemoryReset
     Debug.Print "[AA][Debug] ON; detailed=" & CStr(detailed)
 End Sub
 
@@ -45,6 +92,7 @@ Public Sub AADebugOff()
     mSlotsActive = False
     AADebugProfiling = False
     mCandidateTiming = False
+    AADebugMemoryReset
     Debug.Print "[AA][Debug] OFF"
 End Sub
 
@@ -74,6 +122,7 @@ Public Sub AADebugProcessStart(ByVal layoutMode As Long, ByVal modelMode As Long
     If modelMode = AA_MODEL_KISS_A Then modelName = "KissA"
     If modelMode = AA_MODEL_DIE_A Then modelName = "DieA"
     AADebugWrite "Process", layoutName & " / " & modelName
+    AADebugMemoryStart
 End Sub
 
 Public Sub AADebugCandidateStart(ByVal label As String)
@@ -193,6 +242,7 @@ Public Sub AADebugPerfFinish(ByVal status As String)
                 "; time=" & Format$(mPerfSeconds(i), "0.000") & " s"
         End If
     Next i
+    AADebugMemoryFinish status
     AADebugProfiling = False
     mCandidateTiming = False
 End Sub
@@ -333,4 +383,108 @@ Private Sub PlanBounds(ByVal plan As AALayoutPlan, ByVal collision As Boolean, _
             boundsArea = boundsArea + (rights(i) - lefts(i)) * (tops(i) - bottoms(i))
         End If
     Next i
+End Sub
+
+' SIZE_T tidak bertanda; pada host 32-bit VBA membacanya sebagai Long bertanda.
+#If VBA7 Then
+Private Function AADebugMemoryBytes(ByVal value As LongPtr) As Double
+#Else
+Private Function AADebugMemoryBytes(ByVal value As Long) As Double
+#End If
+    AADebugMemoryBytes = CDbl(value)
+#If Win64 Then
+#Else
+    If AADebugMemoryBytes < 0# Then _
+        AADebugMemoryBytes = AADebugMemoryBytes + 4294967296#
+#End If
+End Function
+
+Private Sub AADebugMemoryReset()
+    mMemoryTracking = False: mMemoryTakeBaseline = False
+    mMemoryHasBaseline = False
+    mMemoryStartPrivate = 0#
+    mMemoryMaxPrivate = 0#: mMemoryMaxWorking = 0#
+    mMemorySamples = 0
+End Sub
+
+Private Sub AADebugMemoryStart()
+    If Not mEnabled Then Exit Sub
+    On Error Resume Next
+    AADebugMemoryReset
+    mMemoryTracking = True
+    AADebugWrite "Mem", "scope=CorelDRAW process; unit=MiB; max=sampled per AA run; peakWS=process lifetime"
+    ' Baseline hanya berasal dari awal Process, bukan sampel berikutnya jika gagal.
+    mMemoryTakeBaseline = True
+    AADebugMemory "Process start"
+    mMemoryTakeBaseline = False
+End Sub
+
+Private Sub AADebugMemoryFinish(ByVal status As String)
+    Dim delta As String
+    If Not mMemoryTracking Then Exit Sub
+    On Error Resume Next
+    ' Engine masih memegang model/planner; ini bukan snapshot setelah pelepasan data.
+    AADebugMemory "Process end (" & status & "; engine data may still be live)"
+    delta = "n/a"
+    If mMemoryHasBaseline Then delta = _
+        Format$((mMemoryMaxPrivate - mMemoryStartPrivate) / 1048576#, "0.00") & " MiB"
+    If mMemorySamples > 0 Then
+        AADebugWrite "Mem", "summary: samples=" & CStr(mMemorySamples) & _
+            "; max sampled private=" & Format$(mMemoryMaxPrivate / 1048576#, "0.00") & " MiB" & _
+            "; max sampled working=" & Format$(mMemoryMaxWorking / 1048576#, "0.00") & " MiB" & _
+            "; max sampled delta private=" & delta
+    Else
+        AADebugWrite "Mem", "summary: unavailable (no valid samples)"
+    End If
+    mMemoryTracking = False: mMemoryTakeBaseline = False
+End Sub
+
+Public Sub AADebugMemory(ByVal label As String)
+    Dim mem As PROCESS_MEMORY_COUNTERS_EX
+    Dim expectedSize As Long, apiError As Long, traceError As Long
+    Dim traceDescription As String, delta As String
+    Dim privateBytes As Double, workingBytes As Double, peakWorkingBytes As Double
+    If Not mEnabled Then Exit Sub
+    On Error GoTo MemoryUnavailable
+    mem.cb = LenB(mem)
+#If Win64 Then
+    expectedSize = 80
+#Else
+    expectedSize = 44
+#End If
+    If mem.cb <> expectedSize Then
+        AADebugWrite "Mem", label & "; unavailable; structure size=" & CStr(mem.cb) & _
+            "; expected=" & CStr(expectedSize)
+        Exit Sub
+    End If
+    If GetProcessMemoryInfo(GetCurrentProcess(), mem, mem.cb) = 0 Then
+        apiError = Err.LastDllError
+        AADebugWrite "Mem", label & "; unavailable; Win32 error=" & CStr(apiError)
+        Exit Sub
+    End If
+    privateBytes = AADebugMemoryBytes(mem.PrivateUsage)
+    workingBytes = AADebugMemoryBytes(mem.WorkingSetSize)
+    peakWorkingBytes = AADebugMemoryBytes(mem.PeakWorkingSetSize)
+    delta = "n/a"
+    If mMemoryTracking Then
+        mMemorySamples = mMemorySamples + 1
+        If mMemoryTakeBaseline Then
+            mMemoryStartPrivate = privateBytes
+            mMemoryHasBaseline = True
+        End If
+        If privateBytes > mMemoryMaxPrivate Then mMemoryMaxPrivate = privateBytes
+        If workingBytes > mMemoryMaxWorking Then mMemoryMaxWorking = workingBytes
+        If mMemoryHasBaseline Then delta = _
+            Format$((privateBytes - mMemoryStartPrivate) / 1048576#, "0.00") & " MiB"
+    End If
+    AADebugWrite "Mem", label & _
+        "; private=" & Format$(privateBytes / 1048576#, "0.00") & " MiB" & _
+        "; working=" & Format$(workingBytes / 1048576#, "0.00") & " MiB" & _
+        "; process peakWS=" & Format$(peakWorkingBytes / 1048576#, "0.00") & " MiB" & _
+        "; delta private=" & delta
+    Exit Sub
+MemoryUnavailable:
+    traceError = Err.Number: traceDescription = Err.Description
+    AADebugWrite "Mem", label & "; unavailable; VBA error=" & CStr(traceError) & " " & traceDescription
+    Err.Clear
 End Sub
