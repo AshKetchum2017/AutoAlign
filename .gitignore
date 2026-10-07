@@ -11,3 +11,5 @@
 # Ignore specific files in the project directory
 AutoAlignWizard.bas
 Statistics.txt
+Immediate.txt
+AA-Debug.txt

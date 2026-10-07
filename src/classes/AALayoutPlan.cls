@@ -52,3 +52,28 @@ End Property
 Public Property Get LayoutMode() As Long
     LayoutMode = mLayoutMode
 End Property
+
+' Quota penuh harus cocok per Design, bukan hanya total yang sama.
+Friend Function MatchesQuotas(ByRef designIndexes() As Long, ByVal designCount As Long, _
+                              ByRef quantities() As Long, ByVal expected As Long) As Boolean
+    Dim counts() As Long, placed As AAPlacement, i As Long, index As Long, total As Long
+    If expected < 0 Or mAreaCount > 1 Or mPlacements.Count <> expected Then Exit Function
+    ReDim counts(LBound(quantities) To UBound(quantities))
+    For Each placed In mPlacements
+        index = placed.DesignIndex
+        If index < LBound(counts) Or index > UBound(counts) Then Exit Function
+        counts(index) = counts(index) + 1
+    Next placed
+    For i = 0 To designCount - 1
+        index = designIndexes(i)
+        If quantities(index) < 0 Then Exit Function
+        If counts(index) <> quantities(index) Then Exit Function
+        total = total + quantities(index)
+        counts(index) = 0
+    Next i
+    If total <> expected Then Exit Function
+    For i = LBound(counts) To UBound(counts)
+        If counts(i) <> 0 Then Exit Function
+    Next i
+    MatchesQuotas = True
+End Function

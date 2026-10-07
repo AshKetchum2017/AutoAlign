@@ -30,6 +30,9 @@ Private mOccupiedBuilds As Double, mOccupiedAdded As Double
 
 ' Immediate Window: AADebugOn (ringkas), AADebugOn True (detail), AADebugOff.
 ' Tidak disimpan: reset project mengembalikan debug ke kondisi nonaktif.
+Private mFileNumber As Integer
+Private mFilePath As String
+
 Private mEnabled As Boolean
 Private mDetailed As Boolean
 Private mSlotsActive As Boolean
@@ -90,10 +93,12 @@ Public Sub AADebugOn(Optional ByVal detailed As Boolean = False)
     AADebugProfiling = False
     mCandidateTiming = False
     AADebugMemoryReset
-    Debug.Print "[AA][Debug] ON; detailed=" & CStr(detailed)
+    AADebugWrite "Debug", "ON; detailed=" & CStr(detailed)
 End Sub
 
 Public Sub AADebugOff()
+    AADebugFileWrite "[AA][Debug] OFF"
+    AADebugCloseFile
     mEnabled = False
     mDetailed = False
     mSlotsActive = False
@@ -101,6 +106,61 @@ Public Sub AADebugOff()
     mCandidateTiming = False
     AADebugMemoryReset
     Debug.Print "[AA][Debug] OFF"
+End Sub
+
+' Append agar trace run sebelumnya tetap tersedia; path kosong memakai TEMP.
+' File Shared dapat dibaca saat Process berlangsung. AADebugOff menutup handle.
+Public Sub AADebugFileOn(Optional ByVal filePath As String = vbNullString)
+    Dim number As Long, description As String, folder As String, fileNumber As Integer
+    On Error GoTo FileFailed
+    If Len(Trim$(filePath)) = 0 Then
+        folder = Environ$("TEMP")
+        If Len(folder) = 0 Then folder = Environ$("TMP")
+        If Len(folder) = 0 Then Err.Raise vbObjectError + 5340, "AADebug", "Folder TEMP tidak tersedia."
+        If Right$(folder, 1) <> "\" Then folder = folder & "\"
+        filePath = folder & "AutoAlign-Debug.txt"
+    End If
+    AADebugCloseFile
+    fileNumber = FreeFile
+    Open filePath For Append Access Write Shared As #fileNumber
+    mFileNumber = fileNumber
+    mFilePath = filePath
+    If Not mEnabled Then AADebugOn
+    If mFileNumber <> 0 Then AADebugWrite "Debug", "file ON; " & _
+        Format$(Now, "yyyy-mm-dd hh:nn:ss") & "; path=" & mFilePath
+    Exit Sub
+FileFailed:
+    number = Err.Number: description = Err.Description
+    AADebugCloseFile
+    If Not mEnabled Then AADebugOn
+    Debug.Print "[AA][Debug] file unavailable; error=" & CStr(number) & "; " & description
+    Err.Clear
+End Sub
+
+Public Sub AADebugFileOff()
+    AADebugWrite "Debug", "file OFF"
+    AADebugCloseFile
+End Sub
+
+Private Sub AADebugCloseFile()
+    On Error Resume Next
+    If mFileNumber <> 0 Then Close #mFileNumber
+    mFileNumber = 0
+    mFilePath = vbNullString
+    Err.Clear
+End Sub
+
+Private Sub AADebugFileWrite(ByVal line As String)
+    Dim number As Long, description As String
+    If mFileNumber = 0 Then Exit Sub
+    On Error GoTo WriteFailed
+    Print #mFileNumber, line
+    Exit Sub
+WriteFailed:
+    number = Err.Number: description = Err.Description
+    AADebugCloseFile
+    Debug.Print "[AA][Debug] file write failed; error=" & CStr(number) & "; " & description
+    Err.Clear
 End Sub
 
 Public Function AADebugEnabled() As Boolean
@@ -112,9 +172,12 @@ Public Function AADebugDetailsEnabled() As Boolean
 End Function
 
 Public Sub AADebugWrite(ByVal section As String, ByVal message As String)
+    Dim line As String
     If Not mEnabled Then Exit Sub
     On Error Resume Next
-    Debug.Print "[AA][" & section & "] " & message
+    line = "[AA][" & section & "] " & message
+    Debug.Print line
+    AADebugFileWrite line
     Err.Clear
 End Sub
 

@@ -25,7 +25,8 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                       ByVal cutCount As Long, ByRef quantities() As Long, _
                       ByVal settings As AASettings, ByVal sourceDocument As Document, _
                       ByVal sharedPlanner As AAPlanner, _
-                      Optional ByVal singleAreaOnly As Boolean = False) As AALayoutPlan
+                      Optional ByVal singleAreaOnly As Boolean = False, _
+                      Optional ByVal capacityTarget As Long = -1) As AALayoutPlan
     Dim best As AALayoutPlan, minimum As AALayoutPlan, candidate As AALayoutPlan
     Dim forbidden As Collection, angles As Collection, angle As Variant
     Dim firstVariant As AARotationVariant
@@ -33,7 +34,9 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     Dim pairAngle As Long, rowMode As Long, patternMode As Long, pairCutIndex As Long
     Dim hasZigZag As Boolean, pairEligible As Boolean
     Dim candidateLabel As String, bestLabel As String, buildError As String
-    Dim perfStarted As Double
+    Dim perfStarted As Double, capacityValidated As Boolean
+    ' Capacity hanya untuk quota finite pada satu area; caller biasa memakai -1.
+    If Not singleAreaOnly Then capacityTarget = -1
     Set forbidden = sharedPlanner.ForbiddenFor(settings, sourceDocument)
     perfStarted = AADebugPerfBegin()
     On Error Resume Next
@@ -53,6 +56,14 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
         AADebugWrite "Medium", "Baseline Minimum unavailable: " & lastError
     End If
     AADebugStageEnd "Baseline Minimum + validation", perfStarted
+    If capacityTarget > 0 Then
+        If Not best Is Nothing Then
+            If best.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget) Then
+                capacityValidated = True
+                GoTo BuildComplete
+            End If
+        End If
+    End If
     If designCount = 1 Then
         firstIndex = designIndexes(0)
         If quantities(firstIndex) < 0 And Not models(firstIndex).IsRectangle Then
@@ -145,12 +156,32 @@ NextPairPattern:
             Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
                 sourceDocument, sharedPlanner, candidateLabel)
             ConsiderCandidate candidate, best, candidateLabel, bestLabel, sharedPlanner
+            If capacityTarget > 0 Then
+                If Not candidate Is Nothing Then
+                    If candidate.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget) Then
+                        ' Validasi posisi sesudah centering/repair sebelum shortcut kapasitas.
+                        If ValidPlan(candidate, forbidden, settings) Then
+                            Set best = candidate: bestLabel = candidateLabel
+                            capacityValidated = True
+                            GoTo BuildComplete
+                        End If
+                    End If
+                End If
+            End If
     NextPattern:
         Next pattern
     Next angle
     If best Is Nothing Then Err.Raise vbObjectError + 5241, "AAMediumPlanner", _
         "Tidak ditemukan susunan Medium yang memenuhi area, gap, dan mark." & _
         IIf(Len(lastError) > 0, vbCrLf & lastError, vbNullString)
+    If capacityTarget > 0 Then
+        If best.DesignCount < capacityTarget Then
+            ' Compact mempertahankan jumlah; tidak dapat memenuhi quota yang kurang.
+            AADebugWrite "Capacity", "target=" & CStr(capacityTarget) & "; partial=" & _
+                CStr(best.DesignCount) & "; Compact skipped"
+            GoTo BuildComplete
+        End If
+    End If
     If best.HasRegularPattern Then
         ' Compaction tidak menambah objek dan dapat merusak pola teratur.
         AADebugWrite "Compact", "skipped: selected plan has a regular pattern"
@@ -163,11 +194,27 @@ NextPairPattern:
             sourceDocument, sharedPlanner, candidateLabel)
         If Not candidate Is Nothing Then
             If ValidPlan(candidate, forbidden, settings) Then
+                If capacityTarget > 0 Then
+                    If candidate.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget) Then
+                        Set best = candidate: bestLabel = candidateLabel
+                        capacityValidated = True
+                        GoTo BuildComplete
+                    End If
+                End If
                 ConsiderCandidate candidate, best, candidateLabel, bestLabel, sharedPlanner
             Else
                 AADebugWrite "Compact", "rejected: final validation"
             End If
         End If
+    End If
+BuildComplete:
+    If capacityTarget > 0 Then
+        If best.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget) Then
+            If Not capacityValidated Then Err.Raise vbObjectError + 5241, "AAMediumPlanner", _
+                "Quota penuh tidak lolos validasi posisi akhir."
+        End If
+        AADebugWrite "Capacity", "target=" & CStr(capacityTarget) & "; selected=" & bestLabel & _
+            "; complete=" & CStr(best.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget))
     End If
     AADebugPlan "Selected " & bestLabel, best
     Set mOccupiedIndex = Nothing

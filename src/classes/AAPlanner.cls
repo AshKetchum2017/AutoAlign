@@ -13,11 +13,12 @@ Public Function BuildMedium(ByRef models() As AAModel, _
                             ByRef cutIndexes() As Long, ByVal cutCount As Long, _
                             ByRef quantities() As Long, ByVal settings As AASettings, _
                             ByVal sourceDocument As Document, _
-                            Optional ByVal singleAreaOnly As Boolean = False) As AALayoutPlan
+                            Optional ByVal singleAreaOnly As Boolean = False, _
+                            Optional ByVal capacityTarget As Long = -1) As AALayoutPlan
     Dim planner As AAMediumPlanner
     Set planner = New AAMediumPlanner
     Set BuildMedium = planner.Build(models, designIndexes, designCount, cutIndexes, _
-        cutCount, quantities, settings, sourceDocument, Me, singleAreaOnly)
+        cutCount, quantities, settings, sourceDocument, Me, singleAreaOnly, capacityTarget)
 End Function
 
 Friend Function ForbiddenFor(ByVal settings As AASettings, _

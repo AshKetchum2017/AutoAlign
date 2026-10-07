@@ -89,6 +89,21 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
     Next i
     If result.DesignCount = 0 Then Err.Raise vbObjectError + 5333, "AAQuantityPlanner", _
         "Tidak ada Design kelompok yang dapat ditempatkan dalam satu container."
+    If layoutMode = AA_MODE_MEDIUM Then
+        AADebugWrite "Quantity", "optimizing final quotas; target=" & CStr(expected)
+        Set candidate = TryQuota(models, designIndexes, designCount, cutIndexes, cutCount, _
+            quantities, expected, settings, sourceDocument, layoutMode, planner, False)
+        If Not candidate Is Nothing Then
+            Set result = candidate
+        Else
+            ' Rencana kapasitas yang sudah lolos tetap menjadi hasil aman.
+            AADebugWrite "Quantity", "final optimization rejected; retained capacity plan"
+        End If
+    End If
+    For i = 0 To designCount - 1
+        AADebugWrite "Quantity", "Design=" & CStr(designIndexes(i)) & "; allocated=" & _
+            CStr(quantities(designIndexes(i)))
+    Next i
     AADebugPlan "Quantity balanced quotas", result
     Set BuildGroup = result
 End Function
@@ -181,12 +196,20 @@ Private Function TryQuota(ByRef models() As AAModel, ByRef designIndexes() As Lo
                           ByVal designCount As Long, ByRef cutIndexes() As Long, ByVal cutCount As Long, _
                           ByRef quantities() As Long, ByVal expected As Long, ByVal settings As AASettings, _
                           ByVal sourceDocument As Document, ByVal layoutMode As Long, _
-                          ByVal planner As AAPlanner) As AALayoutPlan
+                          ByVal planner As AAPlanner, _
+                          Optional ByVal capacityOnly As Boolean = True) As AALayoutPlan
     Dim candidate As AALayoutPlan, number As Long, description As String, source As String
+    Dim perfStarted As Double, phase As String, capacityTarget As Long
+    phase = "full": capacityTarget = -1
+    If layoutMode = AA_MODE_MEDIUM And capacityOnly Then
+        phase = "capacity": capacityTarget = expected
+    End If
+    perfStarted = AADebugPerfBegin()
     On Error GoTo QuotaFailed
     Set candidate = BuildMode(models, designIndexes, designCount, cutIndexes, cutCount, _
-        quantities, settings, sourceDocument, layoutMode, planner)
-    If candidate.AreaCount <= 1 And candidate.DesignCount = expected Then
+        quantities, settings, sourceDocument, layoutMode, planner, capacityTarget)
+    AADebugStageEnd "quota target=" & CStr(expected) & "; phase=" & phase, perfStarted
+    If candidate.MatchesQuotas(designIndexes, designCount, quantities, expected) Then
         Set TryQuota = candidate
         AADebugWrite "Quantity", "quota target=" & CStr(expected) & " -> fits"
     Else
@@ -195,6 +218,7 @@ Private Function TryQuota(ByRef models() As AAModel, ByRef designIndexes() As Lo
     Exit Function
 QuotaFailed:
     number = Err.Number: description = Err.Description: source = Err.Source
+    AADebugStageEnd "quota target=" & CStr(expected) & "; phase=" & phase & " failed", perfStarted
     Select Case number
         Case vbObjectError + 5210, vbObjectError + 5230, vbObjectError + 5231, _
              vbObjectError + 5233, vbObjectError + 5234, vbObjectError + 5241
@@ -208,10 +232,11 @@ Private Function BuildMode(ByRef models() As AAModel, ByRef designIndexes() As L
                            ByVal designCount As Long, ByRef cutIndexes() As Long, ByVal cutCount As Long, _
                            ByRef quantities() As Long, ByVal settings As AASettings, _
                            ByVal sourceDocument As Document, ByVal layoutMode As Long, _
-                           ByVal planner As AAPlanner) As AALayoutPlan
+                           ByVal planner As AAPlanner, _
+                           Optional ByVal capacityTarget As Long = -1) As AALayoutPlan
     If layoutMode = AA_MODE_MEDIUM Then
         Set BuildMode = planner.BuildMedium(models, designIndexes, designCount, _
-            cutIndexes, cutCount, quantities, settings, sourceDocument, True)
+            cutIndexes, cutCount, quantities, settings, sourceDocument, True, capacityTarget)
     Else
         Set BuildMode = planner.BuildMinimum(models, designIndexes, designCount, _
             cutIndexes, cutCount, quantities, settings, sourceDocument, True)
