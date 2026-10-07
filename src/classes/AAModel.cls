@@ -241,6 +241,8 @@ Public Function MakePlacement(ByVal designIndex As Long, ByVal cutIndex As Long,
     Dim cutLeft As Double
     Dim cutTop As Double
     Dim h As Double, v As Double, orientation As AARotationVariant
+    Dim perfStarted As Double
+    If AADebugProfiling Then perfStarted = AADebugPerfBegin()
 
     Set footprint = New AAGeometry
     footprint.AddPlaced mDesignGeometry, leftX, topY
@@ -260,6 +262,7 @@ Public Function MakePlacement(ByVal designIndex As Long, ByVal cutIndex As Long,
         Not (mSettings.HasHorizontalGap And mSettings.HorizontalPercent) And _
         Not (mSettings.HasVerticalGap And mSettings.VerticalPercent) And h >= 0# And v >= 0#
     Set MakePlacement = result
+    If AADebugProfiling Then AADebugPerfEnd AA_PERF_PLACEMENT, perfStarted
 End Function
 
 Public Function SameDesignGeometry(ByVal other As AAModel) As Boolean

@@ -31,7 +31,9 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     Dim pairAngle As Long, rowMode As Long, patternMode As Long, pairCutIndex As Long
     Dim hasZigZag As Boolean, pairEligible As Boolean
     Dim candidateLabel As String, bestLabel As String, buildError As String
+    Dim perfStarted As Double
     Set forbidden = sharedPlanner.ForbiddenFor(settings, sourceDocument)
+    perfStarted = AADebugPerfBegin()
     On Error Resume Next
     Set minimum = sharedPlanner.BuildMinimum(models, designIndexes, designCount, _
         cutIndexes, cutCount, quantities, settings, sourceDocument, singleAreaOnly)
@@ -48,6 +50,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     Else
         AADebugWrite "Medium", "Baseline Minimum unavailable: " & lastError
     End If
+    AADebugStageEnd "Baseline Minimum + validation", perfStarted
     If designCount = 1 Then
         firstIndex = designIndexes(0)
         If quantities(firstIndex) < 0 And Not models(firstIndex).IsRectangle Then
@@ -61,6 +64,8 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                 Err.Clear
                 On Error GoTo 0
             End If
+            If AADebugEnabled Then AADebugWrite "Pair", "eligible=" & CStr(pairEligible) & _
+                "; contour edge limit=" & CStr(AA_MAX_PAIR_CONTOUR_EDGES)
             If pairEligible Then
                 pairCutIndex = -1
                 If cutCount = 1 Then pairCutIndex = cutIndexes(0)
@@ -188,8 +193,10 @@ Private Function FinalizeCandidate(ByVal candidate As AALayoutPlan, ByRef models
                                    ByVal forbidden As Collection, ByVal settings As AASettings, _
                                    ByVal sourceDocument As Document, ByVal sharedPlanner As AAPlanner, _
                                    ByVal label As String) As AALayoutPlan
+    Dim perfStarted As Double
     AADebugPlan label & " raw", candidate
     If candidate Is Nothing Then Exit Function
+    perfStarted = AADebugPerfBegin()
     If Not sharedPlanner.FinalizeMedium(candidate, settings, sourceDocument) Then
         AADebugWrite "Center", label & " -> individual repair required: area or mark"
         AADebugCandidateStart label & " repair"
@@ -199,6 +206,7 @@ Private Function FinalizeCandidate(ByVal candidate As AALayoutPlan, ByRef models
     Else
         AADebugWrite "Center", label & " -> OK (common shift)"
     End If
+    AADebugStageEnd "finalize: " & label, perfStarted
     Set FinalizeCandidate = candidate
 End Function
 

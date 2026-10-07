@@ -25,6 +25,8 @@ Public Function MakePlacement(ByVal designIndex As Long, ByVal cutIndex As Long,
     Dim result As AAPlacement
     Dim footprint As AAGeometry, collision As AAGeometry
     Dim dx As Double, dy As Double
+    Dim perfStarted As Double
+    If AADebugProfiling Then perfStarted = AADebugPerfBegin()
     dx = leftX - mBounds.LeftX: dy = topY - mBounds.TopY
     Set footprint = mBounds.Placed(leftX, topY)
     Set collision = mCollision.Placed(mCollision.LeftX + dx, mCollision.TopY + dy)
@@ -34,6 +36,7 @@ Public Function MakePlacement(ByVal designIndex As Long, ByVal cutIndex As Long,
     result.SetCollisionFootprint collision
     result.SetMediumData mAngle, dx, dy, mContour, gapH, gapV
     Set MakePlacement = result
+    If AADebugProfiling Then AADebugPerfEnd AA_PERF_PLACEMENT, perfStarted
 End Function
 
 Public Property Get Width() As Double

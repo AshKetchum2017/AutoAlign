@@ -35,6 +35,8 @@ Public Sub Capture(ByVal geometry As AAGeometry)
     Dim x0 As Double, y0 As Double, x1 As Double, y1 As Double
     Dim x2 As Double, y2 As Double, x3 As Double, y3 As Double
     Dim ax As Double, ay As Double, bx As Double, by As Double
+    Dim perfStarted As Double
+    If AADebugProfiling Then perfStarted = AADebugPerfBegin()
     mLeft = geometry.LeftX: mTop = geometry.TopY
     For i = 1 To geometry.CurveCount
         Set part = geometry.CurveAt(i)
@@ -59,6 +61,10 @@ Public Sub Capture(ByVal geometry As AAGeometry)
             End If
         Next edge
     Next i
+    If AADebugProfiling Then
+        AADebugPerfEnd AA_PERF_CONTOUR, perfStarted
+        AADebugContourCaptured mAnchors.Count, mEdges.Count, AA_FLATNESS_MM
+    End If
 End Sub
 
 Private Sub Flatten(ByVal x0 As Double, ByVal y0 As Double, _
@@ -239,20 +245,25 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
     Dim vx As Double, vy As Double, distance As Double, gap As Double
     Dim largestGap As Double, allowance As Double
     Dim nearby As Collection, searchAllowance As Double
+    Dim perfStarted As Double
+    If AADebugProfiling Then perfStarted = AADebugPerfBegin()
     largestGap = gapH
     If gapV > largestGap Then largestGap = gapV
     If largestGap <= 0# Then
         ClearOf = True
+        If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
         Exit Function
     End If
     If mEdges.Count = 0 Or other.Edges.Count = 0 Then
         ClearOf = True
+        If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
         Exit Function
     End If
     If other.IsSeparatedFrom(mMinX + dx - otherDX, mMinY + dy - otherDY, _
         mMaxX + dx - otherDX, mMaxY + dy - otherDY, _
         largestGap + mMaxError + other.MaxChordError) Then
         ClearOf = True
+        If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
         Exit Function
     End If
     For Each a In mEdges
@@ -282,12 +293,16 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
                 End If
                 If gap > 0# Then
                     If distance < gap + CDbl(a(4)) + CDbl(b(4)) - _
-                        AA_DISTANCE_TOLERANCE_MM Then Exit Function
+                        AA_DISTANCE_TOLERANCE_MM Then
+                        If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
+                        Exit Function
+                    End If
                 End If
             End If
         Next b
     Next a
     ClearOf = True
+    If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
 End Function
 
 Private Function EdgeDistance(ByVal ax As Double, ByVal ay As Double, _

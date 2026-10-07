@@ -45,16 +45,21 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim errorDescription As String
     Dim operation As String
     Dim hasQuantityGroups As Boolean
+    Dim perfStarted As Double, perfStage As String
 
     feedback = vbNullString
     feedbackStyle = vbExclamation
     On Error GoTo RunFailed
     AADebugProcessStart layoutMode, modelMode
+    perfStage = "Setup"
+    perfStarted = AADebugPerfBegin()
 
     entryCount = objects.Count
     If entryCount = 0 Then
         feedback = "Daftarkan object Design terlebih dahulu."
         AADebugWrite "Process", "stopped: no registered objects"
+        AADebugStageEnd perfStage, perfStarted
+        AADebugPerfFinish "stopped"
         Exit Sub
     End If
 
@@ -133,6 +138,9 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     originalCenterY = targetPage.CenterY
 
     operation = "membaca kurva sumber"
+    AADebugStageEnd perfStage, perfStarted
+    perfStage = "Prepare geometry"
+    perfStarted = AADebugPerfBegin()
     For roleIndex = 0 To designCount - 1
         entryIndex = designIndexes(roleIndex)
         cutIndex = -1
@@ -158,6 +166,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Next roleIndex
 
     ReDim layoutDesignIndexes(0 To designCount - 1)
+    AADebugStageEnd perfStage, perfStarted
+    perfStage = vbNullString
     For roleIndex = 0 To designCount - 1
         layoutDesignIndexes(roleIndex) = designIndexes(roleIndex)
     Next roleIndex
@@ -175,6 +185,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     AADebugWrite "Model", "LayoutDesign=" & CStr(layoutDesignCount)
 
     operation = "merencanakan collision dan Quantity"
+    perfStage = "Planning total"
+    perfStarted = AADebugPerfBegin()
     Set planner = New AAPlanner
     If hasQuantityGroups Then
         operation = "merencanakan kelompok Quantity"
@@ -187,6 +199,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         Set plan = planner.BuildMinimum(models, layoutDesignIndexes, layoutDesignCount, _
             cutIndexes, cutCount, quantities, settings, doc)
     End If
+    AADebugStageEnd perfStage, perfStarted
+    perfStage = vbNullString
     AADebugPlan "Process layout", plan
     If plan.DesignCount = 0 Then
         feedback = "Tidak ada Design yang dapat ditempatkan pada area."
@@ -196,9 +210,13 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     sharedCutOwnerIndex = -1
     If Not hasQuantityGroups And cutCount = 1 And designCount > 1 Then
         operation = "menyamakan susunan Cut Line bersama"
+        perfStage = "Expand shared Cut Line"
+        perfStarted = AADebugPerfBegin()
         Set plan = ShareCutLayout(plan, models, designIndexes, designCount, _
             quantities, planner, settings, doc, sharedCutOwnerIndex)
         AADebugPlan "Shared Cut Line expanded", plan
+        AADebugStageEnd perfStage, perfStarted
+        perfStage = vbNullString
     End If
 
     ' Preset memakai ukuran sheet baku hanya selama Process. Semua koordinat
@@ -223,13 +241,19 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     operation = "membuat dan mengelompokkan hasil"
     mutationStarted = True
     Set builder = New AAResultBuilder
+    perfStage = "Build and group results"
+    perfStarted = AADebugPerfBegin()
     Set resultSelection = builder.Build(plan, sourceShapes, entryCount, settings, _
         originalCenterX, originalCenterY, sharedCutOwnerIndex)
     operation = "memilih group hasil"
     resultSelection.CreateSelection
+    AADebugStageEnd perfStage, perfStarted
+    perfStage = vbNullString
     lastProcessCompleted = True
 
 CleanExit:
+    perfStage = "Restore document"
+    perfStarted = AADebugPerfBegin()
     operation = "memulihkan unit dokumen dan ruler"
     If unitsSaved Then
         doc.Rulers.VUnits = previousVUnit
@@ -242,6 +266,9 @@ CleanExit:
         doc.EndCommandGroup
         commandGroupOpen = False
     End If
+    AADebugStageEnd perfStage, perfStarted
+    perfStage = vbNullString
+    AADebugPerfFinish "OK"
     AADebugWrite "Process", "OK"
     Exit Sub
 
@@ -250,6 +277,7 @@ RunFailed:
     errorSource = Err.Source
     errorDescription = Err.Description
     AADebugCandidateEnd
+    If Len(perfStage) > 0 Then AADebugStageEnd perfStage & " (failed)", perfStarted
     AADebugWrite "Process", "FAILED during " & operation & "; Error " & _
         CStr(errorNumber) & " (" & errorSource & "): " & errorDescription
     On Error Resume Next
@@ -275,6 +303,7 @@ RunFailed:
     End If
     On Error GoTo 0
 
+    AADebugPerfFinish "FAILED; completed checks only"
     lastProcessCompleted = False
     feedbackStyle = vbCritical
     feedback = "Auto Align gagal saat " & operation & "." & vbCrLf & _

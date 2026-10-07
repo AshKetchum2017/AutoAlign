@@ -596,8 +596,11 @@ Private Function CurvesOverlap(ByVal firstCurve As Curve, _
                                ByVal secondCurve As Curve) As Boolean
     Dim joined As Curve
     Dim overlapArea As Double
+    Dim perfStarted As Double
+    If AADebugProfiling Then perfStarted = AADebugPerfBegin()
 
     If IsClosedCurve(firstCurve) And IsClosedCurve(secondCurve) Then
+        If AADebugProfiling Then AADebugPerfCount AA_PERF_WELD
         Set joined = firstCurve.WeldWith(secondCurve)
         overlapArea = Abs(firstCurve.Area) + Abs(secondCurve.Area) - Abs(joined.Area)
         CurvesOverlap = (overlapArea > AA_AREA_TOLERANCE_MM2)
@@ -608,6 +611,7 @@ Private Function CurvesOverlap(ByVal firstCurve As Curve, _
     Else
         CurvesOverlap = OpenCurvesCross(firstCurve, secondCurve)
     End If
+    If AADebugProfiling Then AADebugPerfEnd AA_PERF_OVERLAP, perfStarted
 End Function
 
 Private Function CurvesSameArea(ByVal firstCurve As Curve, _

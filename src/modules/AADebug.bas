@@ -1,5 +1,25 @@
-Attribute VB_Name = "AADebug"
 Option Explicit
+
+' Pola Currency sama dengan MRStopwatch; tidak membutuhkan referensi GMS lain.
+#If VBA7 Then
+Private Declare PtrSafe Function QueryPerformanceCounter Lib "kernel32" (ByRef value As Currency) As Long
+Private Declare PtrSafe Function QueryPerformanceFrequency Lib "kernel32" (ByRef value As Currency) As Long
+#Else
+Private Declare Function QueryPerformanceCounter Lib "kernel32" (ByRef value As Currency) As Long
+Private Declare Function QueryPerformanceFrequency Lib "kernel32" (ByRef value As Currency) As Long
+#End If
+
+Public Const AA_PERF_CONTOUR As Long = 1
+Public Const AA_PERF_GAP As Long = 2
+Public Const AA_PERF_OVERLAP As Long = 3
+Public Const AA_PERF_PLACEMENT As Long = 4
+Public Const AA_PERF_WELD As Long = 5
+' Flag dibaca langsung oleh fungsi geometri yang sering dipanggil.
+Public AADebugProfiling As Boolean
+Private mPerfSeconds(1 To 5) As Double, mPerfCalls(1 To 5) As Double
+Private mClockFrequency As Currency, mClockStart As Currency
+Private mClockTimerStart As Double, mClockUsesCounter As Boolean
+Private mCandidateStarted As Double, mCandidateTiming As Boolean
 
 ' Immediate Window: AADebugOn (ringkas), AADebugOn True (detail), AADebugOff.
 ' Tidak disimpan: reset project mengembalikan debug ke kondisi nonaktif.
@@ -14,6 +34,8 @@ Public Sub AADebugOn(Optional ByVal detailed As Boolean = False)
     mEnabled = True
     mDetailed = detailed
     mSlotsActive = False
+    AADebugProfiling = False
+    mCandidateTiming = False
     Debug.Print "[AA][Debug] ON; detailed=" & CStr(detailed)
 End Sub
 
@@ -21,6 +43,8 @@ Public Sub AADebugOff()
     mEnabled = False
     mDetailed = False
     mSlotsActive = False
+    AADebugProfiling = False
+    mCandidateTiming = False
     Debug.Print "[AA][Debug] OFF"
 End Sub
 
@@ -43,6 +67,7 @@ Public Sub AADebugProcessStart(ByVal layoutMode As Long, ByVal modelMode As Long
     Dim layoutName As String, modelName As String
     If Not mEnabled Then Exit Sub
     mSlotsActive = False
+    AADebugPerfReset
     layoutName = "Minimum"
     If layoutMode = AA_MODE_MEDIUM Then layoutName = "Medium"
     modelName = "Custom"
@@ -52,6 +77,9 @@ Public Sub AADebugProcessStart(ByVal layoutMode As Long, ByVal modelMode As Long
 End Sub
 
 Public Sub AADebugCandidateStart(ByVal label As String)
+    mCandidateTiming = AADebugProfiling
+    If mCandidateTiming Then mCandidateStarted = AADebugPerfBegin()
+    If mEnabled Then mCandidate = label
     mSlotsActive = mEnabled And mDetailed
     If Not mSlotsActive Then Exit Sub
     mCandidate = label
@@ -60,11 +88,113 @@ Public Sub AADebugCandidateStart(ByVal label As String)
 End Sub
 
 Public Sub AADebugCandidateEnd()
+    If mCandidateTiming Then
+        AADebugStageEnd "candidate build: " & mCandidate, mCandidateStarted
+        mCandidateTiming = False
+    End If
     If Not mSlotsActive Then Exit Sub
     mSlotsActive = False
     AADebugWrite "Slots", mCandidate & "; rejected bounds=" & CStr(mBoundsRejected) & _
         "; gap=" & CStr(mGapRejected) & "; mark=" & CStr(mMarkRejected) & _
         "; overlap=" & CStr(mOverlapRejected)
+End Sub
+
+Private Sub AADebugPerfReset()
+    Dim i As Long
+    On Error Resume Next
+    AADebugProfiling = False
+    mCandidateTiming = False
+    For i = 1 To 5
+        mPerfCalls(i) = 0#: mPerfSeconds(i) = 0#
+    Next i
+    mClockTimerStart = Timer
+    mClockUsesCounter = False
+    If QueryPerformanceFrequency(mClockFrequency) <> 0 Then
+        If mClockFrequency > 0 Then
+            If QueryPerformanceCounter(mClockStart) <> 0 Then mClockUsesCounter = True
+        End If
+    End If
+    AADebugProfiling = True
+    If mClockUsesCounter Then
+        AADebugWrite "Perf", "clock=QPC; times inclusive (do not sum nested stages/counters)"
+    Else
+        AADebugWrite "Perf", "clock=Timer fallback; times inclusive (do not sum nested stages/counters)"
+    End If
+    If mDetailed Then AADebugWrite "Perf", "detail mode includes extra sample diagnostics"
+End Sub
+
+Private Function AADebugPerfClock() As Double
+    Dim finish As Currency
+    On Error GoTo TimerOnly
+    If mClockUsesCounter Then
+        If QueryPerformanceCounter(finish) <> 0 Then
+            AADebugPerfClock = CDbl(finish - mClockStart) / CDbl(mClockFrequency)
+            Exit Function
+        End If
+    End If
+TimerOnly:
+    AADebugPerfClock = Timer - mClockTimerStart
+    If AADebugPerfClock < 0# Then AADebugPerfClock = AADebugPerfClock + 86400#
+End Function
+
+Public Function AADebugPerfBegin() As Double
+    If Not AADebugProfiling Then Exit Function
+    AADebugPerfBegin = AADebugPerfClock()
+End Function
+
+Public Sub AADebugPerfEnd(ByVal kind As Long, ByVal started As Double)
+    Dim elapsed As Double
+    If Not AADebugProfiling Then Exit Sub
+    On Error Resume Next
+    elapsed = AADebugPerfClock() - started
+    If elapsed < 0# Then elapsed = 0#
+    mPerfCalls(kind) = mPerfCalls(kind) + 1#
+    mPerfSeconds(kind) = mPerfSeconds(kind) + elapsed
+End Sub
+
+Public Sub AADebugPerfCount(ByVal kind As Long)
+    If Not AADebugProfiling Then Exit Sub
+    On Error Resume Next
+    mPerfCalls(kind) = mPerfCalls(kind) + 1#
+End Sub
+
+Public Sub AADebugStageEnd(ByVal label As String, ByVal started As Double)
+    Dim elapsed As Double
+    If Not AADebugProfiling Then Exit Sub
+    On Error Resume Next
+    elapsed = AADebugPerfClock() - started
+    If elapsed < 0# Then elapsed = 0#
+    AADebugWrite "Perf", label & "=" & Format$(elapsed, "0.000") & " s"
+End Sub
+
+Public Sub AADebugContourCaptured(ByVal nodes As Long, ByVal edges As Long, ByVal flatnessMM As Double)
+    If Not AADebugProfiling Then Exit Sub
+    AADebugWrite "Contour", "nodes=" & CStr(nodes) & "; edges=" & CStr(edges) & _
+        "; flatness=" & CStr(flatnessMM) & " mm"
+End Sub
+
+Public Sub AADebugPerfFinish(ByVal status As String)
+    Dim i As Long, label As String
+    If Not AADebugProfiling Then Exit Sub
+    On Error Resume Next
+    AADebugStageEnd "Process total (" & status & ")", 0#
+    For i = 1 To 5
+        Select Case i
+            Case AA_PERF_CONTOUR: label = "contour capture"
+            Case AA_PERF_GAP: label = "gap checks"
+            Case AA_PERF_OVERLAP: label = "curve overlap"
+            Case AA_PERF_PLACEMENT: label = "placements"
+            Case AA_PERF_WELD: label = "overlap WeldWith"
+        End Select
+        If i = AA_PERF_WELD Then
+            AADebugWrite "Perf", label & ": calls=" & Format$(mPerfCalls(i), "0")
+        Else
+            AADebugWrite "Perf", label & ": calls=" & Format$(mPerfCalls(i), "0") & _
+                "; time=" & Format$(mPerfSeconds(i), "0.000") & " s"
+        End If
+    Next i
+    AADebugProfiling = False
+    mCandidateTiming = False
 End Sub
 
 Public Sub AADebugRejectSlot(ByVal reason As String)
