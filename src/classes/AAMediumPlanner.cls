@@ -11,6 +11,8 @@ Private Const AA_MAX_CONTACT_ANCHORS As Long = 16
 Private Const AA_MAX_REFINEMENT_PROBES_PER_AREA As Long = 2048
 Private Const AA_MAX_REFINEMENT_SLOTS As Long = 2048
 Private Const AA_COMPACTION_TOLERANCE_MM As Double = 0.01
+' Cadangan posisi Compact untuk pembulatan salinan/pemusatan kurva CorelDRAW.
+Private Const AA_COMPACTION_RESERVE_MM As Double = 0.001
 Private Const AA_MAX_COMPACTION_PROBES_PER_AREA As Long = 4096
 Private Const AA_COMPACTION_PASSES As Long = 2
 Private Const AA_MAX_PAIR_CONTOUR_EDGES As Long = 32
@@ -268,12 +270,15 @@ Private Function CompactPlan(ByVal plan As AALayoutPlan, ByRef models() As AAMod
     Dim current() As AAPlacement, placed As AAPlacement, occupied As Collection
     Dim orientation As AARotationVariant, result As AALayoutPlan
     Dim i As Long, j As Long, pass As Long, probes As Long, areaIndex As Long
+    Dim visit As Long, skipped As Long, totalProbes As Long
     Dim hasCurve As Boolean
     Dim moved As Long, previousX As Double, previousY As Double
     For Each placed In plan.Placements
         If Not models(placed.DesignIndex).IsRectangle Then hasCurve = True
     Next placed
     If Not hasCurve Then Exit Function
+    AADebugWrite "Compact", "clearance reserve=" & Format$(AA_COMPACTION_RESERVE_MM, "0.000") & _
+        " mm; copied gap validation=True"
     ' Salinan terpisah: jika pemusatan/mark gagal, rencana semula tetap valid.
     ReDim current(1 To plan.DesignCount)
     For i = 1 To plan.DesignCount
@@ -285,14 +290,22 @@ Private Function CompactPlan(ByVal plan As AALayoutPlan, ByRef models() As AAMod
     Next i
     For pass = 1 To AA_COMPACTION_PASSES
         areaIndex = -1
-        moved = 0
-        For i = 1 To plan.DesignCount
+        moved = 0: skipped = 0: totalProbes = 0
+        ' Pass kedua memberi objek akhir kesempatan sebelum anggaran area habis.
+        For visit = 1 To plan.DesignCount
+            i = visit
+            If pass Mod 2 = 0 Then i = plan.DesignCount - visit + 1
             If current(i).AreaIndex <> areaIndex Then
                 areaIndex = current(i).AreaIndex
                 probes = 0
             End If
             ' Rectangle mempertahankan anchor remainder Align Top / Align Left.
             If models(current(i).DesignIndex).IsRectangle Then GoTo NextPlaced
+            If probes >= AA_MAX_COMPACTION_PROBES_PER_AREA Then
+                skipped = skipped + 1
+                GoTo NextPlaced
+            End If
+            totalProbes = totalProbes - probes
             Set occupied = New Collection
             For j = 1 To plan.DesignCount
                 If j <> i And current(j).AreaIndex = areaIndex Then occupied.Add current(j)
@@ -301,11 +314,14 @@ Private Function CompactPlan(ByVal plan As AALayoutPlan, ByRef models() As AAMod
             previousX = current(i).Footprint.LeftX: previousY = current(i).Footprint.TopY
             Set current(i) = CompactAxis(current(i), orientation, occupied, forbidden, settings, True, probes)
             Set current(i) = CompactAxis(current(i), orientation, occupied, forbidden, settings, False, probes)
+            totalProbes = totalProbes + probes
             If Abs(current(i).Footprint.LeftX - previousX) > AA_EDGE_TOLERANCE_MM Or _
                Abs(current(i).Footprint.TopY - previousY) > AA_EDGE_TOLERANCE_MM Then moved = moved + 1
 NextPlaced:
-        Next i
-        AADebugWrite "Compact", "pass=" & CStr(pass) & " moved=" & CStr(moved)
+        Next visit
+        AADebugWrite "Compact", "pass=" & CStr(pass) & " moved=" & CStr(moved) & _
+            "; order=" & IIf(pass Mod 2 = 0, "reverse", "forward") & _
+            "; probes=" & CStr(totalProbes) & "; skipped budget=" & CStr(skipped)
     Next pass
     Set result = New AALayoutPlan
     result.Configure AA_MODE_MEDIUM
@@ -324,12 +340,11 @@ Private Function CompactAxis(ByVal placed As AAPlacement, ByVal orientation As A
     Set best = placed
     ' Tanpa tetangga pada arah gerak, pergeseran hanya memperlebar celah luar.
     If Not HasNeighborInDirection(placed, occupied, horizontal) Then GoTo FinishedCompaction
+    ' Compact mengikuti ruang menuju tetangga; slot awal tetap metadata asal.
     If horizontal Then
-        maximum = placed.Footprint.LeftX - MaxValue(0#, placed.SlotLeft - _
-            orientation.ReferenceWidth * AA_SHIFT_FACTOR)
+        maximum = placed.Footprint.LeftX
     Else
-        maximum = MinValue(settings.AreaHeightMM, placed.SlotTop + _
-            orientation.ReferenceHeight * AA_SHIFT_FACTOR) - placed.Footprint.TopY
+        maximum = settings.AreaHeightMM - placed.Footprint.TopY
     End If
     If maximum <= AA_COMPACTION_TOLERANCE_MM Then GoTo FinishedCompaction
     distance = MinValue(AA_SHIFT_STEP_MM, maximum)
@@ -338,7 +353,8 @@ Private Function CompactAxis(ByVal placed As AAPlacement, ByVal orientation As A
         If horizontal Then x = x - distance Else y = y + distance
         probes = probes + 1
         Set candidate = TryExactSlot(orientation, placed.DesignIndex, placed.CutIndex, _
-            placed.AreaIndex, x, y, occupied, forbidden, settings, placed.GapH, placed.GapV)
+            placed.AreaIndex, x, y, occupied, forbidden, settings, placed.GapH, placed.GapV, _
+            AA_COMPACTION_RESERVE_MM)
         If candidate Is Nothing Then
             blocked = distance
             Exit Do
@@ -357,7 +373,8 @@ Private Function CompactAxis(ByVal placed As AAPlacement, ByVal orientation As A
         If horizontal Then x = x - distance Else y = y + distance
         probes = probes + 1
         Set candidate = TryExactSlot(orientation, placed.DesignIndex, placed.CutIndex, _
-            placed.AreaIndex, x, y, occupied, forbidden, settings, placed.GapH, placed.GapV)
+            placed.AreaIndex, x, y, occupied, forbidden, settings, placed.GapH, placed.GapV, _
+            AA_COMPACTION_RESERVE_MM)
         If candidate Is Nothing Then
             blocked = distance
         Else
@@ -949,7 +966,8 @@ Private Function TryExactSlot(ByVal orientation As AARotationVariant, ByVal desi
                               ByVal cutIndex As Long, ByVal areaIndex As Long, _
                               ByVal x As Double, ByVal y As Double, ByVal occupied As Collection, _
                               ByVal forbidden As Collection, ByVal settings As AASettings, _
-                              ByVal h As Double, ByVal v As Double) As AAPlacement
+                              ByVal h As Double, ByVal v As Double, _
+                              Optional ByVal clearanceReserve As Double = 0#) As AAPlacement
     Dim candidate As AAPlacement
     If x < -AA_EDGE_TOLERANCE_MM Or y - orientation.Height < -AA_EDGE_TOLERANCE_MM Or _
        x + orientation.Width > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
@@ -957,9 +975,12 @@ Private Function TryExactSlot(ByVal orientation As AARotationVariant, ByVal desi
         AADebugRejectSlot "bounds"
         Exit Function
     End If
-    If Not HasClearanceAt(orientation, x, y, occupied, h, v) Then Exit Function
+    If Not HasClearanceAt(orientation, x, y, occupied, _
+        h + clearanceReserve, v + clearanceReserve) Then Exit Function
     Set candidate = orientation.MakePlacement(designIndex, cutIndex, areaIndex, x, y, h, v)
-    If Fits(candidate, occupied, forbidden, settings, True) Then Set TryExactSlot = candidate
+    ' Compact memeriksa ulang gap pada bounds kurva yang sudah disalin/dibulatkan.
+    If Fits(candidate, occupied, forbidden, settings, clearanceReserve = 0#) Then _
+        Set TryExactSlot = candidate
 End Function
 
 ' Tetangga disaring saja; semua predicate dan urutan pemeriksaan tetap di caller.
