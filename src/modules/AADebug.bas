@@ -415,6 +415,40 @@ TraceFailed:
     Err.Clear
 End Sub
 
+' Hanya kegagalan pertama per ValidPlan; tersedia juga pada debug ringkas.
+Public Sub AADebugValidationRejected(ByVal label As String, ByVal reason As String, _
+                                     ByVal candidate As AAPlacement, ByVal blocker As AAPlacement)
+    If Not mEnabled Then Exit Sub
+    On Error GoTo TraceFailed
+    AADebugWrite "Validate", label & "; rejected=" & reason
+    AADebugValidationPlacement "candidate", candidate
+    If Not blocker Is Nothing Then AADebugValidationPlacement "blocker", blocker
+TraceFailed:
+    Err.Clear
+End Sub
+
+Private Sub AADebugValidationPlacement(ByVal role As String, ByVal placed As AAPlacement)
+    Dim box As AAGeometry, collision As AAGeometry
+    Dim shiftErrorX As Double, shiftErrorY As Double
+    Set box = placed.Footprint
+    Set collision = placed.CollisionFootprint
+    AADebugWrite "Validate", role & "; design index=" & CStr(placed.DesignIndex) & _
+        "; cut index=" & CStr(placed.CutIndex) & "; area=" & CStr(placed.AreaIndex) & _
+        "; angle=" & CStr(placed.RotationDelta) & _
+        "; bounds L/B/R/T=" & Format$(box.LeftX, "0.000000000") & "/" & _
+        Format$(box.BottomY, "0.000000000") & "/" & _
+        Format$(box.RightX, "0.000000000") & "/" & Format$(box.TopY, "0.000000000")
+    AADebugWrite "Validate", role & "; slot X/Y=" & _
+        Format$(placed.SlotLeft, "0.000000000") & "/" & Format$(placed.SlotTop, "0.000000000") & _
+        "; gap H/V=" & Format$(placed.GapH, "0.000000000") & "/" & Format$(placed.GapV, "0.000000000")
+    If placed.UsesCenter Then
+        shiftErrorX = collision.LeftX - placed.Contour.LeftX - placed.CenterX
+        shiftErrorY = collision.TopY - placed.Contour.TopY - placed.CenterY
+        AADebugWrite "Validate", role & "; curve shift error X/Y=" & _
+            Format$(shiftErrorX, "0.000000000") & "/" & Format$(shiftErrorY, "0.000000000")
+    End If
+End Sub
+
 Public Sub AADebugPlan(ByVal label As String, ByVal plan As AALayoutPlan)
     Dim widthMM As Double, heightMM As Double, boundsArea As Double
     Dim collisionWidth As Double, collisionHeight As Double, collisionArea As Double

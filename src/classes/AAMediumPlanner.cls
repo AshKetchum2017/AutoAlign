@@ -47,7 +47,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     On Error GoTo 0
     If Not minimum Is Nothing Then
         Set candidate = AdaptMinimum(minimum, models)
-        If ValidPlan(candidate, forbidden, settings) Then
+        If ValidPlan(candidate, forbidden, settings, "Baseline Minimum") Then
             ConsiderCandidate candidate, best, "Baseline Minimum", bestLabel, sharedPlanner
         Else
             AADebugWrite "Medium", "Baseline Minimum rejected: gap, collision, area or mark"
@@ -160,7 +160,7 @@ NextPairPattern:
                 If Not candidate Is Nothing Then
                     If candidate.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget) Then
                         ' Validasi posisi sesudah centering/repair sebelum shortcut kapasitas.
-                        If ValidPlan(candidate, forbidden, settings) Then
+                        If ValidPlan(candidate, forbidden, settings, "Capacity") Then
                             Set best = candidate: bestLabel = candidateLabel
                             capacityValidated = True
                             GoTo BuildComplete
@@ -193,7 +193,7 @@ NextPairPattern:
         Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
             sourceDocument, sharedPlanner, candidateLabel)
         If Not candidate Is Nothing Then
-            If ValidPlan(candidate, forbidden, settings) Then
+            If ValidPlan(candidate, forbidden, settings, "Compact final") Then
                 If capacityTarget > 0 Then
                     If candidate.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget) Then
                         Set best = candidate: bestLabel = candidateLabel
@@ -468,9 +468,10 @@ Private Function AdaptMinimum(ByVal source As AALayoutPlan, _
 End Function
 
 Private Function ValidPlan(ByVal plan As AALayoutPlan, ByVal forbidden As Collection, _
-                           ByVal settings As AASettings) As Boolean
+                           ByVal settings As AASettings, _
+                           Optional ByVal validationLabel As String = "Plan") As Boolean
     Dim occupied As Collection, placed As AAPlacement
-    Dim areaIndex As Long
+    Dim areaIndex As Long, objectIndex As Long
     Set occupied = New Collection
     areaIndex = -1
     For Each placed In plan.Placements
@@ -478,7 +479,9 @@ Private Function ValidPlan(ByVal plan As AALayoutPlan, ByVal forbidden As Collec
             areaIndex = placed.AreaIndex
             Set occupied = New Collection
         End If
-        If Not Fits(placed, occupied, forbidden, settings) Then Exit Function
+        objectIndex = objectIndex + 1
+        If Not Fits(placed, occupied, forbidden, settings, False, _
+            validationLabel & "; object=" & CStr(objectIndex)) Then Exit Function
         occupied.Add placed
     Next placed
     ValidPlan = True
@@ -1295,7 +1298,8 @@ End Sub
 
 Private Function Fits(ByVal candidate As AAPlacement, ByVal occupied As Collection, _
                       ByVal forbidden As Collection, ByVal settings As AASettings, _
-                      Optional ByVal clearanceChecked As Boolean = False) As Boolean
+                      Optional ByVal clearanceChecked As Boolean = False, _
+                      Optional ByVal validationLabel As String = vbNullString) As Boolean
     Dim box As AAGeometry, collision As AAGeometry, other As AAGeometry
     Dim placed As AAPlacement, obstacle As AAGeometry, gap As Double
     Dim nearby As Collection
@@ -1304,12 +1308,16 @@ Private Function Fits(ByVal candidate As AAPlacement, ByVal occupied As Collecti
        box.RightX > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
        box.TopY > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then
         AADebugRejectSlot "bounds"
+        If Len(validationLabel) > 0 Then AADebugValidationRejected _
+            validationLabel, "bounds", candidate, Nothing
         Exit Function
     End If
     Set collision = candidate.CollisionFootprint
     For Each obstacle In forbidden
         If collision.Overlaps(obstacle) Then
             AADebugRejectSlot "mark"
+            If Len(validationLabel) > 0 Then AADebugValidationRejected _
+                validationLabel, "mark", candidate, Nothing
             Exit Function
         End If
     Next obstacle
@@ -1323,11 +1331,15 @@ Private Function Fits(ByVal candidate As AAPlacement, ByVal occupied As Collecti
             If Not clearanceChecked Then
                 If Not candidate.HasClearance(placed) Then
                     AADebugRejectSlot "gap"
+                    If Len(validationLabel) > 0 Then AADebugValidationRejected _
+                        validationLabel, "gap", candidate, placed
                     Exit Function
                 End If
             End If
             If collision.Overlaps(other) Then
                 AADebugOverlapRejected candidate, placed
+                If Len(validationLabel) > 0 Then AADebugValidationRejected _
+                    validationLabel, "overlap", candidate, placed
                 Exit Function
             End If
         End If
