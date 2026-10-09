@@ -113,3 +113,20 @@ Catatan: compile, seleksi, dan susunan kelompok dikonfirmasi berhasil pada kasus
 
 [Medium: indeks spasial objek]
 ~ Pemeriksaan tetangga memakai indeks spasial.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-08
+[Medium: pencarian Quantity kelompok dan debug file]
++ Debug opsional dapat ditulis ke file melalui AADebugFileOn, sehingga trace panjang tidak terpotong oleh Immediate Window.
+~ Pencarian kuota kelompok berhenti saat kuota penuh lolos validasi; optimasi penuh dijalankan sekali untuk kuota akhir. Uji dua Design/Cut Line tetap 157 + 157 objek, dengan waktu engine turun dari 2220,014 menjadi 2013,903 detik pada satu run pembanding.
+
+[Medium: validasi hasil perapatan]
+~ Compact memeriksa gap setelah kurva disalin, dengan cadangan posisi 0,001 mm untuk pembulatan; uji mempertahankan 314 objek dan mengurangi lebar susunan 4,286 mm.
+Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bertahan meskipun Compact diterima; perbaikan lanjutan belum diuji runtime.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-09
+[Medium: optimasi pencarian kuota kelompok]
+~ Estimasi awal kuota dan penggunaan ulang penempatan mempercepat Case_07_Big Data dari 2013,903 menjadi 607,559 detik (69,83%), tetap 157 + 157 Design dalam satu area.
+~ Pencarian surplus kelompok mengizinkan selisih maksimal dua objek antar Design.
+Catatan: pemeriksaan gap aman/tanpa collision melalui contour 2 mm. Satu pasangan kiri bawah masih belum sejajar pada Y dengan tetangganya; penempatan tersebut masih ditelusuri.

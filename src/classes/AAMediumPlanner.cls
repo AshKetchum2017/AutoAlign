@@ -22,6 +22,19 @@ Private Const AA_PAIR_INSET_RESERVE_MM As Double = 0.001
 
 Private mOccupiedIndex As AAOccupiedIndex
 
+' Diaktifkan hanya oleh satu pencarian kelompok /n. Tidak lintas Process/group.
+' Cache menyimpan urutan FillArea SEBELUM centering/repair/Compact.
+Private Const AA_MAX_CACHED_PLACEMENTS As Long = 8192
+Private mQuotaFills As Object
+Private mCachedPlacements As Long
+Private mFillHits As Long, mFillMisses As Long, mFillReused As Long
+
+Friend Sub BeginQuotaSearch()
+    Set mQuotaFills = CreateObject("Scripting.Dictionary")
+    mCachedPlacements = 0
+    Set mOccupiedIndex = Nothing
+End Sub
+
 Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, _
                       ByVal designCount As Long, ByRef cutIndexes() As Long, _
                       ByVal cutCount As Long, ByRef quantities() As Long, _
@@ -37,6 +50,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     Dim hasZigZag As Boolean, pairEligible As Boolean
     Dim candidateLabel As String, bestLabel As String, buildError As String
     Dim perfStarted As Double, capacityValidated As Boolean
+    mFillHits = 0: mFillMisses = 0: mFillReused = 0
     ' Capacity hanya untuk quota finite pada satu area; caller biasa memakai -1.
     If Not singleAreaOnly Then capacityTarget = -1
     Set forbidden = sharedPlanner.ForbiddenFor(settings, sourceDocument)
@@ -219,6 +233,9 @@ BuildComplete:
             "; complete=" & CStr(best.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget))
     End If
     AADebugPlan "Selected " & bestLabel, best
+    If Not mQuotaFills Is Nothing Then AADebugWrite "Quota cache", _
+        "hits=" & CStr(mFillHits) & "; misses=" & CStr(mFillMisses) & _
+        "; reused placements=" & CStr(mFillReused) & "; stored=" & CStr(mCachedPlacements)
     Set mOccupiedIndex = Nothing
     Set Build = best
 End Function
@@ -513,6 +530,8 @@ Private Function BuildPass(ByRef models() As AAModel, ByRef designIndexes() As L
     Dim result As AALayoutPlan, occupied As Collection
     Dim roleIndex As Long, index As Long, cutIndex As Long, areaIndex As Long
     Dim remaining As Long, added As Long, sourceCount As Long, requested As Boolean
+    Dim prefix As String, fillKey As String
+    prefix = CStr(firstAngle) & "|" & CStr(zigZag)
     Set result = New AALayoutPlan
     result.Configure AA_MODE_MEDIUM
     Set occupied = New Collection
@@ -544,8 +563,14 @@ Private Function BuildPass(ByRef models() As AAModel, ByRef designIndexes() As L
         Else
             sourceCount = 0
             Do While remaining > 0
-                added = FillArea(result, models(index), index, cutIndex, areaIndex, _
-                    occupied, forbidden, settings, remaining, firstAngle, zigZag)
+                If singleAreaOnly And Not mQuotaFills Is Nothing Then
+                    fillKey = prefix & "|" & CStr(index) & ":" & CStr(cutIndex)
+                    added = FillQuotaArea(fillKey, result, models(index), index, cutIndex, _
+                        occupied, forbidden, settings, remaining, firstAngle, zigZag)
+                Else
+                    added = FillArea(result, models(index), index, cutIndex, areaIndex, _
+                        occupied, forbidden, settings, remaining, firstAngle, zigZag)
+                End If
                 If added = 0 And occupied.Count = 0 Then Err.Raise vbObjectError + 5231, _
                     "AAMediumPlanner", "Object tidak muat dalam satu area pada pencarian Medium."
                 remaining = remaining - added
@@ -563,10 +588,66 @@ Private Function BuildPass(ByRef models() As AAModel, ByRef designIndexes() As L
             Err.Raise vbObjectError + 5210, "AAMediumPlanner", _
                 "Satu Cut Line bersama melebihi batas 5000 objek."
 NextSource:
+        ' Quota seluruh sumber sebelumnya menentukan occupied untuk sumber ini.
+        ' Quantity 0 juga masuk key agar perpindahan peran tidak berbenturan.
+        prefix = prefix & "|" & CStr(index) & ":" & CStr(cutIndex) & "=" & CStr(quantities(index))
     Next roleIndex
     If requested And result.DesignCount = 0 Then Err.Raise vbObjectError + 5233, _
         "AAMediumPlanner", "Tidak ada Design yang muat pada pencarian Medium."
     Set BuildPass = result
+End Function
+
+Private Function FillQuotaArea(ByVal key As String, ByVal result As AALayoutPlan, _
+                               ByVal model As AAModel, ByVal designIndex As Long, _
+                               ByVal cutIndex As Long, ByVal occupied As Collection, _
+                               ByVal forbidden As Collection, ByVal settings As AASettings, _
+                               ByVal limit As Long, ByVal firstAngle As Double, _
+                               ByVal zigZag As Boolean) As Long
+    Dim entry As Collection, saved As Collection, placed As AAPlacement
+    Dim previousCount As Long, startCount As Long, added As Long, i As Long
+    If mQuotaFills.Exists(key) Then
+        Set entry = mQuotaFills(key)
+        Set saved = entry(1)
+        previousCount = saved.Count
+        ' FillArea berhenti tepat pada limit. Prefix hanya dapat dipakai bila
+        ' cukup panjang, atau pencarian lama sudah menghabiskan seluruh slot.
+        If limit <= saved.Count Or CBool(entry(2)) Then
+            added = saved.Count
+            If added > limit Then added = limit
+            For i = 1 To added
+                ' Friend member harus dipanggil melalui reference AAPlacement,
+                ' bukan Variant hasil Collection.Item (late binding).
+                Set placed = saved(i)
+                Set placed = placed.CopyForPlan()
+                result.Add placed
+                occupied.Add placed
+            Next i
+            mFillHits = mFillHits + 1
+            mFillReused = mFillReused + added
+            FillQuotaArea = added
+            Exit Function
+        End If
+    End If
+    mFillMisses = mFillMisses + 1
+    startCount = result.DesignCount
+    added = FillArea(result, model, designIndex, cutIndex, 0, occupied, forbidden, _
+        settings, limit, firstAngle, zigZag)
+    ' Error FillArea tidak masuk cache. Batas memori tidak memotong pencarian;
+    ' entry yang tidak tertampung dihitung ulang dengan jalur biasa.
+    If mCachedPlacements - previousCount + added <= AA_MAX_CACHED_PLACEMENTS Then
+        Set saved = New Collection
+        For i = 1 To added
+            Set placed = result.Placements(startCount + i)
+            saved.Add placed.CopyForPlan()
+        Next i
+        Set entry = New Collection
+        entry.Add saved
+        entry.Add (added < limit)
+        If mQuotaFills.Exists(key) Then mQuotaFills.Remove key
+        mQuotaFills.Add key, entry
+        mCachedPlacements = mCachedPlacements - previousCount + added
+    End If
+    FillQuotaArea = added
 End Function
 
 Private Function AnglesFor(ByVal model As AAModel, ByVal firstAngle As Double) As Collection

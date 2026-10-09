@@ -145,6 +145,22 @@ Public Sub Translate(ByVal deltaX As Double, ByVal deltaY As Double)
     mSlotTop = mSlotTop + deltaY
 End Sub
 
+' Snapshot metadata terpisah; geometry/contour bersifat read-only. Translate
+' mengganti referensi geometry, sehingga centering tidak mengubah isi cache.
+Friend Function CopyForPlan() As AAPlacement
+    Dim result As AAPlacement
+    Set result = New AAPlacement
+    result.Configure mDesignIndex, mCutIndex, mAreaIndex, mDesignLeft, mDesignTop, _
+        mCutLeft, mCutTop, mFootprint
+    result.SetCollisionFootprint mCollisionFootprint
+    If mUsesCenter Then result.SetMediumData mRotationDelta, mCenterX, mCenterY, _
+        mContour, mGapH, mGapV
+    result.SetContourData mContour, mGapH, mGapV, mUsesContourGap
+    result.SetShiftOrigin mSlotLeft, mSlotTop
+    If mSuppressCutLine Then result.SuppressCutLine
+    Set CopyForPlan = result
+End Function
+
 Public Property Get DesignIndex() As Long
     DesignIndex = mDesignIndex
 End Property

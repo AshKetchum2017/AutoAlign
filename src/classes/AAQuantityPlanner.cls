@@ -1,8 +1,10 @@
 Option Explicit
 
 Private Const AA_MAX_OBJECTS_PER_SOURCE As Long = 5000
+Private Const AA_QUANTITY_MAX_DIFFERENCE As Long = 2
 Private mSharedTemplate As AALayoutPlan
 Private mTemplateCutIndex As Long
+Private mQuotaPlanner As AAMediumPlanner
 
 ' Satu instance per Process: cache hanya berlaku pada settings/dokumen yang sama.
 Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As Long, _
@@ -13,7 +15,10 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
     Dim quantities() As Long, oneDesign(0 To 0) As Long, oneCut(0 To 0) As Long
     Dim template As AALayoutPlan, result As AALayoutPlan, candidate As AALayoutPlan
     Dim low As Long, high As Long, middle As Long, i As Long, index As Long
-    Dim expected As Long
+    Dim expected As Long, pass As Long, failedAtTotal() As Long
+    Dim expanding As Boolean
+    ' Geometri, urutan sumber, area dan gap cache tidak boleh lintas kelompok.
+    Set mQuotaPlanner = Nothing
     ReDim quantities(0 To UBound(models))
     oneDesign(0) = designIndexes(0)
     quantities(oneDesign(0)) = -1
@@ -53,8 +58,16 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
     If cutCount = 1 Then high = high \ designCount
     Set result = New AALayoutPlan
     result.Configure layoutMode
+    middle = (high + 1) \ 2
+    If layoutMode = AA_MODE_MEDIUM Then
+        Set mQuotaPlanner = New AAMediumPlanner
+        mQuotaPlanner.BeginQuotaSearch
+        middle = InitialQuota(models, designIndexes, designCount, settings, high)
+        expanding = True
+        AADebugWrite "Quantity", "initial quota per Design=" & CStr(middle) & _
+            "; search limit=" & CStr(high) & "; max difference=" & CStr(AA_QUANTITY_MAX_DIFFERENCE)
+    End If
     Do While low < high
-        middle = (low + high + 1) \ 2
         For i = 0 To designCount - 1
             quantities(designIndexes(i)) = middle
         Next i
@@ -63,30 +76,48 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
             quantities, expected, settings, sourceDocument, layoutMode, planner)
         If candidate Is Nothing Then
             high = middle - 1
+            expanding = False
         Else
             low = middle
             Set result = candidate
+        End If
+        If expanding Then
+            ' Perkiraan bounds bukan batas kapasitas: bila muat, cari di atasnya.
+            middle = low * 2
+            If middle > high Then middle = high
+        Else
+            middle = (low + high + 1) \ 2
         End If
     Loop
     For i = 0 To designCount - 1
         quantities(designIndexes(i)) = low
     Next i
     expected = low * designCount
-    ' Sisa satu per Design, menurut urutan daftar; yang tidak muat tidak dipaksakan.
+    ' Dua putaran surplus; semua quota tetap dalam [low, low + 2]. Putaran
+    ' pertama memberi tiap Design kesempatan sebelum salah satu mendapat +2.
+    ReDim failedAtTotal(0 To UBound(models))
     For i = 0 To designCount - 1
-        index = designIndexes(i)
-        If quantities(index) < AA_MAX_OBJECTS_PER_SOURCE Then
-            quantities(index) = quantities(index) + 1
-            Set candidate = TryQuota(models, designIndexes, designCount, cutIndexes, cutCount, _
-                quantities, expected + 1, settings, sourceDocument, layoutMode, planner)
-            If candidate Is Nothing Then
-                quantities(index) = quantities(index) - 1
-            Else
-                expected = expected + 1
-                Set result = candidate
-            End If
-        End If
+        failedAtTotal(designIndexes(i)) = -1
     Next i
+    For pass = 1 To AA_QUANTITY_MAX_DIFFERENCE
+        For i = 0 To designCount - 1
+            index = designIndexes(i)
+            If quantities(index) < AA_MAX_OBJECTS_PER_SOURCE And _
+                (cutCount <> 1 Or expected < AA_MAX_OBJECTS_PER_SOURCE) And _
+                failedAtTotal(index) <> expected Then
+                quantities(index) = quantities(index) + 1
+                Set candidate = TryQuota(models, designIndexes, designCount, cutIndexes, cutCount, _
+                    quantities, expected + 1, settings, sourceDocument, layoutMode, planner)
+                If candidate Is Nothing Then
+                    quantities(index) = quantities(index) - 1
+                    failedAtTotal(index) = expected
+                Else
+                    expected = expected + 1
+                    Set result = candidate
+                End If
+            End If
+        Next i
+    Next pass
     If result.DesignCount = 0 Then Err.Raise vbObjectError + 5333, "AAQuantityPlanner", _
         "Tidak ada Design kelompok yang dapat ditempatkan dalam satu container."
     If layoutMode = AA_MODE_MEDIUM Then
@@ -105,7 +136,33 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
             CStr(quantities(designIndexes(i)))
     Next i
     AADebugPlan "Quantity balanced quotas", result
+    Set mQuotaPlanner = Nothing
     Set BuildGroup = result
+End Function
+
+' Titik awal murah dari footprint + gap, bukan klaim kapasitas maksimum.
+' Kontur dapat saling mengisi ruang bbox; loop akan memperbesar quota bila muat.
+Private Function InitialQuota(ByRef models() As AAModel, ByRef designIndexes() As Long, _
+                              ByVal designCount As Long, ByVal settings As AASettings, _
+                              ByVal maximum As Long) As Long
+    Dim i As Long, h As Double, v As Double, unitArea As Double, estimate As Double
+    Dim model As AAModel
+    If maximum <= 0 Then Exit Function
+    For i = 0 To designCount - 1
+        Set model = models(designIndexes(i))
+        model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+        If h < 0# Then h = 0#
+        If v < 0# Then v = 0#
+        unitArea = unitArea + (model.FootprintWidth + h) * (model.FootprintHeight + v)
+    Next i
+    InitialQuota = 1
+    If unitArea <= 0# Then Exit Function
+    estimate = Fix((settings.AreaWidthMM * settings.AreaHeightMM) / unitArea)
+    If estimate >= maximum Then
+        InitialQuota = maximum
+    ElseIf estimate > 1# Then
+        InitialQuota = CLng(estimate)
+    End If
 End Function
 
 Private Function TemplateFits(ByVal plan As AALayoutPlan, ByVal planner As AAPlanner, _
@@ -235,8 +292,13 @@ Private Function BuildMode(ByRef models() As AAModel, ByRef designIndexes() As L
                            ByVal planner As AAPlanner, _
                            Optional ByVal capacityTarget As Long = -1) As AALayoutPlan
     If layoutMode = AA_MODE_MEDIUM Then
-        Set BuildMode = planner.BuildMedium(models, designIndexes, designCount, _
-            cutIndexes, cutCount, quantities, settings, sourceDocument, True, capacityTarget)
+        If mQuotaPlanner Is Nothing Then
+            Set BuildMode = planner.BuildMedium(models, designIndexes, designCount, _
+                cutIndexes, cutCount, quantities, settings, sourceDocument, True, capacityTarget)
+        Else
+            Set BuildMode = mQuotaPlanner.Build(models, designIndexes, designCount, _
+                cutIndexes, cutCount, quantities, settings, sourceDocument, planner, True, capacityTarget)
+        End If
     Else
         Set BuildMode = planner.BuildMinimum(models, designIndexes, designCount, _
             cutIndexes, cutCount, quantities, settings, sourceDocument, True)
