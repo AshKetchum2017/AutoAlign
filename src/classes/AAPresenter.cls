@@ -7,6 +7,10 @@ Private Sub Class_Initialize()
     Set mStore = New AAObjectStore
 End Sub
 
+Public Property Get LastProcessCompleted() As Boolean
+    LastProcessCompleted = mLastProcessCompleted
+End Property
+
 Public Property Get ObjectCount() As Long
     ObjectCount = mStore.Count
 End Property

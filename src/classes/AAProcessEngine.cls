@@ -50,6 +50,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     feedback = vbNullString
     feedbackStyle = vbExclamation
     On Error GoTo RunFailed
+    AAProgressStage "Memeriksa input"
     AADebugProcessStart layoutMode, modelMode
     perfStage = "Setup"
     perfStarted = AADebugPerfBegin()
@@ -141,7 +142,9 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     AADebugStageEnd perfStage, perfStarted
     perfStage = "Prepare geometry"
     perfStarted = AADebugPerfBegin()
+    AAProgressStage "Membaca geometri", "Design dan Cut Line", 0, designCount
     For roleIndex = 0 To designCount - 1
+        AAProgressStep roleIndex, designCount
         entryIndex = designIndexes(roleIndex)
         cutIndex = -1
         If cutCount = 1 Then
@@ -185,6 +188,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     End If
     AADebugWrite "Model", "LayoutDesign=" & CStr(layoutDesignCount)
 
+    AAProgressStage "Mencari susunan terbaik"
     operation = "merencanakan collision dan Quantity"
     perfStage = "Planning total"
     perfStarted = AADebugPerfBegin()
@@ -211,6 +215,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     End If
     sharedCutOwnerIndex = -1
     If Not hasQuantityGroups And cutCount = 1 And designCount > 1 Then
+        AAProgressStage "Menyiapkan Cut Line bersama"
         operation = "menyamakan susunan Cut Line bersama"
         perfStage = "Expand shared Cut Line"
         perfStarted = AADebugPerfBegin()
@@ -256,6 +261,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     lastProcessCompleted = True
 
 CleanExit:
+    AAProgressStage "Memulihkan dokumen"
     perfStage = "Restore document"
     perfStarted = AADebugPerfBegin()
     operation = "memulihkan unit dokumen dan ruler"
@@ -377,6 +383,11 @@ Private Function BuildQuantityGroups(ByVal objects As AAObjectStore, ByRef model
             End If
         Next roleIndex
         If selectedCount = 0 Then GoTo NextGroup
+        If groupNumber > 0 Then
+            AAProgressGroup "Kelompok /" & CStr(groupNumber)
+        Else
+            AAProgressGroup "Quantity biasa"
+        End If
         If cutCount = 1 Then
             selectedCuts(0) = cutIndexes(0)
             selectedCutCount = 1

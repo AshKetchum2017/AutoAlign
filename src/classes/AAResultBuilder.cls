@@ -34,7 +34,9 @@ Public Function Build(ByVal plan As AALayoutPlan, ByRef sourceShapes() As Shape,
         originalAngles(i) = sourceShapes(i).RotationAngle
     Next i
 
+    AAProgressStage "Membuat objek", "Design dan Cut Line", 0, placements.Count
     For i = 1 To placements.Count
+        AAProgressStep i - 1, placements.Count
         Set placement = placements(i)
         Set designs(i) = TakeShape(sourceShapes(placement.DesignIndex), _
             used(placement.DesignIndex))
@@ -50,8 +52,11 @@ Public Function Build(ByVal plan As AALayoutPlan, ByRef sourceShapes() As Shape,
         End If
     Next i
 
+    AAProgressStep placements.Count, placements.Count
+    AAProgressStage "Mengelompokkan hasil"
     ' Pertahankan layer sumber; koreksi hanya pasangan dengan urutan terbalik.
     For i = 1 To placements.Count
+        AAProgressPulse
         If Not cuts(i) Is Nothing Then AAOrderPlacementPair designs(i), cuts(i)
     Next i
 
@@ -69,6 +74,7 @@ Public Function Build(ByVal plan As AALayoutPlan, ByRef sourceShapes() As Shape,
     Set parentBuckets = CreateObject("Scripting.Dictionary")
     Set parentOrder = New Collection
     For Each key In sourceOrder
+        AAProgressPulse
         Set sourceBucket = sourceBuckets(CStr(key))
         sourceBucket.Finish True
         AddToBucket parentBuckets, parentOrder, sourceBucket.AreaIndex, _
@@ -77,6 +83,7 @@ Public Function Build(ByVal plan As AALayoutPlan, ByRef sourceShapes() As Shape,
 
     Set result = New ShapeRange
     For Each key In parentOrder
+        AAProgressPulse
         Set parentBucket = parentBuckets(CStr(key))
         parentBucket.Finish False
         result.Add parentBucket.Result

@@ -129,6 +129,7 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
     Dim straightError As String
     Dim zigZagError As String
 
+    AAProgressCandidate
     If AllActiveRectangles(models, designIndexes, designCount, quantities) Then
         Set BuildMinimum = BuildOne(models, designIndexes, designCount, cutIndexes, _
             cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT, singleAreaOnly)
@@ -140,6 +141,7 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
         cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT, singleAreaOnly)
     If Err.Number <> 0 Then straightError = Err.Description
     Err.Clear
+    AAProgressCandidate
     Set zigZagPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
         cutCount, quantities, settings, sourceDocument, AA_MODE_ZIGZAG, singleAreaOnly)
     If Err.Number <> 0 Then zigZagError = Err.Description
@@ -360,6 +362,7 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
             xOffset = horizontalStep / 2#
         Do While xOffset + model.FootprintWidth <= _
                  settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM
+            AAProgressPulse
             probes = probes + 1
             If probes > AA_MAX_CANDIDATES_PER_AREA Then Err.Raise _
                 vbObjectError + 5232, "AAPlanner", _

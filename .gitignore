@@ -4,6 +4,9 @@
 *.log
 *.md
 *.ps1
+*.py
+*.txt
+*.vbs
 
 # Include Changelog to be tracked by git
 !Changelog.log
@@ -11,14 +14,4 @@
 # Ignore specific files in the project directory
 AutoAlignWizard.bas
 Macro2.bas
-Statistics.txt
-AA-Debug-Align.txt
-AA-Debug-FailedQuota.txt
-AA-Debug-Quota.txt
-AA-Debug-QuotaCache4.txt
-AA-Debug.txt
-Info.txt
-verify_neighbor_alignment.py
-verify_quota_gap_cache.py
-verify_quota_optimization.py
 verify_quota_optimization.cpython-313.pyc

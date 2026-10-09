@@ -282,6 +282,7 @@ Private Function TryQuota(ByRef models() As AAModel, ByRef designIndexes() As Lo
     perfStarted = AADebugPerfBegin()
     mLastCapacityCount = 0
     On Error GoTo QuotaFailed
+    AAProgressTrial
     Set candidate = BuildMode(models, designIndexes, designCount, cutIndexes, cutCount, _
         quantities, settings, sourceDocument, layoutMode, planner, capacityTarget)
     AADebugStageEnd "quota target=" & CStr(expected) & "; phase=" & phase, perfStarted

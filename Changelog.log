@@ -142,3 +142,6 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Medium: cache empat slot per bucket]
 ~ Cache keputusan gap menyimpan empat hasil per bucket, sehingga hasil pemeriksaan lebih banyak dipakai ulang antar trial.
+
+[Process: indikator progres]
++ Menampilkan tahap, detail pekerjaan, dan durasi Process tanpa perlu mengaktifkan Debug. Bar berjalan saat pencarian susunan dan terisi berdasarkan jumlah objek pada tahap pembuatan hasil.

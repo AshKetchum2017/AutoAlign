@@ -133,6 +133,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                             Set candidate = Nothing
                             candidateLabel = "Pair angle=" & CStr(pairAngle) & _
                                 " row=" & CStr(rowMode) & " pattern=" & CStr(patternMode)
+                            AAProgressCandidate
                             AADebugCandidateStart candidateLabel
                             buildError = vbNullString
                             On Error Resume Next
@@ -175,6 +176,7 @@ NextPairPattern:
             If pattern = 1 And Not hasZigZag Then GoTo NextPattern
             Set candidate = Nothing
             candidateLabel = "Pass angle=" & CStr(angle) & " zigzag=" & CStr(pattern = 1)
+            AAProgressCandidate
             AADebugCandidateStart candidateLabel
             buildError = vbNullString
             On Error Resume Next
@@ -222,7 +224,9 @@ NextPairPattern:
         AADebugWrite "Compact", "skipped: selected plan has a regular pattern"
     Else
         candidateLabel = "Compact " & bestLabel
+        AAProgressCandidate
         AADebugCandidateStart candidateLabel
+        AAProgressStage "Merapatkan susunan"
         Set candidate = CompactPlan(best, models, forbidden, settings)
         AADebugCandidateEnd
         Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
@@ -245,7 +249,9 @@ NextPairPattern:
     ' Kuota sudah ditentukan. Alignment hanya memperbaiki hasil akhir, bukan trial kapasitas.
     If capacityTarget < 0 And Not best.HasRegularPattern Then
         candidateLabel = "Align neighbors " & bestLabel
+        AAProgressCandidate
         AADebugCandidateStart candidateLabel
+        AAProgressStage "Menyelaraskan susunan"
         Set candidate = AlignNeighborPlan(best, models, forbidden, settings)
         AADebugCandidateEnd
         Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
@@ -357,6 +363,7 @@ Private Function CompactPlan(ByVal plan As AALayoutPlan, ByRef models() As AAMod
         moved = 0: skipped = 0: totalProbes = 0
         ' Pass kedua memberi objek akhir kesempatan sebelum anggaran area habis.
         For visit = 1 To plan.DesignCount
+            AAProgressPulse
             i = visit
             If pass Mod 2 = 0 Then i = plan.DesignCount - visit + 1
             If current(i).AreaIndex <> areaIndex Then
@@ -1219,6 +1226,7 @@ Private Function TryExactSlot(ByVal orientation As AARotationVariant, ByVal desi
                               ByVal h As Double, ByVal v As Double, _
                               Optional ByVal clearanceReserve As Double = 0#) As AAPlacement
     Dim candidate As AAPlacement
+    AAProgressPulse
     If x < -AA_EDGE_TOLERANCE_MM Or y - orientation.Height < -AA_EDGE_TOLERANCE_MM Or _
        x + orientation.Width > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
        y > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then
@@ -1584,6 +1592,7 @@ Private Function TrySlot(ByVal orientation As AARotationVariant, ByVal designInd
     Dim obstacle As AAGeometry, placed As AAPlacement
     Dim nearby As Collection
     Dim collisionLeft As Double, collisionTop As Double, gapH As Double, gapV As Double
+    AAProgressPulse
     minX = MaxValue(-orientation.ReferenceWidth * AA_SHIFT_FACTOR, -x)
     maxX = MinValue(orientation.ReferenceWidth * AA_SHIFT_FACTOR, settings.AreaWidthMM - orientation.Width - x)
     minY = MaxValue(-orientation.ReferenceHeight * AA_SHIFT_FACTOR, orientation.Height - y)
@@ -1619,6 +1628,7 @@ Private Function TrySlot(ByVal orientation As AARotationVariant, ByVal designInd
     For i = 0 To UBound(xs)
         If xs(i) ^ 2 > bestDistance Then Exit For
         For j = 0 To UBound(ys)
+            AAProgressPulse
             distance = xs(i) ^ 2 + ys(j) ^ 2
             If distance >= bestDistance Then Exit For
             If probes >= probeLimit Then GoTo Finished

@@ -3,6 +3,8 @@ Option Explicit
 Private pMRObserver As Object
 Private pMRToken As String
 
+Private mProcessRunning As Boolean
+Private mLockedControls As Collection, mEnabledStates As Collection
 Private mPresenter As AAPresenter
 Private mUpdatingQuantity As Boolean
 Private mQuantityIndex As Long
@@ -18,6 +20,26 @@ Private mMediumVisited As Boolean
 Private mMinimumGapH As String, mMinimumGapV As String
 Private mMediumGapH As String, mMediumGapV As String
 Private mMinimumHPercent As Boolean, mMinimumVPercent As Boolean
+
+Private Sub frmProgress_Click()
+'
+End Sub
+
+Private Sub lblProgressDetail_Click()
+'
+End Sub
+
+Private Sub lblProgressFill_Click()
+'
+End Sub
+
+Private Sub lblProgressStage_Click()
+'
+End Sub
+
+Private Sub lblProgressTime_Click()
+'
+End Sub
 
 Private Sub lbxObjects_Click()
     AAUpdateQuantityEditor
@@ -114,11 +136,12 @@ End Sub
 Private Sub txbQuantity_Change()
     Dim i As Long
 
+    If mProcessRunning Then Exit Sub
     If mUpdatingHint Or mUpdatingQuantity Or mQuantityIndex < 0 Then Exit Sub
     On Error GoTo InvalidQuantity
     mUpdatingQuantity = True
     For i = 0 To lbxObjects.ListCount - 1
-        If lbxObjects.Selected(i) Then
+        If lbxObjects.selected(i) Then
             If mPresenter.ObjectRoleAt(i) = AA_ROLE_DESIGN Then
                 mPresenter.SetObjectQuantityText i, AAInputText(txbQuantity)
                 lbxObjects.List(i) = mPresenter.ObjectListText(i)
@@ -128,7 +151,7 @@ Private Sub txbQuantity_Change()
     mUpdatingQuantity = False
     Exit Sub
 InvalidQuantity:
-    MsgBox Err.Description, vbExclamation, "Auto Align"
+    MsgBox Err.description, vbExclamation, "Auto Align"
     mUpdatingQuantity = False
     AAUpdateQuantityEditor
 End Sub
@@ -165,52 +188,58 @@ Private Sub UserForm_Initialize()
     mModeReady = True
     AAUpdateModeControls
     AARefreshObjects
+    AAProgressRender "Siap", "", 0, 1, 0#
 End Sub
 
 Private Sub cmdClear_Click()
+    If mProcessRunning Then Exit Sub
     mPresenter.ClearObjects
     AARefreshObjects
 End Sub
 
 Private Sub cmdClose_Click()
+    If mProcessRunning Or AAProgressRunning Then Exit Sub
     Unload Me
 End Sub
 
 Private Sub cmdProcess_Click()
-    Dim modelMode As Long
+    Dim ModelMode As Long
 
     If Not optMinimum.value And Not optMedium.value Then
         MsgBox "Pilih mode Minimum atau Medium terlebih dahulu.", vbExclamation, "Auto Align"
         Exit Sub
     End If
     If optCustom.value Then
-        modelMode = AA_MODEL_CUSTOM
+        ModelMode = AA_MODEL_CUSTOM
     ElseIf optKissA.value Then
-        modelMode = AA_MODEL_KISS_A
+        ModelMode = AA_MODEL_KISS_A
     ElseIf optDieA.value Then
-        modelMode = AA_MODEL_DIE_A
+        ModelMode = AA_MODEL_DIE_A
     Else
         MsgBox "Pilih model area terlebih dahulu.", vbExclamation, "Auto Align"
         Exit Sub
     End If
 
-    AARunMode modelMode
+    AARunMode ModelMode
 End Sub
 
 Private Sub cmdRemove_Click()
     Dim i As Long
 
+    If mProcessRunning Then Exit Sub
     For i = lbxObjects.ListCount - 1 To 0 Step -1
-        If lbxObjects.Selected(i) Then mPresenter.RemoveObjectAt i
+        If lbxObjects.selected(i) Then mPresenter.RemoveObjectAt i
     Next i
     AARefreshObjects
 End Sub
 
 Private Sub cmdSetCutLine_Click()
+    If mProcessRunning Then Exit Sub
     AARegisterObjects AA_ROLE_CUT_LINE
 End Sub
 
 Private Sub cmdSetDesign_Click()
+    If mProcessRunning Then Exit Sub
     AARegisterObjects AA_ROLE_DESIGN
 End Sub
 
@@ -269,10 +298,11 @@ Private Sub AAUpdateQuantityEditor()
     Dim commonText As String
     Dim mixedQuantity As Boolean
 
+    If mProcessRunning Then Exit Sub
     If mUpdatingQuantity Or mPresenter Is Nothing Then Exit Sub
     mQuantityIndex = -1
     For i = 0 To lbxObjects.ListCount - 1
-        If lbxObjects.Selected(i) Then
+        If lbxObjects.selected(i) Then
             If mPresenter.ObjectRoleAt(i) = AA_ROLE_DESIGN Then
                 If mQuantityIndex < 0 Then
                     mQuantityIndex = i
@@ -322,33 +352,110 @@ Private Sub AASetGapPercentText(ByVal gapBox As MSForms.TextBox, _
     gapBox.SelStart = cursorPosition
 End Sub
 
-Private Sub AARunMode(ByVal modelMode As Long)
+Private Sub AARunMode(ByVal ModelMode As Long)
     Dim feedback As String
     Dim feedbackStyle As VbMsgBoxStyle
     Dim layoutMode As Long
     Dim errorNumber As Long, errorSource As String, errorDescription As String
 
+    If mProcessRunning Or AAProgressRunning Then Exit Sub
     If mPresenter Is Nothing Then Set mPresenter = New AAPresenter
     layoutMode = AA_MODE_MINIMUM
     If optMedium.value Then layoutMode = AA_MODE_MEDIUM
+    mProcessRunning = True
     MRNotifyProcessTiming True
     On Error GoTo ProcessFailed
-    mPresenter.RunLayout modelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
+    AALockInputs
+    AAProgressBegin Me
+    mPresenter.RunLayout ModelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
         AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), chkHPercent.value, _
         chkVPercent.value, feedback, feedbackStyle, layoutMode
     AARefreshObjects
+    AAProgressEnd (Len(feedback) = 0 And mPresenter.LastProcessCompleted)
+    AAUnlockInputs
+    mProcessRunning = False
+    AAUpdateQuantityEditor
     On Error GoTo 0
     MRNotifyProcessTiming False
     If Len(feedback) > 0 Then MsgBox feedback, feedbackStyle, "Auto Align"
     Exit Sub
 
 ProcessFailed:
-    errorNumber = Err.Number
-    errorSource = Err.Source
-    errorDescription = Err.Description
+    errorNumber = Err.number
+    errorSource = Err.source
+    errorDescription = Err.description
+    On Error Resume Next
+    AAProgressEnd False
+    AAUnlockInputs
+    mProcessRunning = False
+    AAUpdateQuantityEditor
     MRNotifyProcessTiming False
     On Error GoTo 0
     Err.Raise errorNumber, errorSource, errorDescription
+End Sub
+
+Private Sub AALockInputs()
+    Dim control As Object
+    Set mLockedControls = New Collection
+    Set mEnabledStates = New Collection
+    For Each control In Me.Controls
+        ' Frame lain ikut dikunci agar seluruh input di dalamnya nonaktif.
+        If TypeName(control) <> "Label" And control.Name <> "frmProgress" Then
+            mLockedControls.Add control
+            mEnabledStates.Add CBool(control.Enabled)
+            control.Enabled = False
+        End If
+    Next control
+End Sub
+
+Private Sub AAUnlockInputs()
+    Dim i As Long
+    If mLockedControls Is Nothing Then Exit Sub
+    For i = 1 To mLockedControls.Count
+        mLockedControls(i).Enabled = mEnabledStates(i)
+    Next i
+    Set mLockedControls = Nothing
+    Set mEnabledStates = Nothing
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    If mProcessRunning Then Cancel = True
+End Sub
+
+' Dipanggil AAProgress hanya saat repaint, bukan pada setiap pemeriksaan segmen.
+Public Sub AAProgressRender(ByVal stage As String, ByVal detail As String, _
+                            ByVal done As Long, ByVal total As Long, ByVal elapsed As Double)
+    Dim available As Single, fillWidth As Single, position As Double
+    Dim seconds As Long
+    lblProgressStage.Caption = stage
+    If total > 0 And stage <> "Selesai" And stage <> "Siap" And _
+       stage <> "Proses dihentikan" Then
+        If Len(detail) > 0 Then detail = detail & " | "
+        detail = detail & CStr(done) & " / " & CStr(total)
+    End If
+    lblProgressDetail.Caption = detail
+    seconds = CLng(Fix(elapsed))
+    lblProgressTime.Caption = CStr(seconds \ 60) & ":" & Format$(seconds Mod 60, "00")
+    available = frmProgress.InsideWidth - 6!
+    If available < 1! Then available = 1!
+    lblProgressFill.AutoSize = False
+    lblProgressFill.BackStyle = fmBackStyleOpaque
+    lblProgressFill.Caption = vbNullString
+    lblProgressFill.Left = 3!
+    If total > 0 Then
+        position = CDbl(done) / CDbl(total)
+        If position < 0# Then position = 0#
+        If position > 1# Then position = 1#
+        fillWidth = available * position
+    Else
+        ' Aktivitas berjalan; bukan persentase keseluruhan Process.
+        fillWidth = available / 4!
+        position = elapsed / 2# - Fix(elapsed / 2#)
+        lblProgressFill.Left = 3! + (available - fillWidth) * position
+    End If
+    lblProgressFill.Width = fillWidth
+    lblProgressFill.Visible = (fillWidth > 0!)
+    Me.Repaint
 End Sub
 
 Private Sub MRNotifyProcessTiming(ByVal started As Boolean)
@@ -361,8 +468,8 @@ Private Sub MRNotifyProcessTiming(ByVal started As Boolean)
     End If
     Exit Sub
 NotifyFailed:
-    MsgBox "Gagal mencatat durasi Auto Align di Macro Runner (" & CStr(Err.Number) & "): " & _
-        Err.Description, vbExclamation, "Macro Runner"
+    MsgBox "Gagal mencatat durasi Auto Align di Macro Runner (" & CStr(Err.number) & "): " & _
+        Err.description, vbExclamation, "Macro Runner"
 End Sub
 
 ' Placeholder hanya presentasi; AAInputText selalu mengembalikannya sebagai kosong.
@@ -492,7 +599,7 @@ Private Sub txbQuantity_Exit(ByVal Cancel As MSForms.ReturnBoolean)
     Dim i As Long
     On Error GoTo InvalidQuantity
     For i = 0 To lbxObjects.ListCount - 1
-        If lbxObjects.Selected(i) Then
+        If lbxObjects.selected(i) Then
             If mPresenter.ObjectRoleAt(i) = AA_ROLE_DESIGN Then _
                 mPresenter.ValidateObjectQuantity i
         End If
@@ -501,7 +608,7 @@ Private Sub txbQuantity_Exit(ByVal Cancel As MSForms.ReturnBoolean)
     Exit Sub
 InvalidQuantity:
     Cancel = True
-    MsgBox Err.Description, vbExclamation, "Auto Align"
+    MsgBox Err.description, vbExclamation, "Auto Align"
 End Sub
 
 Private Sub AARegisterObjects(ByVal roleLabel As String)
@@ -517,7 +624,7 @@ Private Sub AARefreshObjects()
     Dim i As Long
 
     mUpdatingQuantity = True
-    lbxObjects.Clear
+    lbxObjects.clear
     For i = 0 To mPresenter.ObjectCount - 1
         lbxObjects.AddItem mPresenter.ObjectListText(i)
     Next i
@@ -545,6 +652,6 @@ Private Sub UserForm_Terminate()
     If Not observer Is Nothing Then CallByName observer, "MacroUnloaded", VbMethod, token
     Exit Sub
 NotifyFailed:
-    MsgBox "Gagal memberitahu Macro Runner bahwa form sudah ditutup (" & CStr(Err.Number) & "): " & _
-        Err.Description, vbExclamation, "Macro Runner"
+    MsgBox "Gagal memberitahu Macro Runner bahwa form sudah ditutup (" & CStr(Err.number) & "): " & _
+        Err.description, vbExclamation, "Macro Runner"
 End Sub
