@@ -1,6 +1,5 @@
 Option Explicit
 
-Private Const AA_DEFAULT_ZIGZAG_VERTICAL_FACTOR As Double = 0.88
 Private Const AA_MAX_DESIGN_CUT_DIFFERENCE_MM As Double = 2#
 Private Const AA_DESIGN_UNDERSIZE_TOLERANCE_MM As Double = 0.2
 Private Const AA_SIZE_TOLERANCE_MM As Double = 0.0001
@@ -79,7 +78,7 @@ Public Sub GetMinimumSteps(ByVal layoutMode As Long, ByRef horizontalStep As Dou
         Set origin = orientation.MakePlacement(0, -1, 0, 0#, orientation.Height, h, h)
         horizontalStep = ContactPitch(orientation, origin, True, horizontalStep, 0#, h, h)
     End If
-    ' ZigZag kosong tetap 88%. Gap literal V memakai kontak dengan kedua tetangga.
+    ' ZigZag kosong memakai faktor model. Gap literal V memakai kontak kedua tetangga.
     If v >= 0# And Not (mSettings.HasVerticalGap And mSettings.VerticalPercent) Then
         If layoutMode = AA_MODE_STRAIGHT Or mSettings.HasVerticalGap Then
             If layoutMode = AA_MODE_ZIGZAG Then rowOffset = horizontalStep / 2#
@@ -199,7 +198,7 @@ Public Sub GetSteps(ByVal layoutMode As Long, ByRef horizontalStep As Double, _
     If layoutMode = AA_MODE_STRAIGHT Then
         verticalStep = baseHeight + mSettings.DefaultVerticalGapMM
     Else
-        verticalStep = baseHeight * AA_DEFAULT_ZIGZAG_VERTICAL_FACTOR
+        verticalStep = baseHeight * mSettings.DefaultZigZagVerticalFactor
     End If
     If sharpPreset Then verticalStep = baseHeight
     If mSettings.HasHorizontalGap Then
@@ -226,7 +225,7 @@ Public Sub GetBoundaryGaps(ByVal layoutMode As Long, ByRef horizontalGap As Doub
     GetSteps layoutMode, hs, vs
     horizontalGap = hs - SpacingWidth
     verticalGap = vs - SpacingHeight
-    ' 88% bawaan ZigZag berlaku antarbaris bulat, bukan sebagai gap antarjenis.
+    ' Persen bawaan ZigZag berlaku antarbaris bulat, bukan sebagai gap antarjenis.
     If Not mSettings.HasVerticalGap Then
         verticalGap = mSettings.DefaultVerticalGapMM
         If mLayoutSharpRectangle And mSettings.ModelMode <> AA_MODEL_CUSTOM Then verticalGap = 0#

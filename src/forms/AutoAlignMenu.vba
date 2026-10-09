@@ -384,14 +384,23 @@ Private Function AAInputText(ByVal box As MSForms.TextBox) As String
 End Function
 
 Private Function AAHintText(ByVal box As MSForms.TextBox) As String
+    Dim gapText As String, zigzagText As String
+    zigzagText = "88%"
+    If optCustom.value Then
+        gapText = "0"
+    ElseIf optDieA.value Then
+        gapText = "1,5": zigzagText = "89%"
+    Else
+        gapText = "1"
+    End If
     Select Case AAInputIndex(box)
         Case 1
-            If optCustom.value Then AAHintText = "0" Else AAHintText = "1"
+            AAHintText = gapText
         Case 2
             If optMedium.value Then
-                If optCustom.value Then AAHintText = "0" Else AAHintText = "1"
+                AAHintText = gapText
             Else
-                If optCustom.value Then AAHintText = "0 / 88%" Else AAHintText = "1 / 88%"
+                AAHintText = gapText & " / " & zigzagText
             End If
         Case 3: AAHintText = "320"
         Case 4: AAHintText = "470"
@@ -419,8 +428,8 @@ Private Sub AARefreshHints()
     AAShowHint txbAreaWidth
     AAShowHint txbAreaHeight
     AAShowHint txbQuantity
-    txbGapHorizontal.ControlTipText = "Default dalam mm. KissA/DieA: persegi atau persegi panjang bersudut runcing memakai 0. Input manual diutamakan."
-    txbGapVertical.ControlTipText = "Default: Straight (mm) / ZigZag (persen tinggi). KissA/DieA: rectangle bersudut runcing memakai gap 0 pada kedua pola."
+    txbGapHorizontal.ControlTipText = "Default: KissA 1 mm, DieA 1,5 mm, Custom 0 mm. KissA/DieA: rectangle bersudut runcing memakai 0. Input manual diutamakan."
+    txbGapVertical.ControlTipText = "Default Straight / ZigZag: KissA 1 mm / 88%, DieA 1,5 mm / 89%, Custom 0 mm / 88%. KissA/DieA: rectangle bersudut runcing memakai gap 0 pada kedua pola."
     If optMedium.value Then txbGapVertical.ControlTipText = _
         "Medium: gap kontur dalam mm. Sisi miring memakai nilai terbesar H/V. Persen dan gap negatif belum tersedia."
     txbQuantity.ControlTipText = "Kosong (-): isi sisa area. 0: lewati Design. /n: bagi rata dalam satu container kelompok n. Berlaku untuk semua Design terpilih (Ctrl/Shift)."

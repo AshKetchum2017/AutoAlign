@@ -2,7 +2,6 @@ Option Explicit
 
 Private Const AA_SHIFT_FACTOR As Double = 0.2
 Private Const AA_SHIFT_STEP_MM As Double = 1#
-Private Const AA_ZIGZAG_VERTICAL_FACTOR As Double = 0.88
 Private Const AA_EDGE_TOLERANCE_MM As Double = 0.0001
 Private Const AA_MAX_OBJECTS_PER_SOURCE As Long = 5000
 Private Const AA_MAX_PROBES_PER_AREA As Long = 50000
@@ -1411,7 +1410,7 @@ Private Sub SeedGrid(ByVal slots As Collection, ByVal unique As Object, _
     Dim rowIndex As Long
     stepX = orientation.ReferenceWidth + h
     stepY = orientation.ReferenceHeight + v
-    If zigZag Then stepY = orientation.ReferenceHeight * AA_ZIGZAG_VERTICAL_FACTOR
+    If zigZag Then stepY = orientation.ReferenceHeight * settings.DefaultZigZagVerticalFactor
     If stepX <= 0# Or stepY <= 0# Then Exit Sub
     y = settings.AreaHeightMM
     Do While y >= orientation.Height - orientation.ReferenceHeight * AA_SHIFT_FACTOR

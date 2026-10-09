@@ -77,6 +77,8 @@ End Property
 Public Property Get DefaultHorizontalGapMM() As Double
     If mModelMode = AA_MODEL_CUSTOM Then
         DefaultHorizontalGapMM = 0#
+    ElseIf mModelMode = AA_MODEL_DIE_A Then
+        DefaultHorizontalGapMM = 1.5
     Else
         DefaultHorizontalGapMM = 1#
     End If
@@ -84,6 +86,14 @@ End Property
 
 Public Property Get DefaultVerticalGapMM() As Double
     DefaultVerticalGapMM = DefaultHorizontalGapMM
+End Property
+
+Public Property Get DefaultZigZagVerticalFactor() As Double
+    If mModelMode = AA_MODEL_DIE_A Then
+        DefaultZigZagVerticalFactor = 0.89
+    Else
+        DefaultZigZagVerticalFactor = 0.88
+    End If
 End Property
 
 Public Property Get AreaWidthMM() As Double
