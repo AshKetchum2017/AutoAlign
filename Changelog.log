@@ -135,7 +135,10 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 ~ Pemeriksaan gap identik dipakai ulang selama pencarian kelompok. Uji Case_07_Big Data turun dari 459,681 menjadi 380,289 detik (17,27%), tetap 157 + 157 pasangan dengan ukuran susunan sama dan gap aman.
 
 [Die Cut: mark ellipse]
-~ Zona mark Die Cut menjadi ellipse 11 x 11 mm, dengan pusat (11;11), (11;474), (314;11), dan (314;474). Halaman 325 x 485 mm serta area susun 320 x 470 mm tetap. Uji objek 40 x 50,2 mm menghasilkan susunan 320 x 451,8 mm tanpa collision dengan mark.
+~ Zona mark Die Cut menjadi ellipse 11 x 11 mm, dengan pusat (11;11), (11;474), (314;11), dan (314;474). Halaman 325 x 485 mm serta area susun 320 x 470 mm tetap.
 
 [Die Cut: gap default]
-~ Default gap H/V Die Cut menjadi 1,5 mm, dengan V ZigZag 89% tinggi objek; rectangle bersudut runcing tetap 0 mm dan input manual diutamakan. Hint form ikut diperbarui. Uji ellipse 40 mm tetap menghasilkan 91 objek, ukuran susunan 309,777 x 467,2 mm, tanpa collision dengan mark.
+~ Default gap H/V Die Cut menjadi 1,5 mm, dengan V ZigZag 89% tinggi objek; rectangle bersudut runcing tetap 0 mm dan input manual diutamakan. Hint form ikut diperbarui.
+
+[Medium: cache empat slot per bucket]
+~ Cache keputusan gap menyimpan empat hasil per bucket, sehingga hasil pemeriksaan lebih banyak dipakai ulang antar trial.
