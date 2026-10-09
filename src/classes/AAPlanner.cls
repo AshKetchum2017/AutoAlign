@@ -733,17 +733,18 @@ Private Function BuildForbidden(ByVal settings As AASettings, _
             AddMark result, 319#, 474#, 10#, settings, sourceDocument
             AddMark result, 162.5, 12.5, 12#, settings, sourceDocument
         Case AA_MODEL_DIE_A
-            AddMark result, 9.5, 9.5, 15#, settings, sourceDocument
-            AddMark result, 9.5, 475.5, 15#, settings, sourceDocument
-            AddMark result, 315.5, 9.5, 15#, settings, sourceDocument
-            AddMark result, 315.5, 475.5, 15#, settings, sourceDocument
+            AddMark result, 11#, 11#, 11#, settings, sourceDocument, True
+            AddMark result, 11#, 474#, 11#, settings, sourceDocument, True
+            AddMark result, 314#, 11#, 11#, settings, sourceDocument, True
+            AddMark result, 314#, 474#, 11#, settings, sourceDocument, True
     End Select
     Set BuildForbidden = result
 End Function
 
 Private Sub AddMark(ByVal result As Collection, ByVal centerX As Double, _
                     ByVal centerY As Double, ByVal sizeMM As Double, _
-                    ByVal settings As AASettings, ByVal sourceDocument As Document)
+                    ByVal settings As AASettings, ByVal sourceDocument As Document, _
+                    Optional ByVal elliptical As Boolean = False)
     Dim mark As AAGeometry
     Dim localX As Double
     Dim localY As Double
@@ -751,9 +752,14 @@ Private Sub AddMark(ByVal result As Collection, ByVal centerX As Double, _
     localY = centerY - (settings.PresetPageHeightMM - settings.AreaHeightMM) / 2#
     Set mark = New AAGeometry
     ' Abaikan penetrasi hingga 0,2 mm dari tepi mark, bukan dari tepi object/area.
-    mark.AddRectangle localX - sizeMM / 2# + AA_MARK_TOLERANCE_MM, _
-        localY - sizeMM / 2# + AA_MARK_TOLERANCE_MM, _
-        localX + sizeMM / 2# - AA_MARK_TOLERANCE_MM, _
-        localY + sizeMM / 2# - AA_MARK_TOLERANCE_MM, sourceDocument
+    If elliptical Then
+        mark.AddEllipse localX, localY, sizeMM / 2# - AA_MARK_TOLERANCE_MM, _
+            sizeMM / 2# - AA_MARK_TOLERANCE_MM, sourceDocument
+    Else
+        mark.AddRectangle localX - sizeMM / 2# + AA_MARK_TOLERANCE_MM, _
+            localY - sizeMM / 2# + AA_MARK_TOLERANCE_MM, _
+            localX + sizeMM / 2# - AA_MARK_TOLERANCE_MM, _
+            localY + sizeMM / 2# - AA_MARK_TOLERANCE_MM, sourceDocument
+    End If
     result.Add mark
 End Sub

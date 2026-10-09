@@ -370,6 +370,16 @@ Public Sub AddRectangle(ByVal leftX As Double, ByVal bottomY As Double, _
     AddCurve rectangleCurve
 End Sub
 
+Public Sub AddEllipse(ByVal centerX As Double, ByVal centerY As Double, _
+                      ByVal radiusH As Double, ByVal radiusV As Double, _
+                      ByVal sourceDocument As Document)
+    Dim ellipseCurve As Curve
+    ' Kurva bebas: tidak membuat Shape atau mengubah seleksi/layer dokumen.
+    Set ellipseCurve = Application.CreateCurve(sourceDocument)
+    ellipseCurve.AppendSubpathEllipse centerX, centerY, radiusH, radiusV
+    AddCurve ellipseCurve
+End Sub
+
 Public Sub AddPlaced(ByVal source As AAGeometry, ByVal leftX As Double, _
                      ByVal topY As Double)
     Dim part As Curve

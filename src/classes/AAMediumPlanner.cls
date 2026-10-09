@@ -31,9 +31,22 @@ Private mQuotaFills As Object
 Private mCachedPlacements As Long
 Private mFillHits As Long, mFillMisses As Long, mFillReused As Long
 
+' Keputusan gap identik selama satu kelompok quota; kontur rotasi immutable.
+' Posisi absolut dibandingkan persis agar pembulatan translasi tetap diperiksa.
+Private Const AA_QUOTA_GAP_CACHE_SIZE As Long = 65521
+Private Const AA_QUOTA_GAP_HASH_LIMIT As Double = 1000000#
+Private mGapOrientations() As AARotationVariant, mGapOthers() As AAContour
+' x, y, blocker left/top, effective gap H/V.
+Private mGapKeys() As Double, mGapResults() As Boolean
+Private mGapCacheReady As Boolean, mGapCacheDisabled As Boolean
+Private mGapHits As Double, mGapMisses As Double, mGapBypasses As Double
+Private mGapCollisions As Double, mGapStored As Long
+
 Friend Sub BeginQuotaSearch()
     Set mQuotaFills = CreateObject("Scripting.Dictionary")
     mCachedPlacements = 0
+    Erase mGapOrientations: Erase mGapOthers: Erase mGapKeys: Erase mGapResults
+    mGapCacheReady = False: mGapCacheDisabled = False: mGapStored = 0
     Set mOccupiedIndex = Nothing
 End Sub
 
@@ -53,6 +66,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     Dim candidateLabel As String, bestLabel As String, buildError As String
     Dim perfStarted As Double, capacityValidated As Boolean
     mFillHits = 0: mFillMisses = 0: mFillReused = 0
+    mGapHits = 0#: mGapMisses = 0#: mGapBypasses = 0#: mGapCollisions = 0#
     ' Capacity hanya untuk quota finite pada satu area; caller biasa memakai -1.
     If Not singleAreaOnly Then capacityTarget = -1
     Set forbidden = sharedPlanner.ForbiddenFor(settings, sourceDocument)
@@ -261,6 +275,10 @@ BuildComplete:
     If Not mQuotaFills Is Nothing Then AADebugWrite "Quota cache", _
         "hits=" & CStr(mFillHits) & "; misses=" & CStr(mFillMisses) & _
         "; reused placements=" & CStr(mFillReused) & "; stored=" & CStr(mCachedPlacements)
+    If Not mQuotaFills Is Nothing Then AADebugWrite "Quota gap cache", _
+        "hits=" & Format$(mGapHits, "0") & "; misses=" & Format$(mGapMisses, "0") & _
+        "; collisions=" & Format$(mGapCollisions, "0") & "; bypass=" & Format$(mGapBypasses, "0") & _
+        "; stored=" & CStr(mGapStored) & "; slots=" & CStr(AA_QUOTA_GAP_CACHE_SIZE)
     Set mOccupiedIndex = Nothing
     Set Build = best
 End Function
@@ -1223,7 +1241,7 @@ Private Function HasClearanceAt(ByVal orientation As AARotationVariant, ByVal x 
                                 ByVal y As Double, ByVal occupied As Collection, _
                                 ByVal h As Double, ByVal v As Double) As Boolean
     Dim placed As AAPlacement, other As AAGeometry, gap As Double
-    Dim nearby As Collection
+    Dim nearby As Collection, clear As Boolean
     Dim leftX As Double, rightX As Double, topY As Double, bottomY As Double
     leftX = x + orientation.InsetX: rightX = leftX + orientation.ReferenceWidth
     topY = y - orientation.InsetY: bottomY = topY - orientation.ReferenceHeight
@@ -1233,13 +1251,110 @@ Private Function HasClearanceAt(ByVal orientation As AARotationVariant, ByVal x 
         gap = MaxValue(MaxValue(h, v), MaxValue(placed.GapH, placed.GapV))
         If leftX < other.RightX + gap And rightX > other.LeftX - gap And _
            bottomY < other.TopY + gap And topY > other.BottomY - gap Then
-            If Not orientation.HasClearanceAt(x, y, placed, h, v) Then
+            If mQuotaFills Is Nothing Then
+                clear = orientation.HasClearanceAt(x, y, placed, h, v)
+            Else
+                clear = QuotaClearanceAt(orientation, x, y, placed, h, v)
+            End If
+            If Not clear Then
                 AADebugGapRejected orientation, x, y, placed, h, v
                 Exit Function
             End If
         End If
     Next placed
     HasClearanceAt = True
+End Function
+
+' Cache hanya menahan kontur/orientasi milik models; tidak menahan placement
+' yang dapat digeser. Key menyimpan snapshot posisi blocker dan gap efektif.
+Private Function QuotaClearanceAt(ByVal orientation As AARotationVariant, _
+                                  ByVal x As Double, ByVal y As Double, _
+                                  ByVal placed As AAPlacement, ByVal h As Double, _
+                                  ByVal v As Double) As Boolean
+    Dim other As AAContour, box As AAGeometry, slot As Long
+    Dim gapH As Double, gapV As Double, clear As Boolean
+    Set other = placed.Contour
+    Set box = placed.CollisionFootprint
+    gapH = MaxValue(h, placed.GapH): gapV = MaxValue(v, placed.GapV)
+    slot = QuotaGapSlot(x, y, box.LeftX, box.TopY, gapH, gapV, _
+        orientation.Angle, placed.RotationDelta)
+    If slot < 0 Then
+        mGapBypasses = mGapBypasses + 1#
+        QuotaClearanceAt = orientation.HasClearanceAt(x, y, placed, h, v)
+        Exit Function
+    End If
+    If Not mGapCacheReady Then
+        If Not InitializeQuotaGapCache() Then
+            mGapBypasses = mGapBypasses + 1#
+            QuotaClearanceAt = orientation.HasClearanceAt(x, y, placed, h, v)
+            Exit Function
+        End If
+    End If
+    If Not mGapOrientations(slot) Is Nothing Then
+        If mGapOrientations(slot) Is orientation And mGapOthers(slot) Is other Then
+            If mGapKeys(0, slot) = x And mGapKeys(1, slot) = y And _
+               mGapKeys(2, slot) = box.LeftX And mGapKeys(3, slot) = box.TopY And _
+               mGapKeys(4, slot) = gapH And mGapKeys(5, slot) = gapV Then
+                mGapHits = mGapHits + 1#
+                QuotaClearanceAt = mGapResults(slot)
+                Exit Function
+            End If
+        End If
+        mGapCollisions = mGapCollisions + 1#
+    End If
+    mGapMisses = mGapMisses + 1#
+    ' Simpan hanya sesudah predicate asli kembali normal; error tidak di-cache.
+    clear = orientation.HasClearanceAt(x, y, placed, h, v)
+    If mGapOrientations(slot) Is Nothing Then mGapStored = mGapStored + 1
+    Set mGapOrientations(slot) = orientation: Set mGapOthers(slot) = other
+    mGapKeys(0, slot) = x: mGapKeys(1, slot) = y
+    mGapKeys(2, slot) = box.LeftX: mGapKeys(3, slot) = box.TopY
+    mGapKeys(4, slot) = gapH: mGapKeys(5, slot) = gapV
+    mGapResults(slot) = clear
+    QuotaClearanceAt = clear
+End Function
+
+Private Function InitializeQuotaGapCache() As Boolean
+    Dim number As Long
+    If mGapCacheDisabled Then Exit Function
+    On Error GoTo CacheUnavailable
+    ReDim mGapOrientations(0 To AA_QUOTA_GAP_CACHE_SIZE - 1)
+    ReDim mGapOthers(0 To AA_QUOTA_GAP_CACHE_SIZE - 1)
+    ReDim mGapKeys(0 To 5, 0 To AA_QUOTA_GAP_CACHE_SIZE - 1)
+    ReDim mGapResults(0 To AA_QUOTA_GAP_CACHE_SIZE - 1)
+    mGapCacheReady = True
+    InitializeQuotaGapCache = True
+    Exit Function
+CacheUnavailable:
+    number = Err.Number
+    On Error Resume Next
+    Erase mGapOrientations: Erase mGapOthers: Erase mGapKeys: Erase mGapResults
+    mGapCacheReady = False: mGapCacheDisabled = True: mGapStored = 0
+    AADebugWrite "Quota gap cache", "disabled: allocation error=" & CStr(number)
+    Err.Clear
+End Function
+
+' Hash memilih bucket saja. Hit tetap membutuhkan identitas dan enam Double
+' yang persis sama; tabrakan/koordinat besar kembali ke predicate biasa.
+Private Function QuotaGapSlot(ByVal x As Double, ByVal y As Double, _
+                              ByVal otherX As Double, ByVal otherY As Double, _
+                              ByVal h As Double, ByVal v As Double, _
+                              ByVal angle As Double, ByVal otherAngle As Double) As Long
+    Dim key As Double
+    QuotaGapSlot = -1
+    If Abs(x) > AA_QUOTA_GAP_HASH_LIMIT Or Abs(y) > AA_QUOTA_GAP_HASH_LIMIT Or _
+       Abs(otherX) > AA_QUOTA_GAP_HASH_LIMIT Or Abs(otherY) > AA_QUOTA_GAP_HASH_LIMIT Or _
+       Abs(h) > AA_QUOTA_GAP_HASH_LIMIT Or Abs(v) > AA_QUOTA_GAP_HASH_LIMIT Or _
+       Abs(angle) > AA_QUOTA_GAP_HASH_LIMIT Or Abs(otherAngle) > AA_QUOTA_GAP_HASH_LIMIT Then Exit Function
+    ' Modulus prima menyebarkan koordinat grid integer yang berulang.
+    ' Pada batas hash, jumlah integer berbobot ini tetap tepat dalam Double.
+    key = CLng(Fix(x * 1024#)) * 31# + CLng(Fix(y * 1024#)) * 131# + _
+        CLng(Fix(otherX * 1024#)) * 67# + CLng(Fix(otherY * 1024#)) * 257# + _
+        CLng(Fix(h * 1024#)) * 17# + CLng(Fix(v * 1024#)) * 97# + _
+        CLng(Fix(angle * 1024#)) * 193# + CLng(Fix(otherAngle * 1024#)) * 389#
+    key = key - Fix(key / AA_QUOTA_GAP_CACHE_SIZE) * AA_QUOTA_GAP_CACHE_SIZE
+    If key < 0# Then key = key + AA_QUOTA_GAP_CACHE_SIZE
+    QuotaGapSlot = CLng(key)
 End Function
 
 Private Sub SeedRectangleRemainder(ByVal slots As Collection, ByVal unique As Object, _

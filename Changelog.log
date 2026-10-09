@@ -130,3 +130,9 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 ~ Estimasi kuota, penggunaan ulang penempatan, dan petunjuk hasil parsial mempercepat Case_07_Big Data dari 2013,903 menjadi 459,681 detik (77,17%), tetap 157 + 157 pasangan dalam satu area.
 ~ Alignment tetangga memperbaiki posisi pasangan kiri bawah; tinggi susunan berkurang 10,568 mm. Pengguna mengonfirmasi susunan visual baik, gap aman tanpa collision, dan jumlah tetap.
 ~ Pencarian surplus kelompok mengizinkan selisih maksimal dua objek antar Design.
+
+[Medium: cache keputusan gap pada trial kuota]
+~ Pemeriksaan gap identik dipakai ulang selama pencarian kelompok. Uji Case_07_Big Data turun dari 459,681 menjadi 380,289 detik (17,27%), tetap 157 + 157 pasangan dengan ukuran susunan sama dan gap aman.
+
+[Die Cut: mark ellipse]
+~ Zona mark Die Cut menjadi ellipse 11 x 11 mm, dengan pusat (11;11), (11;474), (314;11), dan (314;474). Halaman 325 x 485 mm serta area susun 320 x 470 mm tetap. Uji objek 40 x 50,2 mm menghasilkan susunan 320 x 451,8 mm tanpa collision dengan mark.
