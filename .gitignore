@@ -13,7 +13,9 @@ AutoAlignWizard.bas
 Macro2.bas
 Statistics.txt
 Immediate.txt
-AA-Debug.txt
+AA-Debug-Align.txt
 AA-Debug-Quota.txt
+AA-Debug.txt
 Info.txt
+verify_neighbor_alignment.py
 verify_quota_optimization.py

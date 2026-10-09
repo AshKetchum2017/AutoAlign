@@ -15,6 +15,8 @@ Private Const AA_COMPACTION_TOLERANCE_MM As Double = 0.01
 Private Const AA_COMPACTION_RESERVE_MM As Double = 0.001
 Private Const AA_MAX_COMPACTION_PROBES_PER_AREA As Long = 4096
 Private Const AA_COMPACTION_PASSES As Long = 2
+Private Const AA_MAX_ALIGNMENT_PROBES_PER_AREA As Long = 256
+Private Const AA_ALIGNMENT_PASSES As Long = 2
 Private Const AA_MAX_PAIR_CONTOUR_EDGES As Long = 32
 Private Const AA_PAIR_CONTACT_SCAN_STEPS As Long = 64
 Private Const AA_MAX_PHASE_SLOTS_PER_AREA As Long = 5000
@@ -223,6 +225,29 @@ NextPairPattern:
             End If
         End If
     End If
+    ' Kuota sudah ditentukan. Alignment hanya memperbaiki hasil akhir, bukan trial kapasitas.
+    If capacityTarget < 0 And Not best.HasRegularPattern Then
+        candidateLabel = "Align neighbors " & bestLabel
+        AADebugCandidateStart candidateLabel
+        Set candidate = AlignNeighborPlan(best, models, forbidden, settings)
+        AADebugCandidateEnd
+        Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
+            sourceDocument, sharedPlanner, candidateLabel)
+        If Not candidate Is Nothing Then
+            If ValidPlan(candidate, forbidden, settings, "Alignment final") Then
+                ' Gerak lokal tidak memperluas envelope. Setelah centering, jangan
+                ' mengganti hasil jika pembulatan justru memperburuk skor planner.
+                If Not sharedPlanner.BetterPlan(best, candidate) Then
+                    Set best = candidate: bestLabel = candidateLabel
+                    AADebugWrite "Align", "accepted after final validation"
+                Else
+                    AADebugWrite "Align", "retained previous plan: final bounds score"
+                End If
+            Else
+                AADebugWrite "Align", "rejected: final validation"
+            End If
+        End If
+    End If
 BuildComplete:
     If capacityTarget > 0 Then
         If best.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget) Then
@@ -346,6 +371,128 @@ NextPlaced:
         result.Add current(i)
     Next i
     Set CompactPlan = result
+End Function
+
+Private Function AlignNeighborPlan(ByVal plan As AALayoutPlan, ByRef models() As AAModel, _
+                                   ByVal forbidden As Collection, ByVal settings As AASettings) As AALayoutPlan
+    Dim current() As AAPlacement, occupied As Collection, result As AALayoutPlan
+    Dim candidate As AAPlacement, orientation As AARotationVariant
+    Dim probes() As Long, i As Long, j As Long, pass As Long, visit As Long
+    Dim moved As Long, totalMoved As Long, areaIndex As Long
+    Dim x As Double, y As Double
+    ReDim current(1 To plan.DesignCount)
+    For i = 1 To plan.DesignCount
+        Set candidate = plan.Placements(i)
+        Set current(i) = candidate.CopyForPlan()
+    Next i
+    ReDim probes(0 To plan.AreaCount - 1)
+    For pass = 1 To AA_ALIGNMENT_PASSES
+        moved = 0
+        ' Kunjungi tetangga kanan/bawah lebih dulu, lalu ulangi untuk ruang yang baru terbuka.
+        For visit = 1 To plan.DesignCount
+            i = plan.DesignCount - visit + 1
+            areaIndex = current(i).AreaIndex
+            If Not models(current(i).DesignIndex).IsRectangle And _
+               probes(areaIndex) < AA_MAX_ALIGNMENT_PROBES_PER_AREA Then
+                Set occupied = New Collection
+                For j = 1 To plan.DesignCount
+                    If j <> i And current(j).AreaIndex = areaIndex Then occupied.Add current(j)
+                Next j
+                If NeighborAlignmentTarget(current(i), occupied, x, y) Then
+                    probes(areaIndex) = probes(areaIndex) + 1
+                    Set orientation = models(current(i).DesignIndex).RotationVariant(current(i).RotationDelta)
+                    Set candidate = TryExactSlot(orientation, current(i).DesignIndex, current(i).CutIndex, _
+                        areaIndex, x, y, occupied, forbidden, settings, current(i).GapH, current(i).GapV, _
+                        AA_COMPACTION_RESERVE_MM)
+                    If Not candidate Is Nothing Then
+                        If AlignmentEnvelopeFits(current(i), candidate, occupied) Then
+                            candidate.SetShiftOrigin current(i).SlotLeft, current(i).SlotTop
+                            If Not current(i).CreatesCutLine Then candidate.SuppressCutLine
+                            AADebugWrite "Align", "pass=" & CStr(pass) & "; object=" & CStr(i) & _
+                                "; design=" & CStr(candidate.DesignIndex) & "; dx=" & _
+                                Format$(candidate.Footprint.LeftX - current(i).Footprint.LeftX, "0.000000") & _
+                                "; dy=" & Format$(candidate.Footprint.TopY - current(i).Footprint.TopY, "0.000000")
+                            Set current(i) = candidate
+                            moved = moved + 1
+                        End If
+                    End If
+                End If
+            End If
+        Next visit
+        totalMoved = totalMoved + moved
+        AADebugWrite "Align", "pass=" & CStr(pass) & "; moved=" & CStr(moved)
+        If moved = 0 Then Exit For
+    Next pass
+    For areaIndex = 0 To UBound(probes)
+        AADebugWrite "Align", "area=" & CStr(areaIndex) & "; probes=" & CStr(probes(areaIndex)) & _
+            "; limit=" & CStr(AA_MAX_ALIGNMENT_PROBES_PER_AREA)
+    Next areaIndex
+    If totalMoved = 0 Then Exit Function
+    Set result = New AALayoutPlan
+    result.Configure AA_MODE_MEDIUM
+    For i = 1 To plan.DesignCount
+        result.Add current(i)
+    Next i
+    Set AlignNeighborPlan = result
+End Function
+
+' Dua anchor lokal: center kolom dari atas, center baris dari kiri/kanan.
+' Hanya source/rotasi yang sama; jangan menarik item ke baris/kolom yang jauh.
+Private Function NeighborAlignmentTarget(ByVal placed As AAPlacement, ByVal occupied As Collection, _
+                                         ByRef x As Double, ByRef y As Double) As Boolean
+    Dim box As AAGeometry, other As AAGeometry, neighbor As AAPlacement
+    Dim cx As Double, cy As Double, nx As Double, ny As Double, w As Double, h As Double
+    Dim columnX As Double, rowY As Double, columnDistance As Double, rowDistance As Double
+    Dim dx As Double, dy As Double, distance As Double, hasColumn As Boolean, hasRow As Boolean
+    Set box = placed.CollisionFootprint
+    w = box.RightX - box.LeftX: h = box.TopY - box.BottomY
+    If w <= AA_EDGE_TOLERANCE_MM Or h <= AA_EDGE_TOLERANCE_MM Then Exit Function
+    cx = (box.LeftX + box.RightX) / 2#: cy = (box.TopY + box.BottomY) / 2#
+    For Each neighbor In occupied
+        If neighbor.DesignIndex = placed.DesignIndex And neighbor.AreaIndex = placed.AreaIndex And _
+           Abs(neighbor.RotationDelta - placed.RotationDelta) <= AA_EDGE_TOLERANCE_MM Then
+            Set other = neighbor.CollisionFootprint
+            nx = (other.LeftX + other.RightX) / 2#: ny = (other.TopY + other.BottomY) / 2#
+            dx = Abs(nx - cx): dy = ny - cy
+            If dx <= w * AA_SHIFT_FACTOR And dy > h * 0.5 And dy <= h * 2.5 Then
+                distance = dy / h + dx / w
+                If Not hasColumn Or distance < columnDistance Then
+                    hasColumn = True: columnDistance = distance: columnX = nx
+                End If
+            End If
+            If dx > w * 0.5 And dx <= w * 2# And Abs(dy) <= h * 0.4 Then
+                distance = Abs(dy) / h + dx / w
+                If Not hasRow Or distance < rowDistance Then
+                    hasRow = True: rowDistance = distance: rowY = ny
+                End If
+            End If
+        End If
+    Next neighbor
+    If Not hasColumn Or Not hasRow Then Exit Function
+    dx = columnX - cx: dy = rowY - cy
+    If Abs(dx) <= AA_COMPACTION_TOLERANCE_MM And Abs(dy) <= AA_COMPACTION_TOLERANCE_MM Then Exit Function
+    x = placed.Footprint.LeftX + dx: y = placed.Footprint.TopY + dy
+    NeighborAlignmentTarget = True
+End Function
+
+' Seluruh bbox artwork DAN collision harus tetap di dalam envelope sebelumnya.
+' Gerak satu pasangan boleh turun/kanan tanpa memperlebar susunan area.
+Private Function AlignmentEnvelopeFits(ByVal original As AAPlacement, ByVal candidate As AAPlacement, _
+                                       ByVal occupied As Collection) As Boolean
+    Dim box As AAGeometry, other As AAGeometry, neighbor As AAPlacement, kind As Long
+    Dim leftX As Double, rightX As Double, topY As Double, bottomY As Double
+    For kind = 0 To 1
+        If kind = 0 Then Set box = original.Footprint Else Set box = original.CollisionFootprint
+        leftX = box.LeftX: rightX = box.RightX: topY = box.TopY: bottomY = box.BottomY
+        For Each neighbor In occupied
+            If kind = 0 Then Set other = neighbor.Footprint Else Set other = neighbor.CollisionFootprint
+            leftX = MinValue(leftX, other.LeftX): rightX = MaxValue(rightX, other.RightX)
+            topY = MaxValue(topY, other.TopY): bottomY = MinValue(bottomY, other.BottomY)
+        Next neighbor
+        If kind = 0 Then Set box = candidate.Footprint Else Set box = candidate.CollisionFootprint
+        If box.LeftX < leftX Or box.RightX > rightX Or box.TopY > topY Or box.BottomY < bottomY Then Exit Function
+    Next kind
+    AlignmentEnvelopeFits = True
 End Function
 
 Private Function CompactAxis(ByVal placed As AAPlacement, ByVal orientation As AARotationVariant, _

@@ -5,6 +5,7 @@ Private Const AA_QUANTITY_MAX_DIFFERENCE As Long = 2
 Private mSharedTemplate As AALayoutPlan
 Private mTemplateCutIndex As Long
 Private mQuotaPlanner As AAMediumPlanner
+Private mLastCapacityCount As Long
 
 ' Satu instance per Process: cache hanya berlaku pada settings/dokumen yang sama.
 Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As Long, _
@@ -16,6 +17,7 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
     Dim template As AALayoutPlan, result As AALayoutPlan, candidate As AALayoutPlan
     Dim low As Long, high As Long, middle As Long, i As Long, index As Long
     Dim expected As Long, pass As Long, failedAtTotal() As Long
+    Dim hint As Long, consecutiveHints As Long
     Dim expanding As Boolean
     ' Geometri, urutan sumber, area dan gap cache tidak boleh lintas kelompok.
     Set mQuotaPlanner = Nothing
@@ -87,6 +89,22 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
             If middle > high Then middle = high
         Else
             middle = (low + high + 1) \ 2
+            ' Hasil parsial hanya memilih probe, bukan menurunkan batas high.
+            ' Setelah dua hint, wajib satu langkah biner agar rentang tetap cepat menyusut.
+            If layoutMode = AA_MODE_MEDIUM And candidate Is Nothing And low < high Then
+                hint = mLastCapacityCount \ designCount
+                If hint > low And hint <= high And consecutiveHints < 2 Then
+                    middle = hint
+                    consecutiveHints = consecutiveHints + 1
+                    AADebugWrite "Quantity", "partial hint per Design=" & CStr(hint) & _
+                        "; partial=" & CStr(mLastCapacityCount) & "; bracket=" & _
+                        CStr(low) & ".." & CStr(high)
+                Else
+                    consecutiveHints = 0
+                End If
+            Else
+                consecutiveHints = 0
+            End If
         End If
     Loop
     For i = 0 To designCount - 1
@@ -262,10 +280,12 @@ Private Function TryQuota(ByRef models() As AAModel, ByRef designIndexes() As Lo
         phase = "capacity": capacityTarget = expected
     End If
     perfStarted = AADebugPerfBegin()
+    mLastCapacityCount = 0
     On Error GoTo QuotaFailed
     Set candidate = BuildMode(models, designIndexes, designCount, cutIndexes, cutCount, _
         quantities, settings, sourceDocument, layoutMode, planner, capacityTarget)
     AADebugStageEnd "quota target=" & CStr(expected) & "; phase=" & phase, perfStarted
+    mLastCapacityCount = candidate.DesignCount
     If candidate.MatchesQuotas(designIndexes, designCount, quantities, expected) Then
         Set TryQuota = candidate
         AADebugWrite "Quantity", "quota target=" & CStr(expected) & " -> fits"

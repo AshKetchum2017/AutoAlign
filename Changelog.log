@@ -126,7 +126,7 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 2026-10-09
-[Medium: optimasi pencarian kuota kelompok]
-~ Estimasi awal kuota dan penggunaan ulang penempatan mempercepat Case_07_Big Data dari 2013,903 menjadi 607,559 detik (69,83%), tetap 157 + 157 Design dalam satu area.
+[Medium: optimasi kuota kelompok dan perataan susunan]
+~ Estimasi kuota, penggunaan ulang penempatan, dan petunjuk hasil parsial mempercepat Case_07_Big Data dari 2013,903 menjadi 459,681 detik (77,17%), tetap 157 + 157 pasangan dalam satu area.
+~ Alignment tetangga memperbaiki posisi pasangan kiri bawah; tinggi susunan berkurang 10,568 mm. Pengguna mengonfirmasi susunan visual baik, gap aman tanpa collision, dan jumlah tetap.
 ~ Pencarian surplus kelompok mengizinkan selisih maksimal dua objek antar Design.
-Catatan: pemeriksaan gap aman/tanpa collision melalui contour 2 mm. Satu pasangan kiri bawah masih belum sejajar pada Y dengan tetangganya; penempatan tersebut masih ditelusuri.
