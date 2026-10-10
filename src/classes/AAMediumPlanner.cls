@@ -17,6 +17,11 @@ Private Const AA_COMPACTION_PASSES As Long = 2
 Private Const AA_MAX_ALIGNMENT_PROBES_PER_AREA As Long = 256
 Private Const AA_ALIGNMENT_PASSES As Long = 2
 Private Const AA_MAX_PAIR_CONTOUR_EDGES As Long = 32
+' Lane terbatas untuk kurva sederhana (node sedikit, hasil flatten lebih banyak).
+' Tidak membuka pencarian contact scan 64 langkah untuk semua kurva kompleks.
+Private Const AA_MAX_CURVED_PAIR_EDGES As Long = 512
+Private Const AA_MAX_CURVED_PAIR_NODES As Long = 12
+Private Const AA_CURVED_PHASE_STEPS As Long = 4
 Private Const AA_PAIR_CONTACT_SCAN_STEPS As Long = 64
 Private Const AA_MAX_PHASE_SLOTS_PER_AREA As Long = 5000
 Private Const AA_PAIR_INSET_RESERVE_MM As Double = 0.001
@@ -154,6 +159,16 @@ NextPairPattern:
                         Next patternMode
                     Next rowMode
                 Next pairAngle
+            ElseIf Not firstVariant Is Nothing Then
+                If AADebugEnabled Then AADebugWrite "Pair", "curved lane eligible=" & _
+                    CStr(CurvedPairEligible(firstVariant)) & "; nodes=" & _
+                    CStr(firstVariant.Contour.Anchors.Count) & "; edges=" & CStr(firstVariant.Contour.EdgeCount)
+                If CurvedPairEligible(firstVariant) Then
+                    pairCutIndex = -1
+                    If cutCount = 1 Then pairCutIndex = cutIndexes(0)
+                    ConsiderCurvedPairs models(firstIndex), firstIndex, pairCutIndex, _
+                        settings, forbidden, models, sourceDocument, sharedPlanner, best, bestLabel
+                End If
             End If
         End If
     End If
@@ -839,13 +854,73 @@ Private Function AnglesFor(ByVal model As AAModel, ByVal firstAngle As Double) A
     Set AnglesFor = result
 End Function
 
+Private Function CurvedPairEligible(ByVal orientation As AARotationVariant) As Boolean
+    Dim nodes As Long, edges As Long
+    nodes = orientation.Contour.Anchors.Count
+    edges = orientation.Contour.EdgeCount
+    ' Ellipse standar (4 node) sudah ditangani baseline/ZigZag. Lane baru
+    ' hanya untuk kontur berlekuk sederhana; jumlah segmen tetap dibatasi.
+    CurvedPairEligible = (nodes >= 5 And nodes <= AA_MAX_CURVED_PAIR_NODES And _
+        edges > AA_MAX_PAIR_CONTOUR_EDGES And edges <= AA_MAX_CURVED_PAIR_EDGES)
+End Function
+
+Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Long, _
+                                ByVal cutIndex As Long, ByVal settings As AASettings, _
+                                ByVal forbidden As Collection, ByRef models() As AAModel, _
+                                ByVal sourceDocument As Document, ByVal sharedPlanner As AAPlanner, _
+                                ByRef best As AALayoutPlan, ByRef bestLabel As String)
+    Dim orientation As AARotationVariant, opposite As AARotationVariant
+    Dim candidate As AALayoutPlan
+    Dim angle As Long, phaseIndex As Long, rowMode As Long
+    Dim phaseLimit As Double, phaseY As Double, h As Double, v As Double
+    Dim label As String, buildError As String
+
+    model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+    If h < 0# Or v < 0# Then Exit Sub
+    ' Dua keluarga: 0/180 dan 90/270. Sembilan fase termasuk kedua tanda,
+    ' dua offset baris: maksimal 36 kandidat; tidak mengikuti trial quota.
+    For angle = 0 To 90 Step 90
+        Set orientation = model.RotationVariant(CDbl(angle))
+        Set opposite = model.RotationVariant(CDbl(angle + 180))
+        If Not CurvedPairEligible(orientation) Or Not CurvedPairEligible(opposite) Then GoTo NextCurvedAngle
+        phaseLimit = MinValue(orientation.ReferenceHeight, opposite.ReferenceHeight) * AA_SHIFT_FACTOR
+        For phaseIndex = -AA_CURVED_PHASE_STEPS To AA_CURVED_PHASE_STEPS
+            phaseY = phaseLimit * phaseIndex / AA_CURVED_PHASE_STEPS
+            For rowMode = 0 To 1
+                AAProgressCandidate
+                label = "Curved pair angle=" & CStr(angle) & " row=" & CStr(rowMode) & _
+                    " phase=" & Format$(phaseY, "0.000000")
+                AADebugCandidateStart label
+                Set candidate = Nothing
+                buildError = vbNullString
+                On Error Resume Next
+                Set candidate = BuildOppositeLattice(model, designIndex, cutIndex, settings, _
+                    forbidden, CDbl(angle), rowMode, 4, phaseY)
+                If Err.Number <> 0 Then buildError = "Error " & CStr(Err.Number) & ": " & Err.Description
+                Err.Clear
+                On Error GoTo 0
+                AADebugCandidateEnd
+                If Len(buildError) > 0 Then AADebugWrite "Pair", label & " -> " & buildError
+                Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
+                    sourceDocument, sharedPlanner, label)
+                If Not candidate Is Nothing Then
+                    If ValidPlan(candidate, forbidden, settings, label) Then _
+                        ConsiderCandidate candidate, best, label, bestLabel, sharedPlanner
+                End If
+            Next rowMode
+        Next phaseIndex
+NextCurvedAngle:
+    Next angle
+End Sub
+
 Private Function BuildOppositeLattice(ByVal model As AAModel, _
                                       ByVal designIndex As Long, ByVal cutIndex As Long, _
                                       ByVal settings As AASettings, _
                                       ByVal forbidden As Collection, _
                                       ByVal firstAngle As Double, _
                                       ByVal rowMode As Long, _
-                                      ByVal patternMode As Long) As AALayoutPlan
+                                      ByVal patternMode As Long, _
+                                      Optional ByVal phaseOffset As Double = 0#) As AALayoutPlan
     Dim forward As AARotationVariant, reverse As AARotationVariant
     Dim result As AALayoutPlan, occupied As Collection
     Dim orientation As AARotationVariant, candidate As AAPlacement
@@ -854,6 +929,7 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
     Dim rowIndex As Long, columnIndex As Long, probes As Long
     Dim scanContacts As Boolean, phaseY As Double
     Dim slotLimit As Long
+    Dim startX As Double, spanX As Double, spanY As Double, rows As Long, columns As Long
 
     model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
     If h < 0# Or v < 0# Then Exit Function
@@ -868,7 +944,16 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
         slotLimit = AA_MAX_PHASE_SLOTS_PER_AREA
     End If
     scanContacts = Not model.IsTriangle
-    If scanContacts Then
+    If patternMode = 4 Then
+        If Not CurvedPairEligible(forward) Or Not CurvedPairEligible(reverse) Then Exit Function
+        If Abs(phaseOffset) > MinValue(forward.ReferenceHeight, reverse.ReferenceHeight) * _
+            AA_SHIFT_FACTOR + AA_EDGE_TOLERANCE_MM Then Exit Function
+        phaseY = phaseOffset
+        slotLimit = AA_MAX_PHASE_SLOTS_PER_AREA
+        ' Lane ini memakai bracket aman + bisection; validasi detail di TryExactSlot
+        ' dan ValidPlan tetap wajib. Tidak menjalankan 64 contact scan per pitch.
+        scanContacts = False
+    ElseIf scanContacts Then
         If forward.Contour.EdgeCount > AA_MAX_PAIR_CONTOUR_EDGES Then Exit Function
     End If
     If patternMode = 2 Or patternMode = 3 Then
@@ -878,14 +963,30 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
     End If
     stepX = OppositeHorizontalPitch(forward, reverse, h, v, phaseY, scanContacts)
     If stepX <= AA_COMPACTION_TOLERANCE_MM Then Exit Function
+    If patternMode = 4 Then stepX = stepX + AA_PAIR_INSET_RESERVE_MM
     If rowMode = 1 Then rowShift = stepX / 2#
     stepY = OppositeVerticalPitch(forward, reverse, stepX, rowShift, _
         h, v, phaseY, scanContacts)
     If stepY <= AA_COMPACTION_TOLERANCE_MM Then Exit Function
+    If patternMode = 4 Then stepY = stepY + AA_PAIR_INSET_RESERVE_MM
     Set result = New AALayoutPlan
     result.Configure AA_MODE_MEDIUM
     Set occupied = New Collection
-    y = settings.AreaHeightMM - phaseY
+    y = settings.AreaHeightMM - MaxValue(0#, phaseY)
+    If patternMode = 4 Then
+        ' Pusatkan grid SEBELUM filter mark. Centering sesudah filter tidak
+        ' mengembalikan objek sudut yang sudah ditolak pada anchor (0, top).
+        columns = Int((settings.AreaWidthMM - MaxValue(forward.Width, reverse.Width)) / stepX) + 1
+        rows = Int((settings.AreaHeightMM - MaxValue(forward.Height, reverse.Height) - Abs(phaseY)) / stepY) + 1
+        If columns > 0 Then
+            spanX = (columns - 1) * stepX + MaxValue(forward.Width, reverse.Width)
+            startX = (settings.AreaWidthMM - spanX) / 2#
+        End If
+        If rows > 0 Then
+            spanY = (rows - 1) * stepY + MaxValue(forward.Height, reverse.Height) + Abs(phaseY)
+            y = (settings.AreaHeightMM + spanY) / 2# - MaxValue(0#, phaseY)
+        End If
+    End If
     result.SetRegularPattern True
     If AADebugEnabled Then AADebugWrite "Pair", "angle=" & CStr(firstAngle) & _
         " row=" & CStr(rowMode) & " pattern=" & CStr(patternMode) & _
@@ -893,8 +994,8 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
         Format$(stepX, "0.000000") & "/" & Format$(stepY, "0.000000")
     Do While y >= MinValue(forward.Height, reverse.Height - phaseY) - _
         AA_EDGE_TOLERANCE_MM
-        x = 0#
-        If rowIndex Mod 2 = 1 Then x = rowShift
+        x = startX
+        If rowIndex Mod 2 = 1 Then x = x + rowShift
         columnIndex = 0
         Do While x <= settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM
             probes = probes + 1
@@ -1047,7 +1148,7 @@ Private Function OppositeHorizontalPitch(ByVal forward As AARotationVariant, _
                                          ByVal scanContacts As Boolean) As Double
     Dim low As Double, high As Double, middle As Double, topY As Double
     Dim scanUpper As Double, trial As Double, i As Long
-    topY = MaxValue(forward.Height, reverse.Height) + phaseY
+    topY = MaxValue(forward.Height, reverse.Height) + Abs(phaseY)
     high = MaxValue(forward.Width, reverse.Width) + MaxValue(h, v) + 2#
     If Not OppositeRowClear(forward, reverse, high, topY, h, v, phaseY) Then Exit Function
     If scanContacts Then
@@ -1094,7 +1195,7 @@ Private Function OppositeVerticalPitch(ByVal forward As AARotationVariant, _
                                        ByVal scanContacts As Boolean) As Double
     Dim low As Double, high As Double, middle As Double
     Dim scanUpper As Double, trial As Double, i As Long
-    high = MaxValue(forward.Height, reverse.Height) + phaseY + MaxValue(h, v) + 2#
+    high = MaxValue(forward.Height, reverse.Height) + Abs(phaseY) + MaxValue(h, v) + 2#
     If Not OppositeRowsClear(forward, reverse, stepX, rowShift, high, h, v, phaseY) Then Exit Function
     If scanContacts Then
         scanUpper = high

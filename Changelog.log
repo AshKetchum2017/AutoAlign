@@ -150,3 +150,6 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 2026-10-10
 [Menu macro: helper internal]
 ~ Helper debug dan progres disembunyikan dari daftar macro workspace. Debug tetap dapat diaktifkan dan dimatikan melalui Immediate Window.
+
+[Medium: pasangan kurva PinPoint]
+~ Pencarian pasangan 0/180 dengan offset Y dua arah mendukung kurva bernode sedikit yang memiliki banyak segmen kontur. Uji PinPoint menghasilkan 133 objek dari baseline 95 pada gap 1,5 mm; ukuran susunan menurut log 308,483 x 467,021 mm.
