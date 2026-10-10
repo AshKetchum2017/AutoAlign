@@ -1,4 +1,5 @@
 Option Explicit
+Option Private Module
 
 ' Pola Currency sama dengan MRStopwatch; tidak membutuhkan referensi GMS lain.
 #If VBA7 Then

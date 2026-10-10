@@ -496,7 +496,7 @@ Private Function AAHintText(ByVal box As MSForms.TextBox) As String
     If optCustom.value Then
         gapText = "0"
     ElseIf optDieA.value Then
-        gapText = "1,5": zigzagText = "89%"
+        gapText = "1.5": zigzagText = "89%"
     Else
         gapText = "1"
     End If
@@ -535,8 +535,8 @@ Private Sub AARefreshHints()
     AAShowHint txbAreaWidth
     AAShowHint txbAreaHeight
     AAShowHint txbQuantity
-    txbGapHorizontal.ControlTipText = "Default: KissA 1 mm, DieA 1,5 mm, Custom 0 mm. KissA/DieA: rectangle bersudut runcing memakai 0. Input manual diutamakan."
-    txbGapVertical.ControlTipText = "Default Straight / ZigZag: KissA 1 mm / 88%, DieA 1,5 mm / 89%, Custom 0 mm / 88%. KissA/DieA: rectangle bersudut runcing memakai gap 0 pada kedua pola."
+    txbGapHorizontal.ControlTipText = "Default: Kiss Cut A3+ 1 mm, Die Cut A3+ 1.5 mm, Custom 0 mm. Kiss Cut A3+/Die Cut A3+: rectangle bersudut runcing memakai 0. Input manual diutamakan."
+    txbGapVertical.ControlTipText = "Default Straight / ZigZag: Kiss Cut A3+ 1 mm / 88%, Die Cut A3+ 1.5 mm / 89%, Custom 0 mm / 88%. Kiss Cut A3+/Die Cut A3+: rectangle bersudut runcing memakai gap 0 pada kedua pola."
     If optMedium.value Then txbGapVertical.ControlTipText = _
         "Medium: gap kontur dalam mm. Sisi miring memakai nilai terbesar H/V. Persen dan gap negatif belum tersedia."
     txbQuantity.ControlTipText = "Kosong (-): isi sisa area. 0: lewati Design. /n: bagi rata dalam satu container kelompok n. Berlaku untuk semua Design terpilih (Ctrl/Shift)."

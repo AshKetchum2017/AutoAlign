@@ -1,4 +1,5 @@
 Option Explicit
+Option Private Module
 
 ' Satu sesi Process per GMS. Tidak bergantung pada Debug dan tidak menyimpan
 ' referensi dokumen/shape. DoEvents hanya berjalan di checkpoint caller.
