@@ -1,12 +1,16 @@
 Option Explicit
 
 Private Const AA_EDGE_TOLERANCE_MM As Double = 0.0001
+Private Const AA_PLAN_BOUNDS_TOLERANCE_MM As Double = 0.001
 Private Const AA_MARK_TOLERANCE_MM As Double = 0.2
 Private Const AA_SHIFT_STEP_MM As Double = 0.2
 Private Const AA_MAX_SHIFT_PROBES_PER_AREA As Long = 50000
 Private Const AA_MAX_OBJECTS_PER_SOURCE As Long = 5000
 Private Const AA_MAX_CANDIDATES_PER_AREA As Long = 50000
 Private Const AA_MAX_CENTERING_PASSES As Long = 20
+Private Const AA_MAX_MINIMUM_NEIGHBOR_PROBES As Long = 256
+Private Const AA_MAX_MINIMUM_ANCHORS As Long = 64
+Private Const AA_MINIMUM_NEIGHBOR_RESERVE_MM As Double = 0.001
 
 Public Function BuildMedium(ByRef models() As AAModel, _
                             ByRef designIndexes() As Long, ByVal designCount As Long, _
@@ -65,6 +69,9 @@ End Function
 Friend Function BetterPlan(ByVal candidate As AALayoutPlan, _
                            ByVal reference As AALayoutPlan) As Boolean
     Dim candidateBoundsArea As Double, referenceBoundsArea As Double
+    Dim candidateBounds() As Double, referenceBounds() As Double
+    Dim equivalentBounds As Boolean, areaIndex As Long
+    Dim candidateRotation As Double, referenceRotation As Double
     If candidate.AreaCount <> reference.AreaCount Then
         BetterPlan = (candidate.AreaCount < reference.AreaCount)
     ElseIf candidate.DesignCount <> reference.DesignCount Then
@@ -73,17 +80,49 @@ Friend Function BetterPlan(ByVal candidate As AALayoutPlan, _
            candidate.HasRegularPattern <> reference.HasRegularPattern Then
         BetterPlan = candidate.HasRegularPattern
     Else
-        candidateBoundsArea = OccupiedBoundsArea(candidate)
-        referenceBoundsArea = OccupiedBoundsArea(reference)
-        If candidateBoundsArea <> referenceBoundsArea Then
+        candidateBoundsArea = OccupiedBoundsArea(candidate, candidateBounds)
+        referenceBoundsArea = OccupiedBoundsArea(reference, referenceBounds)
+        ' Toleransi ini hanya untuk ranking Medium, bukan kelonggaran gap/bounds.
+        equivalentBounds = (candidate.LayoutMode = AA_MODE_MEDIUM And _
+                            reference.LayoutMode = AA_MODE_MEDIUM)
+        If equivalentBounds Then
+            For areaIndex = 0 To candidate.AreaCount - 1
+                If Abs(candidateBounds(areaIndex, 0) - referenceBounds(areaIndex, 0)) > AA_PLAN_BOUNDS_TOLERANCE_MM Or _
+                   Abs(candidateBounds(areaIndex, 1) - referenceBounds(areaIndex, 1)) > AA_PLAN_BOUNDS_TOLERANCE_MM Then
+                    equivalentBounds = False
+                    Exit For
+                End If
+            Next areaIndex
+        End If
+        If Not equivalentBounds And candidateBoundsArea <> referenceBoundsArea Then
             BetterPlan = (candidateBoundsArea < referenceBoundsArea)
+        ElseIf equivalentBounds Then
+            candidateRotation = TotalRotation(candidate)
+            referenceRotation = TotalRotation(reference)
+            If candidateRotation <> referenceRotation Then
+                BetterPlan = (candidateRotation < referenceRotation)
+            Else
+                BetterPlan = HasFullerEarlierArea(candidate, reference)
+            End If
         Else
             BetterPlan = HasFullerEarlierArea(candidate, reference)
         End If
     End If
 End Function
 
-Private Function OccupiedBoundsArea(ByVal plan As AALayoutPlan) As Double
+Private Function TotalRotation(ByVal plan As AALayoutPlan) As Double
+    Dim placement As AAPlacement, angle As Double
+    For Each placement In plan.Placements
+        ' RotationDelta relatif terhadap sumber; 270 derajat setara putaran -90.
+        angle = placement.RotationDelta
+        angle = angle - 360# * Int(angle / 360#)
+        If angle > 180# Then angle = 360# - angle
+        TotalRotation = TotalRotation + angle
+    Next placement
+End Function
+
+Private Function OccupiedBoundsArea(ByVal plan As AALayoutPlan, _
+                                    ByRef bounds() As Double) As Double
     Dim lefts() As Double, bottoms() As Double
     Dim rights() As Double, tops() As Double
     Dim seen() As Boolean
@@ -91,6 +130,7 @@ Private Function OccupiedBoundsArea(ByVal plan As AALayoutPlan) As Double
     Dim areaIndex As Long
 
     If plan.AreaCount = 0 Then Exit Function
+    ReDim bounds(0 To plan.AreaCount - 1, 0 To 1)
     ReDim lefts(0 To plan.AreaCount - 1)
     ReDim bottoms(0 To plan.AreaCount - 1)
     ReDim rights(0 To plan.AreaCount - 1)
@@ -111,10 +151,12 @@ Private Function OccupiedBoundsArea(ByVal plan As AALayoutPlan) As Double
         End If
     Next placement
     For areaIndex = 0 To plan.AreaCount - 1
-        If seen(areaIndex) Then _
+        If seen(areaIndex) Then
+            bounds(areaIndex, 0) = rights(areaIndex) - lefts(areaIndex)
+            bounds(areaIndex, 1) = tops(areaIndex) - bottoms(areaIndex)
             OccupiedBoundsArea = OccupiedBoundsArea + _
-                (rights(areaIndex) - lefts(areaIndex)) * _
-                (tops(areaIndex) - bottoms(areaIndex))
+                bounds(areaIndex, 0) * bounds(areaIndex, 1)
+        End If
     Next areaIndex
 End Function
 
@@ -131,20 +173,31 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
 
     AAProgressCandidate
     If AllActiveRectangles(models, designIndexes, designCount, quantities) Then
-        Set BuildMinimum = BuildOne(models, designIndexes, designCount, cutIndexes, _
+        AADebugCandidateStart "Minimum Straight"
+        Set straightPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
             cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT, singleAreaOnly)
+        AADebugCandidateEnd
+        AADebugPlan "Minimum Straight", straightPlan
+        Set BuildMinimum = straightPlan
         Exit Function
     End If
 
     On Error Resume Next
+    AADebugCandidateStart "Minimum Straight"
     Set straightPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
         cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT, singleAreaOnly)
     If Err.Number <> 0 Then straightError = Err.Description
     Err.Clear
+    AADebugCandidateEnd
+    AADebugPlan "Minimum Straight", straightPlan
     AAProgressCandidate
+    AADebugCandidateStart "Minimum ZigZag"
     Set zigZagPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
         cutCount, quantities, settings, sourceDocument, AA_MODE_ZIGZAG, singleAreaOnly)
     If Err.Number <> 0 Then zigZagError = Err.Description
+    Err.Clear
+    AADebugCandidateEnd
+    AADebugPlan "Minimum ZigZag", zigZagPlan
     On Error GoTo 0
 
     If straightPlan Is Nothing And zigZagPlan Is Nothing Then Err.Raise _
@@ -298,6 +351,11 @@ Private Function BuildOneRaw(ByRef models() As AAModel, _
             Do While remaining > 0
                 added = FillArea(result, models(designIndex), designIndex, cutIndex, _
                     areaIndex, occupied, forbidden, settings, layoutMode, remaining, offsets)
+                If added < remaining And occupied.Count > 0 Then
+                    added = added + FillMinimumNeighbors(result, models(designIndex), _
+                        designIndex, cutIndex, areaIndex, occupied, forbidden, settings, _
+                        layoutMode, remaining - added, offsets)
+                End If
                 If added = 0 And occupied.Count = 0 Then Err.Raise _
                     vbObjectError + 5231, "AAPlanner", _
                     "Obj. ID sumber tidak dapat muat dalam satu area."
@@ -401,6 +459,110 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
     Loop
 End Function
 
+Private Function FillMinimumNeighbors(ByVal result As AALayoutPlan, ByVal model As AAModel, _
+                                      ByVal designIndex As Long, ByVal cutIndex As Long, _
+                                      ByVal areaIndex As Long, ByVal occupied As Collection, _
+                                      ByVal forbidden As Collection, ByVal settings As AASettings, _
+                                      ByVal layoutMode As Long, ByVal limit As Long, _
+                                      ByVal offsets As Object) As Long
+    Dim placed As AAPlacement, origin As AAPlacement, candidate As AAPlacement
+    Dim box As AAGeometry, collision As AAGeometry
+    Dim xs() As Double, ys() As Double, nx As Long, ny As Long
+    Dim h As Double, v As Double, dx As Double, dy As Double
+    Dim width As Double, height As Double, insetX As Double, insetY As Double
+    Dim maxX As Double, minY As Double, x As Long, y As Long, pass As Long
+    Dim probes As Long, before As Long, mixed As Boolean, key As String, tried As Object
+
+    ' Tambahan terbatas untuk kuota finite campuran; fill bebas/grid satu sumber tetap.
+    For Each placed In occupied
+        If placed.DesignIndex <> designIndex Then mixed = True: Exit For
+    Next placed
+    If Not mixed Or limit <= 0 Then Exit Function
+    If model.IsRectangle Then layoutMode = AA_MODE_STRAIGHT
+    model.GetBoundaryGaps layoutMode, h, v
+    If h < 0# Or v < 0# Then Exit Function
+    Set origin = model.MakePlacement(designIndex, cutIndex, areaIndex, _
+        model.DesignInsetX, settings.AreaHeightMM - model.DesignInsetY)
+    If Not origin.UsesContourGap Then Exit Function
+    Set collision = origin.CollisionFootprint
+    width = collision.Width: height = collision.Height
+    insetX = collision.LeftX - origin.Footprint.LeftX
+    insetY = origin.Footprint.TopY - collision.TopY
+    maxX = settings.AreaWidthMM - model.FootprintWidth
+    minY = model.FootprintHeight
+    ReDim xs(0 To AA_MAX_MINIMUM_ANCHORS - 1)
+    ReDim ys(0 To AA_MAX_MINIMUM_ANCHORS - 1)
+    Set tried = CreateObject("Scripting.Dictionary")
+    Do
+        nx = 0: ny = 0: before = FillMinimumNeighbors
+        AddMinimumAnchor xs, nx, 0#, 0#, maxX
+        AddMinimumAnchor xs, nx, maxX, 0#, maxX
+        AddMinimumAnchor ys, ny, settings.AreaHeightMM, minY, settings.AreaHeightMM
+        AddMinimumAnchor ys, ny, minY, minY, settings.AreaHeightMM
+        For Each placed In occupied
+            Set box = placed.CollisionFootprint
+            AddMinimumAnchor xs, nx, box.LeftX - insetX, 0#, maxX
+            AddMinimumAnchor xs, nx, box.RightX - width - insetX, 0#, maxX
+            AddMinimumAnchor ys, ny, box.TopY + insetY, minY, settings.AreaHeightMM
+            AddMinimumAnchor ys, ny, box.BottomY + height + insetY, minY, settings.AreaHeightMM
+            ' Coba gap persis dahulu, lalu cadangan kecil untuk salinan kurva.
+            For pass = 0 To 1
+                dx = h + pass * AA_MINIMUM_NEIGHBOR_RESERVE_MM
+                dy = v + pass * AA_MINIMUM_NEIGHBOR_RESERVE_MM
+                If placed.GapH > h Then dx = placed.GapH + pass * AA_MINIMUM_NEIGHBOR_RESERVE_MM
+                If placed.GapV > v Then dy = placed.GapV + pass * AA_MINIMUM_NEIGHBOR_RESERVE_MM
+                AddMinimumAnchor xs, nx, box.RightX + dx - insetX, 0#, maxX
+                AddMinimumAnchor xs, nx, box.LeftX - dx - width - insetX, 0#, maxX
+                AddMinimumAnchor ys, ny, box.BottomY - dy + insetY, minY, settings.AreaHeightMM
+                AddMinimumAnchor ys, ny, box.TopY + dy + height + insetY, minY, settings.AreaHeightMM
+            Next pass
+        Next placed
+        ' Sumbu terurut: atas ke bawah, lalu kiri ke kanan. Anchor baru dibangun
+        ' setelah placement diterima; posisi yang sudah dicoba tidak diulang.
+        For y = ny - 1 To 0 Step -1
+            For x = 0 To nx - 1
+                key = CStr(xs(x)) & ":" & CStr(ys(y))
+                If Not tried.Exists(key) Then
+                    tried.Add key, True
+                    probes = probes + 1
+                    AAProgressPulse
+                    Set candidate = model.MakePlacement(designIndex, cutIndex, areaIndex, _
+                        xs(x) + model.DesignInsetX, ys(y) - model.DesignInsetY)
+                    If CandidateFits(candidate, occupied, forbidden, settings, offsets, h, v, True) Then
+                        result.Add candidate: occupied.Add candidate
+                        FillMinimumNeighbors = FillMinimumNeighbors + 1
+                        If FillMinimumNeighbors >= limit Then GoTo Finished
+                    End If
+                    If probes >= AA_MAX_MINIMUM_NEIGHBOR_PROBES Then GoTo Finished
+                End If
+            Next x
+        Next y
+    Loop While FillMinimumNeighbors > before
+Finished:
+    If AADebugEnabled Then AADebugWrite "Minimum", "neighbor fallback: design=" & _
+        CStr(designIndex) & "; area=" & CStr(areaIndex) & "; added=" & _
+        CStr(FillMinimumNeighbors) & "; probes=" & CStr(probes) & "/" & _
+        CStr(AA_MAX_MINIMUM_NEIGHBOR_PROBES)
+End Function
+
+Private Sub AddMinimumAnchor(ByRef values() As Double, ByRef count As Long, _
+                             ByVal value As Double, ByVal lower As Double, ByVal upper As Double)
+    Dim i As Long, position As Long
+    If value < lower - AA_EDGE_TOLERANCE_MM Or value > upper + AA_EDGE_TOLERANCE_MM Then Exit Sub
+    If value < lower Then value = lower
+    If value > upper Then value = upper
+    position = count
+    For i = 0 To count - 1
+        If Abs(values(i) - value) <= AA_EDGE_TOLERANCE_MM Then Exit Sub
+        If values(i) > value And position = count Then position = i
+    Next i
+    If count >= AA_MAX_MINIMUM_ANCHORS Then Exit Sub
+    For i = count To position + 1 Step -1
+        values(i) = values(i - 1)
+    Next i
+    values(position) = value: count = count + 1
+End Sub
+
 Private Sub BuildStartingRows(ByVal occupied As Collection, ByVal designIndex As Long, _
                               ByVal verticalGap As Double, ByVal hasCut As Boolean, _
                               ByVal collisionInsetY As Double, ByVal areaTop As Double, _
@@ -443,7 +605,8 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
                                ByVal occupied As Collection, _
                                ByVal forbidden As Collection, _
                                ByVal settings As AASettings, ByVal offsets As Object, _
-                               ByVal horizontalGap As Double, ByVal verticalGap As Double) As Boolean
+                               ByVal horizontalGap As Double, ByVal verticalGap As Double, _
+                               Optional ByVal checkSameDesign As Boolean = False) As Boolean
     Dim placed As AAPlacement
     Dim footprint As AAGeometry
     Dim collisionFootprint As AAGeometry
@@ -455,26 +618,41 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
     If footprint.LeftX < -AA_EDGE_TOLERANCE_MM Or _
        footprint.BottomY < -AA_EDGE_TOLERANCE_MM Or _
        footprint.RightX > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
-       footprint.TopY > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then Exit Function
+       footprint.TopY > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then
+        AADebugRejectSlot "bounds"
+        Exit Function
+    End If
     If Not offsets Is Nothing Then
         If offsets.Exists(CStr(candidate.AreaIndex)) Then
-            If Not PlacementMarksFit(candidate, offsets, forbidden) Then Exit Function
+            If Not PlacementMarksFit(candidate, offsets, forbidden) Then
+                AADebugRejectSlot "mark"
+                Exit Function
+            End If
         End If
     End If
     For Each placed In occupied
         ' Acuan pasangan: Cut Line; standalone: siluet Design.
         Set spacingFootprint = collisionFootprint
         Set placedSpacing = placed.CollisionFootprint
-        If spacingFootprint.Overlaps(placedSpacing) Then Exit Function
-        If placed.DesignIndex <> candidate.DesignIndex Then
+        If spacingFootprint.Overlaps(placedSpacing) Then
+            AADebugRejectSlot "overlap"
+            Exit Function
+        End If
+        If placed.DesignIndex <> candidate.DesignIndex Or checkSameDesign Then
             If candidate.UsesContourGap And placed.UsesContourGap Then
-                If Not candidate.HasClearance(placed) Then Exit Function
+                If Not candidate.HasClearance(placed) Then
+                    AADebugRejectSlot "gap"
+                    Exit Function
+                End If
             Else
                 ' Gap negatif/persen tetap mengikuti kontrak langkah sebelumnya.
                 If spacingFootprint.RightX + horizontalGap > placedSpacing.LeftX + AA_EDGE_TOLERANCE_MM And _
                    spacingFootprint.LeftX - horizontalGap < placedSpacing.RightX - AA_EDGE_TOLERANCE_MM And _
                    spacingFootprint.TopY + verticalGap > placedSpacing.BottomY + AA_EDGE_TOLERANCE_MM And _
-                   spacingFootprint.BottomY - verticalGap < placedSpacing.TopY - AA_EDGE_TOLERANCE_MM Then Exit Function
+                   spacingFootprint.BottomY - verticalGap < placedSpacing.TopY - AA_EDGE_TOLERANCE_MM Then
+                    AADebugRejectSlot "gap"
+                    Exit Function
+                End If
             End If
         End If
     Next placed

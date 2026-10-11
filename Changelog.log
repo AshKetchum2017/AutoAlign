@@ -153,3 +153,11 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Medium: pasangan kurva PinPoint]
 ~ Pencarian pasangan 0/180 dengan offset Y dua arah mendukung kurva bernode sedikit yang memiliki banyak segmen kontur. Uji PinPoint menghasilkan 133 objek dari baseline 95 pada gap 1,5 mm; ukuran susunan menurut log 308,483 x 467,021 mm.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-11
+[Medium: preferensi orientasi sumber]
+~ Jika envelope tiap area setara dalam toleransi lebar/tinggi 0,001 mm, Medium memilih total rotasi tambahan paling sedikit. Selisih luas sangat kecil tidak lagi memaksa rotasi 180 saat orientasi sumber sudah muat; pengguna mengonfirmasi hasil berhasil dan compile aman.
+
+[Minimum: posisi tambahan sebelum container baru]
+~ Untuk Quantity angka dengan Design campuran, Minimum mencoba posisi berdasarkan tepi/alignment tetangga pada rotasi 0 sebelum membuka container baru. Debug detail menampilkan penolakan slot; pengguna mengonfirmasi compile aman dan runtime sesuai.
