@@ -502,6 +502,7 @@ Private Function FillMinimumMarkSlots(ByVal result As AALayoutPlan, ByVal slots 
             placed.Footprint.RightX, placed.Footprint.TopY
     Next placed
     For Each original In slots
+        If AADebugDetailsEnabled Then AADebugMinimumSlotGap original, occupied
         Set candidate = ShiftMinimumMarkSlot(original, occupied, forbidden, settings, _
             offsets, horizontalGap, verticalGap, envelope, probes)
         If Not candidate Is Nothing Then
@@ -788,6 +789,7 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
             If candidate.UsesContourGap And placed.UsesContourGap Then
                 If Not candidate.HasClearance(placed) Then
                     AADebugRejectSlot "gap"
+                    If checkSameDesign Then AADebugMinimumGapRejected candidate, placed, "Minimum local candidate"
                     Exit Function
                 End If
             Else
@@ -1067,11 +1069,11 @@ Private Function BuildForbidden(ByVal settings As AASettings, _
     Dim result As New Collection
     Select Case settings.ModelMode
         Case AA_MODEL_KISS_A
-            AddMark result, 6#, 11#, 10#, settings, sourceDocument
-            AddMark result, 6#, 474#, 10#, settings, sourceDocument
-            AddMark result, 319#, 11#, 10#, settings, sourceDocument
-            AddMark result, 319#, 474#, 10#, settings, sourceDocument
-            AddMark result, 162.5, 12.5, 12#, settings, sourceDocument
+            AddMark result, 6#, 10#, 10#, settings, sourceDocument
+            AddMark result, 6#, 475#, 10#, settings, sourceDocument
+            AddMark result, 319#, 10#, 10#, settings, sourceDocument
+            AddMark result, 319#, 475#, 10#, settings, sourceDocument
+            AddMark result, 162.5, 11.5, 12#, settings, sourceDocument
         Case AA_MODEL_DIE_A
             AddMark result, 11#, 11#, 11#, settings, sourceDocument, True
             AddMark result, 11#, 474#, 11#, settings, sourceDocument, True

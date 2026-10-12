@@ -406,6 +406,8 @@ Friend Function IsClearOfEdge(ByVal ax As Double, ByVal ay As Double, _
             End If
             If gap > 0# Then
                 If distance < gap + errorMM + edgeError - AA_DISTANCE_TOLERANCE_MM Then
+                    If AADebugGapWitnessActive Then AADebugGapEdgeRejected distance, gap, errorMM, _
+                        edgeError, AA_DISTANCE_TOLERANCE_MM, ax, ay, bx, by, cx, cy, ex, ey
                     Exit Function
                 End If
             End If

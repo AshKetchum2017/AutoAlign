@@ -161,3 +161,8 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Minimum: posisi tambahan sebelum container baru]
 ~ Untuk Quantity angka dengan Design campuran, Minimum mencoba posisi berdasarkan tepi/alignment tetangga pada rotasi 0 sebelum membuka container baru. Debug detail menampilkan penolakan slot; pengguna mengonfirmasi compile aman dan runtime sesuai.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-12
+[Kiss Cut: workaround posisi mark]
+~ Mark sudut atas digeser 1 mm ke atas dan mark sudut bawah 1 mm ke bawah. Pengguna mengonfirmasi perubahan ini berhasil pada kasus slot sudut yang sebelumnya tidak terisi.

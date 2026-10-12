@@ -17,6 +17,8 @@ Public Const AA_PERF_PLACEMENT As Long = 4
 Public Const AA_PERF_WELD As Long = 5
 ' Flag dibaca langsung oleh fungsi geometri yang sering dipanggil.
 Public AADebugProfiling As Boolean
+' Aktif hanya saat replay diagnostik sinkron; tidak memengaruhi keputusan gap.
+Public AADebugGapWitnessActive As Boolean
 ' Counter ditambah langsung di query agar tidak ada call/printing per query.
 Public AADebugQueryCacheHits As Double, AADebugQueryCacheMisses As Double
 Private mPerfSeconds(1 To 5) As Double, mPerfCalls(1 To 5) As Double
@@ -41,6 +43,7 @@ Private mCandidate As String
 Private mBoundsRejected As Long, mGapRejected As Long
 Private mMarkRejected As Long, mOverlapRejected As Long
 Private mMarkSamples As Long
+Private mMinimumGapSamples As Long
 
 Private Type PROCESS_MEMORY_COUNTERS_EX
     cb As Long
@@ -93,6 +96,7 @@ Public Sub AADebugOn(Optional ByVal detailed As Boolean = False)
     mDetailed = detailed
     mSlotsActive = False
     AADebugProfiling = False
+    AADebugGapWitnessActive = False
     mCandidateTiming = False
     AADebugMemoryReset
     AADebugWrite "Debug", "ON; detailed=" & CStr(detailed)
@@ -105,6 +109,7 @@ Public Sub AADebugOff()
     mDetailed = False
     mSlotsActive = False
     AADebugProfiling = False
+    AADebugGapWitnessActive = False
     mCandidateTiming = False
     AADebugMemoryReset
     Debug.Print "[AA][Debug] OFF"
@@ -207,6 +212,7 @@ Public Sub AADebugCandidateStart(ByVal label As String)
     mBoundsRejected = 0: mGapRejected = 0
     mMarkRejected = 0: mOverlapRejected = 0
     mMarkSamples = 0
+    mMinimumGapSamples = 0
 End Sub
 
 Public Sub AADebugCandidateEnd()
@@ -376,6 +382,60 @@ End Sub
 Public Function AADebugSlotSnapshot() As Variant
     AADebugSlotSnapshot = Array(mBoundsRejected, mGapRejected, mMarkRejected, mOverlapRejected)
 End Function
+
+Public Sub AADebugMinimumSlotGap(ByVal original As AAPlacement, ByVal occupied As Collection)
+    Dim placed As AAPlacement
+    If Not mSlotsActive Then Exit Sub
+    On Error GoTo TraceFailed
+    For Each placed In occupied
+        If Not original.HasClearance(placed) Then
+            AADebugWrite "Minimum", "original mark slot gap check=False; raw L/T=" & _
+                Format$(original.Footprint.LeftX, "0.000000") & "/" & Format$(original.Footprint.TopY, "0.000000")
+            AADebugMinimumGapRejected original, placed, "Original mark slot"
+            Exit Sub
+        End If
+    Next placed
+    AADebugWrite "Minimum", "original mark slot gap check=True; raw L/T=" & _
+        Format$(original.Footprint.LeftX, "0.000000") & "/" & Format$(original.Footprint.TopY, "0.000000")
+TraceFailed:
+    Err.Clear
+End Sub
+
+Public Sub AADebugMinimumGapRejected(ByVal candidate As AAPlacement, ByVal blocker As AAPlacement, _
+                                     ByVal label As String)
+    Dim clear As Boolean
+    If Not mSlotsActive Then Exit Sub
+    If mMinimumGapSamples >= 3 Then Exit Sub
+    mMinimumGapSamples = mMinimumGapSamples + 1
+    On Error GoTo TraceFailed
+    AADebugWrite "Gap", label & "; first rejected edge pair (not global minimum distance)"
+    AADebugValidationPlacement "candidate", candidate
+    AADebugValidationPlacement "blocker", blocker
+    AADebugGapWitnessActive = True
+    clear = candidate.HasClearance(blocker)
+    AADebugGapWitnessActive = False
+    AADebugWrite "Gap", "replay clearance=" & CStr(clear)
+TraceFailed:
+    AADebugGapWitnessActive = False
+    Err.Clear
+End Sub
+
+Public Sub AADebugGapEdgeRejected(ByVal distance As Double, ByVal gap As Double, _
+                                  ByVal firstError As Double, ByVal secondError As Double, _
+                                  ByVal tolerance As Double, ByVal ax As Double, ByVal ay As Double, _
+                                  ByVal bx As Double, ByVal by As Double, ByVal cx As Double, _
+                                  ByVal cy As Double, ByVal ex As Double, ByVal ey As Double)
+    If Not AADebugGapWitnessActive Then Exit Sub
+    AADebugWrite "Gap", "chord distance=" & Format$(distance, "0.000000000") & _
+        "; required gap=" & Format$(gap, "0.000000000") & _
+        "; chord errors=" & Format$(firstError, "0.000000000") & "/" & Format$(secondError, "0.000000000") & _
+        "; tolerance=" & Format$(tolerance, "0.000000000") & _
+        "; rejection cutoff=" & Format$(gap + firstError + secondError - tolerance, "0.000000000")
+    AADebugWrite "Gap", "candidate chord raw A/B=" & Format$(ax, "0.000000000") & "/" & _
+        Format$(ay, "0.000000000") & " -> " & Format$(bx, "0.000000000") & "/" & Format$(by, "0.000000000")
+    AADebugWrite "Gap", "blocker chord raw A/B=" & Format$(cx, "0.000000000") & "/" & _
+        Format$(cy, "0.000000000") & " -> " & Format$(ex, "0.000000000") & "/" & Format$(ey, "0.000000000")
+End Sub
 
 ' Saat tracing detail aktif, hanya tiga contoh per kandidat yang membaca
 ' ulang kurva. Counter tetap mencakup semua penolakan dalam kandidat itu.
