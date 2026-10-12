@@ -40,6 +40,7 @@ Private mSlotsActive As Boolean
 Private mCandidate As String
 Private mBoundsRejected As Long, mGapRejected As Long
 Private mMarkRejected As Long, mOverlapRejected As Long
+Private mMarkSamples As Long
 
 Private Type PROCESS_MEMORY_COUNTERS_EX
     cb As Long
@@ -205,6 +206,7 @@ Public Sub AADebugCandidateStart(ByVal label As String)
     mCandidate = label
     mBoundsRejected = 0: mGapRejected = 0
     mMarkRejected = 0: mOverlapRejected = 0
+    mMarkSamples = 0
 End Sub
 
 Public Sub AADebugCandidateEnd()
@@ -371,8 +373,72 @@ Public Sub AADebugRejectSlot(ByVal reason As String)
     End Select
 End Sub
 
+Public Function AADebugSlotSnapshot() As Variant
+    AADebugSlotSnapshot = Array(mBoundsRejected, mGapRejected, mMarkRejected, mOverlapRejected)
+End Function
+
 ' Saat tracing detail aktif, hanya tiga contoh per kandidat yang membaca
 ' ulang kurva. Counter tetap mencakup semua penolakan dalam kandidat itu.
+Public Sub AADebugMarkRejected(ByVal label As String, ByVal original As AAGeometry, _
+                               ByVal moved As AAGeometry, ByVal obstacle As AAGeometry, _
+                               ByVal dx As Double, ByVal dy As Double, ByVal markIndex As Long)
+    If Not mSlotsActive Then Exit Sub
+    If mMarkSamples >= 3 Then Exit Sub
+    mMarkSamples = mMarkSamples + 1
+    On Error GoTo TraceFailed
+    AADebugWrite "Mark", label & "; obstacle=" & CStr(markIndex) & _
+        "; shift X/Y=" & Format$(dx, "0.000000000") & "/" & Format$(dy, "0.000000000")
+    AADebugWrite "Mark", "raw L/B/R/T=" & Format$(original.LeftX, "0.000000000") & "/" & _
+        Format$(original.BottomY, "0.000000000") & "/" & Format$(original.RightX, "0.000000000") & "/" & _
+        Format$(original.TopY, "0.000000000")
+    AADebugWrite "Mark", "moved L/B/R/T=" & Format$(moved.LeftX, "0.000000000") & "/" & _
+        Format$(moved.BottomY, "0.000000000") & "/" & Format$(moved.RightX, "0.000000000") & "/" & _
+        Format$(moved.TopY, "0.000000000") & "; local center X/Y=" & _
+        Format$((moved.LeftX + moved.RightX) / 2#, "0.000000000") & "/" & _
+        Format$((moved.BottomY + moved.TopY) / 2#, "0.000000000")
+    AADebugWrite "Mark", "obstacle L/B/R/T=" & Format$(obstacle.LeftX, "0.000000000") & "/" & _
+        Format$(obstacle.BottomY, "0.000000000") & "/" & Format$(obstacle.RightX, "0.000000000") & "/" & _
+        Format$(obstacle.TopY, "0.000000000")
+    AADebugMarkGeometry moved, obstacle
+TraceFailed:
+    Err.Clear
+End Sub
+
+' Diagnostik terbatas oleh sample cap AADebugMarkRejected. Hasil pemeriksaan
+' tambahan ini tidak dipakai untuk menerima atau menolak posisi.
+Private Sub AADebugMarkGeometry(ByVal moved As AAGeometry, ByVal obstacle As AAGeometry)
+    Dim first As Curve, second As Curve, joined As Curve
+    AADebugWrite "Mark", "curve count object/mark=" & CStr(moved.CurveCount) & "/" & _
+        CStr(obstacle.CurveCount)
+    If moved.CurveCount <> 1 Or obstacle.CurveCount <> 1 Then Exit Sub
+    Set first = moved.CurveAt(1)
+    Set second = obstacle.CurveAt(1)
+    Set joined = first.WeldWith(second)
+    AADebugWrite "Mark", "area object/mark/union mm2=" & _
+        Format$(Abs(first.Area), "0.000000000000") & "/" & _
+        Format$(Abs(second.Area), "0.000000000000") & "/" & _
+        Format$(Abs(joined.Area), "0.000000000000") & "; difference=" & _
+        Format$(Abs(first.Area) + Abs(second.Area) - Abs(joined.Area), "0.000000000000")
+    AADebugWrite "Mark", "IntersectsWith=" & CStr(first.IntersectsWith(second))
+    AADebugMarkInsideNode "object node inside mark", first, second
+    AADebugMarkInsideNode "mark node inside object", second, first
+End Sub
+
+Private Sub AADebugMarkInsideNode(ByVal label As String, ByVal source As Curve, ByVal region As Curve)
+    Dim vertex As Node
+    Dim i As Long
+    For Each vertex In source.Nodes
+        i = i + 1
+        If region.IsPointInside(vertex.PositionX, vertex.PositionY) Then
+            AADebugWrite "Mark", label & ": index=" & CStr(i) & "; local X/Y=" & _
+                Format$(vertex.PositionX, "0.000000000") & "/" & _
+                Format$(vertex.PositionY, "0.000000000")
+            Exit Sub
+        End If
+    Next vertex
+    AADebugWrite "Mark", label & ": none"
+End Sub
+
 Public Sub AADebugGapRejected(ByVal orientation As AARotationVariant, _
                               ByVal x As Double, ByVal y As Double, _
                               ByVal blocker As AAPlacement, _

@@ -11,6 +11,10 @@ Private Const AA_MAX_CENTERING_PASSES As Long = 20
 Private Const AA_MAX_MINIMUM_NEIGHBOR_PROBES As Long = 256
 Private Const AA_MAX_MINIMUM_ANCHORS As Long = 64
 Private Const AA_MINIMUM_NEIGHBOR_RESERVE_MM As Double = 0.001
+Private Const AA_MAX_MINIMUM_MARK_SLOTS As Long = 8
+Private Const AA_MAX_MINIMUM_MARK_PROBES As Long = 256
+Private Const AA_MINIMUM_MARK_FINE_STEP_MM As Double = 0.025
+Private Const AA_MINIMUM_MARK_FINE_STEPS As Long = 10
 
 Public Function BuildMedium(ByRef models() As AAModel, _
                             ByRef designIndexes() As Long, ByVal designCount As Long, _
@@ -266,6 +270,7 @@ Private Function BuildOne(ByRef models() As AAModel, _
     Dim placement As AAPlacement
     Dim shift As Variant
     Dim passIndex As Long
+    Dim areaKey As Variant
 
     Set forbidden = BuildForbidden(settings, sourceDocument)
     ' Susun tanpa mark dahulu, lalu pusatkan seluruh isi tiap area.
@@ -278,6 +283,15 @@ Private Function BuildOne(ByRef models() As AAModel, _
             Exit Function
         End If
         Set nextOffsets = CenterOffsets(result, settings)
+        If AADebugDetailsEnabled Then
+            AADebugPlan "Minimum raw pass=" & CStr(passIndex), result
+            For Each areaKey In nextOffsets.Keys
+                shift = nextOffsets(areaKey)
+                AADebugWrite "Minimum", "center pass=" & CStr(passIndex) & "; area=" & CStr(areaKey) & _
+                    "; shift X/Y=" & Format$(CDbl(shift(0)), "0.000000000") & "/" & _
+                    Format$(CDbl(shift(1)), "0.000000000")
+            Next areaKey
+        End If
         If FindSafeOffsets(result, nextOffsets, forbidden, settings) Then
             If CenteredPlanFits(result, nextOffsets, forbidden, settings) Then
                 For Each placement In result.Placements
@@ -403,6 +417,7 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
     Dim nextTop As Double
     Dim i As Long
     Dim retryBoundary As Boolean
+    Dim markSlots As New Collection
 
     ' Semua rectangle selalu memakai Straight, termasuk sudut lengkung dan Custom.
     ' layoutMode ByVal: sumber lain tetap mengikuti pola rencana yang dibandingkan.
@@ -434,6 +449,12 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
                 FillArea = FillArea + 1
                 rowAdded = True
                 If FillArea >= limit Then Exit Function
+            ElseIf markSlots.Count < AA_MAX_MINIMUM_MARK_SLOTS And candidate.UsesContourGap Then
+                If Not offsets Is Nothing Then
+                    If offsets.Exists(CStr(areaIndex)) Then
+                        If Not PlacementMarksFit(candidate, offsets, forbidden) Then markSlots.Add candidate
+                    End If
+                End If
             End If
             xOffset = xOffset + horizontalStep
         Loop
@@ -457,6 +478,131 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
         End If
         yOffset = settings.AreaHeightMM - gridTop + rowIndex * verticalStep
     Loop
+    If FillArea < limit And markSlots.Count > 0 Then
+        FillArea = FillArea + FillMinimumMarkSlots(result, markSlots, occupied, forbidden, _
+            settings, offsets, horizontalGap, verticalGap, limit - FillArea)
+    End If
+End Function
+
+Private Function FillMinimumMarkSlots(ByVal result As AALayoutPlan, ByVal slots As Collection, _
+                                      ByVal occupied As Collection, ByVal forbidden As Collection, _
+                                      ByVal settings As AASettings, ByVal offsets As Object, _
+                                      ByVal horizontalGap As Double, ByVal verticalGap As Double, _
+                                      ByVal limit As Long) As Long
+    Dim original As AAPlacement, candidate As AAPlacement, placed As AAPlacement
+    Dim envelope As AAGeometry
+    Dim probes As Long
+    If occupied.Count = 0 Or limit <= 0 Then Exit Function
+    If horizontalGap < 0# Or verticalGap < 0# Then Exit Function
+    ' Semua tetangga grid sudah tersedia. Pertahankan bounds agar pemulihan
+    ' tidak mengubah offset pemusatan lalu mengulang masalah pada pass berikutnya.
+    Set envelope = New AAGeometry
+    For Each placed In occupied
+        envelope.AddBounds placed.Footprint.LeftX, placed.Footprint.BottomY, _
+            placed.Footprint.RightX, placed.Footprint.TopY
+    Next placed
+    For Each original In slots
+        Set candidate = ShiftMinimumMarkSlot(original, occupied, forbidden, settings, _
+            offsets, horizontalGap, verticalGap, envelope, probes)
+        If Not candidate Is Nothing Then
+            result.Add candidate
+            occupied.Add candidate
+            FillMinimumMarkSlots = FillMinimumMarkSlots + 1
+            If FillMinimumMarkSlots >= limit Then Exit For
+        End If
+    Next original
+    If AADebugEnabled Then AADebugWrite "Minimum", "mark recovery: slots=" & CStr(slots.Count) & _
+        "; added=" & CStr(FillMinimumMarkSlots) & "; probes=" & CStr(probes) & "; max shift=2 mm"
+End Function
+
+Private Function ShiftMinimumMarkSlot(ByVal original As AAPlacement, ByVal occupied As Collection, _
+                                      ByVal forbidden As Collection, ByVal settings As AASettings, _
+                                      ByVal offsets As Object, ByVal horizontalGap As Double, _
+                                      ByVal verticalGap As Double, ByVal envelope As AAGeometry, _
+                                      ByRef probes As Long) As AAPlacement
+    Dim radii As Variant, radius As Variant, direction As Long
+    Dim dx As Double, dy As Double, diagonal As Double
+    Dim candidate As AAPlacement, box As AAGeometry
+    Dim xs() As Double, ys() As Double, count As Long, i As Long
+    Dim ring As Long, x As Long, y As Long, tested As Long, outside As Long
+    Dim startProbes As Long, before As Variant, after As Variant, recovered As Boolean
+    Set ShiftMinimumMarkSlot = Nothing
+    recovered = False
+    startProbes = probes
+    If AADebugDetailsEnabled Then before = AADebugSlotSnapshot()
+    ' Pertahankan pencarian delapan arah, lalu rapatkan kombinasi X/Y dekat
+    ' slot semula. Batas salinan/pemeriksaan kurva tetap 256 per slot.
+    ReDim xs(0 To 48 + 4 * AA_MINIMUM_MARK_FINE_STEPS * (AA_MINIMUM_MARK_FINE_STEPS + 1) - 1)
+    ReDim ys(0 To UBound(xs))
+    radii = Array(0.05, 0.1, 0.25, 0.5, 1#, 2#)
+    For Each radius In radii
+        diagonal = CDbl(radius) / Sqr(2#)
+        For direction = 0 To 7
+            dx = 0#: dy = 0#
+            Select Case direction
+                Case 0: dx = CDbl(radius)
+                Case 1: dy = -CDbl(radius)
+                Case 2: dx = -CDbl(radius)
+                Case 3: dy = CDbl(radius)
+                Case 4: dx = diagonal: dy = -diagonal
+                Case 5: dx = -diagonal: dy = -diagonal
+                Case 6: dx = -diagonal: dy = diagonal
+                Case 7: dx = diagonal: dy = diagonal
+            End Select
+            xs(count) = dx: ys(count) = dy: count = count + 1
+        Next direction
+    Next radius
+    For ring = 1 To AA_MINIMUM_MARK_FINE_STEPS
+        For x = -ring To ring
+            For y = -ring To ring
+                If Abs(x) = ring Or Abs(y) = ring Then
+                    xs(count) = x * AA_MINIMUM_MARK_FINE_STEP_MM
+                    ys(count) = y * AA_MINIMUM_MARK_FINE_STEP_MM
+                    count = count + 1
+                End If
+            Next y
+        Next x
+    Next ring
+    Set box = original.Footprint
+    For i = 0 To count - 1
+        dx = xs(i): dy = ys(i)
+        AAProgressPulse
+        probes = probes + 1
+        If box.LeftX + dx >= envelope.LeftX - AA_EDGE_TOLERANCE_MM And _
+           box.BottomY + dy >= envelope.BottomY - AA_EDGE_TOLERANCE_MM And _
+           box.RightX + dx <= envelope.RightX + AA_EDGE_TOLERANCE_MM And _
+           box.TopY + dy <= envelope.TopY + AA_EDGE_TOLERANCE_MM Then
+            tested = tested + 1
+            Set candidate = original.CopyForPlan
+            candidate.Translate dx, dy
+            ' True: posisi baru wajib menjaga gap juga terhadap Design yang sama.
+            If CandidateFits(candidate, occupied, forbidden, settings, offsets, _
+                horizontalGap, verticalGap, True) Then
+                If AADebugDetailsEnabled Then AADebugWrite "Minimum", "mark recovered: design=" & _
+                    CStr(original.DesignIndex) & "; area=" & CStr(original.AreaIndex) & _
+                    "; shift X/Y=" & Format$(dx, "0.000000") & "/" & Format$(dy, "0.000000")
+                Set ShiftMinimumMarkSlot = candidate
+                recovered = True
+                Exit For
+            End If
+            If tested >= AA_MAX_MINIMUM_MARK_PROBES Then Exit For
+        Else
+            outside = outside + 1
+        End If
+    Next i
+    If AADebugDetailsEnabled Then
+        after = AADebugSlotSnapshot()
+        AADebugWrite "Minimum", "mark slot: design=" & CStr(original.DesignIndex) & _
+            "; area=" & CStr(original.AreaIndex) & "; raw L/T=" & _
+            Format$(box.LeftX, "0.000000") & "/" & Format$(box.TopY, "0.000000") & _
+            "; recovered=" & CStr(recovered) & "; attempts=" & CStr(probes - startProbes) & _
+            "; tested=" & CStr(tested) & "; envelope rejected=" & CStr(outside) & _
+            "; bounds=" & CStr(CLng(after(0)) - CLng(before(0))) & _
+            "; gap=" & CStr(CLng(after(1)) - CLng(before(1))) & _
+            "; mark=" & CStr(CLng(after(2)) - CLng(before(2))) & _
+            "; overlap=" & CStr(CLng(after(3)) - CLng(before(3))) & _
+            "; limit reached=" & CStr(Not recovered And tested >= AA_MAX_MINIMUM_MARK_PROBES)
+    End If
 End Function
 
 Private Function FillMinimumNeighbors(ByVal result As AALayoutPlan, ByVal model As AAModel, _
@@ -624,7 +770,7 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
     End If
     If Not offsets Is Nothing Then
         If offsets.Exists(CStr(candidate.AreaIndex)) Then
-            If Not PlacementMarksFit(candidate, offsets, forbidden) Then
+            If Not PlacementMarksFit(candidate, offsets, forbidden, "Minimum slot") Then
                 AADebugRejectSlot "mark"
                 Exit Function
             End If
@@ -877,19 +1023,29 @@ End Function
 
 Private Function PlacementMarksFit(ByVal placement As AAPlacement, _
                                    ByVal offsets As Object, _
-                                   ByVal forbidden As Collection) As Boolean
+                                    ByVal forbidden As Collection, _
+                                    Optional ByVal traceLabel As String = vbNullString) As Boolean
     Dim shift As Variant
     shift = offsets(CStr(placement.AreaIndex))
+    If Len(traceLabel) > 0 And AADebugDetailsEnabled Then
+        traceLabel = traceLabel & "; design=" & CStr(placement.DesignIndex) & _
+            "; area=" & CStr(placement.AreaIndex)
+    Else
+        traceLabel = vbNullString
+    End If
     PlacementMarksFit = MarksFit(placement.CollisionFootprint, _
-        CDbl(shift(0)), CDbl(shift(1)), forbidden)
+        CDbl(shift(0)), CDbl(shift(1)), forbidden, traceLabel)
 End Function
 
 Private Function MarksFit(ByVal footprint As AAGeometry, _
                           ByVal dx As Double, ByVal dy As Double, _
-                          ByVal forbidden As Collection) As Boolean
+                           ByVal forbidden As Collection, _
+                           Optional ByVal traceLabel As String = vbNullString) As Boolean
     Dim obstacle As AAGeometry
     Dim moved As AAGeometry
+    Dim markIndex As Long
     For Each obstacle In forbidden
+        markIndex = markIndex + 1
         ' Salin kurva hanya jika bounding box dekat dengan salah satu mark.
         If footprint.LeftX + dx < obstacle.RightX - AA_EDGE_TOLERANCE_MM And _
            footprint.RightX + dx > obstacle.LeftX + AA_EDGE_TOLERANCE_MM And _
@@ -897,7 +1053,10 @@ Private Function MarksFit(ByVal footprint As AAGeometry, _
            footprint.TopY + dy > obstacle.BottomY + AA_EDGE_TOLERANCE_MM Then
             If moved Is Nothing Then Set moved = footprint.Placed( _
                 footprint.LeftX + dx, footprint.TopY + dy)
-            If moved.Overlaps(obstacle) Then Exit Function
+            If moved.Overlaps(obstacle) Then
+                If Len(traceLabel) > 0 Then AADebugMarkRejected traceLabel, footprint, moved, obstacle, dx, dy, markIndex
+                Exit Function
+            End If
         End If
     Next obstacle
     MarksFit = True
