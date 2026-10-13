@@ -337,6 +337,14 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
         If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
         Exit Function
     End If
+    ' Bounds kurva asli membuktikan batas bawah jarak kontur. Kotak ini
+    ' mencakup lengkungan asli, sehingga tidak memerlukan galat chord.
+    ' Overlap tetap diperiksa caller, termasuk bila gap bernilai nol.
+    If BoundsClearOf(other, dx, dy, otherDX, otherDY, largestGap) Then
+        ClearOf = True
+        If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
+        Exit Function
+    End If
     If other.IsSeparatedFrom(mMinX + dx - otherDX, mMinY + dy - otherDY, _
         mMaxX + dx - otherDX, mMaxY + dy - otherDY, _
         largestGap + mMaxError + other.MaxChordError) Then
@@ -391,6 +399,22 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
         AADebugEdgeGroups checked, skipped, skippedEdges, detailEdges
     ClearOf = True
     If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
+End Function
+
+Private Function BoundsClearOf(ByVal other As AAContour, ByVal dx As Double, _
+                               ByVal dy As Double, ByVal otherDX As Double, _
+                               ByVal otherDY As Double, ByVal gap As Double) As Boolean
+    Dim separationX As Double, separationY As Double
+    ' Center/Left/Top berasal dari bbox kurva asli saat Capture, bukan
+    ' extrema titik hasil flattening (mMinX/mMaxX/mMinY/mMaxY).
+    separationX = Abs(mCenterX + dx - other.CenterX - otherDX) - _
+        (mCenterX - mLeft) - (other.CenterX - other.LeftX)
+    separationY = Abs(mCenterY + dy - other.CenterY - otherDY) - _
+        (mTop - mCenterY) - (other.TopY - other.CenterY)
+    If separationX < 0# Then separationX = 0#
+    If separationY < 0# Then separationY = 0#
+    BoundsClearOf = (Sqr(separationX * separationX + separationY * separationY) >= _
+        gap - AA_DISTANCE_TOLERANCE_MM)
 End Function
 
 ' Jalankan loop pada data Double milik kontur tujuan agar koordinat/batas

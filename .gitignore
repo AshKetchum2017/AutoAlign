@@ -5,6 +5,7 @@
 *.md
 *.ps1
 *.py
+*.pyc
 *.txt
 *.vbs
 
@@ -14,4 +15,3 @@
 # Ignore specific files in the project directory
 AutoAlignWizard.bas
 Macro2.bas
-verify_quota_optimization.cpython-313.pyc
