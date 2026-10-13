@@ -19,26 +19,25 @@ Private mMediumActive As Boolean
 Private mMediumVisited As Boolean
 Private mMinimumGapH As String, mMinimumGapV As String
 Private mMediumGapH As String, mMediumGapV As String
-Private mMinimumHPercent As Boolean, mMinimumVPercent As Boolean
 
 Private Sub frmProgress_Click()
-'
+' Progress bar hanya untuk tampilan; mengekliknya tidak memicu tindakan apa pun.
 End Sub
 
 Private Sub lblProgressDetail_Click()
-'
+' Progress detail label hanya untuk tampilan; mengekliknya tidak memicu tindakan apa pun.
 End Sub
 
 Private Sub lblProgressFill_Click()
-'
+' Progress fill label hanya untuk tampilan; mengekliknya tidak memicu tindakan apa pun.
 End Sub
 
 Private Sub lblProgressStage_Click()
-'
+' Progress stage label hanya untuk tampilan; mengekliknya tidak memicu tindakan apa pun.
 End Sub
 
 Private Sub lblProgressTime_Click()
-'
+' Progress time label hanya untuk tampilan; mengekliknya tidak memicu tindakan apa pun.
 End Sub
 
 Private Sub lbxObjects_Click()
@@ -74,11 +73,11 @@ Private Sub optKissA_Click()
 End Sub
 
 Private Sub cmdOptimize_Click()
-' One of the last scopes of AutoAlign is to optimize the existing group. This button triggers the optimization process.
+' Salah satu fungsi terakhir AutoAlign adalah mengoptimalkan grup yang ada. Tombol ini memicu proses optimalisasi tersebut.
 End Sub
 
 Private Sub optMaximum_Click()
-'
+' Pending: Implementasikan fungsionalitas mode maksimum. Saat ini, fitur tersebut dinonaktifkan di UI.
 End Sub
 
 Private Sub optMedium_Click()
@@ -87,50 +86,6 @@ End Sub
 
 Private Sub optMinimum_Click()
     AAUpdateModeControls
-End Sub
-
-Private Sub txbGapHorizontal_Change()
-    If mUpdatingHint Then Exit Sub
-    If Not chkHPercent.value Then Exit Sub
-    If AAGapIsNegative(txbGapHorizontal.Text) Then
-        MsgBox "Persen gap horizontal tidak boleh negatif.", vbExclamation, "Auto Align"
-        chkHPercent.value = False
-        AASetGapPercentText txbGapHorizontal, False
-        Exit Sub
-    End If
-    AASetGapPercentText txbGapHorizontal, True
-End Sub
-
-Private Sub txbGapVertical_Change()
-    If mUpdatingHint Then Exit Sub
-    If Not chkVPercent.value Then Exit Sub
-    If AAGapIsNegative(txbGapVertical.Text) Then
-        MsgBox "Persen gap vertikal tidak boleh negatif.", vbExclamation, "Auto Align"
-        chkVPercent.value = False
-        AASetGapPercentText txbGapVertical, False
-        Exit Sub
-    End If
-    AASetGapPercentText txbGapVertical, True
-End Sub
-
-Private Sub chkHPercent_Click()
-    If mChangingMode Then Exit Sub
-    If chkHPercent.value And AAGapIsNegative(AAInputText(txbGapHorizontal)) Then
-        MsgBox "Persen gap horizontal tidak boleh negatif.", vbExclamation, "Auto Align"
-        chkHPercent.value = False
-        Exit Sub
-    End If
-    AASetGapPercentText txbGapHorizontal, chkHPercent.value
-End Sub
-
-Private Sub chkVPercent_Click()
-    If mChangingMode Then Exit Sub
-    If chkVPercent.value And AAGapIsNegative(AAInputText(txbGapVertical)) Then
-        MsgBox "Persen gap vertikal tidak boleh negatif.", vbExclamation, "Auto Align"
-        chkVPercent.value = False
-        Exit Sub
-    End If
-    AASetGapPercentText txbGapVertical, chkVPercent.value
 End Sub
 
 Private Sub txbQuantity_Change()
@@ -181,10 +136,6 @@ Private Sub UserForm_Initialize()
     AAUpdateModelControls
     txbGapHorizontal.Enabled = True
     txbGapVertical.Enabled = True
-    chkHPercent.Enabled = True
-    chkVPercent.Enabled = True
-    AASetGapPercentText txbGapHorizontal, chkHPercent.value
-    AASetGapPercentText txbGapVertical, chkVPercent.value
     mModeReady = True
     AAUpdateModeControls
     AARefreshObjects
@@ -257,28 +208,20 @@ Private Sub AAUpdateModeControls()
         If optMedium.value Then
             mMinimumGapH = AAInputText(txbGapHorizontal)
             mMinimumGapV = AAInputText(txbGapVertical)
-            mMinimumHPercent = chkHPercent.value
-            mMinimumVPercent = chkVPercent.value
-            ' Input literal diteruskan pada kunjungan pertama; persen tidak diubah ke mm.
+            ' Kedua mode memakai mm; teruskan input pada kunjungan pertama.
             If Not mMediumVisited Then
-                If Not mMinimumHPercent Then mMediumGapH = mMinimumGapH
-                If Not mMinimumVPercent Then mMediumGapV = mMinimumGapV
+                mMediumGapH = mMinimumGapH
+                mMediumGapV = mMinimumGapV
                 mMediumVisited = True
             End If
-            chkHPercent.value = False
-            chkVPercent.value = False
             AASetModeGapText mMediumGapH, mMediumGapV
         Else
             mMediumGapH = AAInputText(txbGapHorizontal)
             mMediumGapV = AAInputText(txbGapVertical)
-            chkHPercent.value = mMinimumHPercent
-            chkVPercent.value = mMinimumVPercent
             AASetModeGapText mMinimumGapH, mMinimumGapV
         End If
         mMediumActive = optMedium.value
     End If
-    chkHPercent.Enabled = Not optMedium.value
-    chkVPercent.Enabled = Not optMedium.value
     mChangingMode = False
     AARefreshHints
 End Sub
@@ -328,30 +271,6 @@ Private Sub AAUpdateQuantityEditor()
     AAShowHint txbQuantity
 End Sub
 
-Private Function AAGapIsNegative(ByVal gapText As String) As Boolean
-    AAGapIsNegative = (Left$(Trim$(gapText), 1) = "-")
-End Function
-
-Private Sub AASetGapPercentText(ByVal gapBox As MSForms.TextBox, _
-                                ByVal percentEnabled As Boolean)
-    Dim numberText As String
-    Dim displayText As String
-    Dim cursorPosition As Long
-
-    If mUpdatingHint Then Exit Sub
-    If mHintReady Then
-        If mHintActive(AAInputIndex(gapBox)) Then Exit Sub
-    End If
-    cursorPosition = gapBox.SelStart
-    numberText = Trim$(Replace$(gapBox.Text, "%", vbNullString))
-    displayText = numberText
-    If percentEnabled And Len(numberText) > 0 Then displayText = numberText & "%"
-    If gapBox.Text = displayText Then Exit Sub
-    gapBox.Text = displayText
-    If cursorPosition > Len(numberText) Then cursorPosition = Len(numberText)
-    gapBox.SelStart = cursorPosition
-End Sub
-
 Private Sub AARunMode(ByVal ModelMode As Long)
     Dim feedback As String
     Dim feedbackStyle As VbMsgBoxStyle
@@ -368,8 +287,8 @@ Private Sub AARunMode(ByVal ModelMode As Long)
     AALockInputs
     AAProgressBegin Me
     mPresenter.RunLayout ModelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
-        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), chkHPercent.value, _
-        chkVPercent.value, feedback, feedbackStyle, layoutMode
+        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), _
+        feedback, feedbackStyle, layoutMode
     AARefreshObjects
     AAProgressEnd (Len(feedback) = 0 And mPresenter.LastProcessCompleted)
     AAUnlockInputs
@@ -491,24 +410,16 @@ Private Function AAInputText(ByVal box As MSForms.TextBox) As String
 End Function
 
 Private Function AAHintText(ByVal box As MSForms.TextBox) As String
-    Dim gapText As String, zigzagText As String
-    zigzagText = "88%"
+    Dim gapText As String
     If optCustom.value Then
         gapText = "0"
     ElseIf optDieA.value Then
-        gapText = "1.5": zigzagText = "89%"
+        gapText = "1.5"
     Else
         gapText = "1"
     End If
     Select Case AAInputIndex(box)
-        Case 1
-            AAHintText = gapText
-        Case 2
-            If optMedium.value Then
-                AAHintText = gapText
-            Else
-                AAHintText = gapText & " / " & zigzagText
-            End If
+        Case 1, 2: AAHintText = gapText
         Case 3: AAHintText = "320"
         Case 4: AAHintText = "470"
         Case 5: AAHintText = "-"
@@ -536,9 +447,7 @@ Private Sub AARefreshHints()
     AAShowHint txbAreaHeight
     AAShowHint txbQuantity
     txbGapHorizontal.ControlTipText = "Default: Kiss Cut A3+ 1 mm, Die Cut A3+ 1.5 mm, Custom 0 mm. Kiss Cut A3+/Die Cut A3+: rectangle bersudut runcing memakai 0. Input manual diutamakan."
-    txbGapVertical.ControlTipText = "Default Straight / ZigZag: Kiss Cut A3+ 1 mm / 88%, Die Cut A3+ 1.5 mm / 89%, Custom 0 mm / 88%. Kiss Cut A3+/Die Cut A3+: rectangle bersudut runcing memakai gap 0 pada kedua pola."
-    If optMedium.value Then txbGapVertical.ControlTipText = _
-        "Medium: gap kontur dalam mm. Sisi miring memakai nilai terbesar H/V. Persen dan gap negatif belum tersedia."
+    txbGapVertical.ControlTipText = "Gap kontur mm, minimal 0. Sebaris memakai H, sekolom V, diagonal terbesar H/V. Default Kiss Cut 1 mm, Die Cut 1.5 mm, Custom 0 mm. Rectangle bersudut runcing pada preset: 0 mm. Input manual diutamakan."
     txbQuantity.ControlTipText = "Kosong (-): isi sisa area. 0: lewati Design. /n: bagi rata dalam satu container kelompok n. Berlaku untuk semua Design terpilih (Ctrl/Shift)."
 End Sub
 

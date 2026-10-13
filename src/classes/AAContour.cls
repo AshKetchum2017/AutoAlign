@@ -21,6 +21,7 @@ Private mEdgeGroups() As Double, mEdgeGroupCount As Long
 Private mEdgeIndexes As Collection
 Private mAnchors As Collection
 Private mLeft As Double, mTop As Double
+Private mCenterX As Double, mCenterY As Double
 Private mMaxError As Double
 Private mEdgeBins As Object
 Private mWideEdges As Collection
@@ -47,6 +48,8 @@ Public Sub Capture(ByVal geometry As AAGeometry)
     Dim perfStarted As Double
     If AADebugProfiling Then perfStarted = AADebugPerfBegin()
     mLeft = geometry.LeftX: mTop = geometry.TopY
+    mCenterX = mLeft + geometry.Width / 2#
+    mCenterY = mTop - geometry.Height / 2#
     For i = 1 To geometry.CurveCount
         Set part = geometry.CurveAt(i)
         For Each vertex In part.Nodes
@@ -289,6 +292,14 @@ Public Property Get TopY() As Double
     TopY = mTop
 End Property
 
+Friend Property Get CenterX() As Double
+    CenterX = mCenterX
+End Property
+
+Friend Property Get CenterY() As Double
+    CenterY = mCenterY
+End Property
+
 Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
                         ByVal dy As Double, ByVal otherDX As Double, _
                         ByVal otherDY As Double, ByVal gapH As Double, _
@@ -298,10 +309,24 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
     Dim checked As Long, skipped As Long, skippedEdges As Long, detailEdges As Long
     Dim ax As Double, ay As Double, bx As Double, by As Double
     Dim largestGap As Double, otherError As Double
+    Dim centerDX As Double, centerDY As Double
     Dim perfStarted As Double
     If AADebugProfiling Then perfStarted = AADebugPerfBegin()
     largestGap = gapH
     If gapV > largestGap Then largestGap = gapV
+    ' Arah tetangga mengikuti pusat bbox acuan collision, bukan normal segmen.
+    ' Sebaris memakai H, sekolom V, diagonal memakai max(H,V).
+    If gapH <> gapV Then
+        centerDX = mCenterX + dx - other.CenterX - otherDX
+        centerDY = mCenterY + dy - other.CenterY - otherDY
+        If Abs(centerDY) <= AA_DISTANCE_TOLERANCE_MM And _
+           Abs(centerDX) > AA_DISTANCE_TOLERANCE_MM Then
+            largestGap = gapH
+        ElseIf Abs(centerDX) <= AA_DISTANCE_TOLERANCE_MM And _
+               Abs(centerDY) > AA_DISTANCE_TOLERANCE_MM Then
+            largestGap = gapV
+        End If
+    End If
     If largestGap <= 0# Then
         ClearOf = True
         If AADebugProfiling Then AADebugPerfEnd AA_PERF_GAP, perfStarted
@@ -352,7 +377,7 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
                 bx = mEdgeData(2, index) + dx: by = mEdgeData(3, index) + dy
                 If AADebugProfiling And grouped Then detailEdges = detailEdges + 1
                 If Not other.IsClearOfEdge(ax, ay, bx, by, mEdgeData(4, index), _
-                    otherDX, otherDY, gapH, gapV, largestGap) Then
+                    otherDX, otherDY, largestGap) Then
                     If AADebugProfiling Then
                         If grouped Then AADebugEdgeGroups checked, skipped, skippedEdges, detailEdges
                         AADebugPerfEnd AA_PERF_GAP, perfStarted
@@ -373,13 +398,12 @@ End Function
 Friend Function IsClearOfEdge(ByVal ax As Double, ByVal ay As Double, _
                              ByVal bx As Double, ByVal by As Double, _
                              ByVal errorMM As Double, ByVal dx As Double, ByVal dy As Double, _
-                             ByVal gapH As Double, ByVal gapV As Double, _
                              ByVal largestGap As Double) As Boolean
     Dim nearby As Collection, item As Variant, index As Long
     Dim minX As Double, minY As Double, maxX As Double, maxY As Double
     Dim cx As Double, cy As Double, ex As Double, ey As Double
     Dim searchAllowance As Double, allowance As Double, edgeError As Double
-    Dim vx As Double, vy As Double, distance As Double, gap As Double
+    Dim vx As Double, vy As Double, distance As Double
     minX = MinValue(ax, bx): maxX = MaxValue(ax, bx)
     minY = MinValue(ay, by): maxY = MaxValue(ay, by)
     searchAllowance = largestGap + errorMM + mMaxError
@@ -397,16 +421,9 @@ Friend Function IsClearOfEdge(ByVal ax As Double, ByVal ay As Double, _
             cx = mEdgeData(0, index) + dx: cy = mEdgeData(1, index) + dy
             ex = mEdgeData(2, index) + dx: ey = mEdgeData(3, index) + dy
             distance = EdgeDistance(ax, ay, bx, by, cx, cy, ex, ey, vx, vy)
-            gap = largestGap
-            ' Normal horizontal -> H; normal vertikal -> V; miring -> max(H,V).
-            If Abs(vy) <= AA_DISTANCE_TOLERANCE_MM Then
-                gap = gapH
-            ElseIf Abs(vx) <= AA_DISTANCE_TOLERANCE_MM Then
-                gap = gapV
-            End If
-            If gap > 0# Then
-                If distance < gap + errorMM + edgeError - AA_DISTANCE_TOLERANCE_MM Then
-                    If AADebugGapWitnessActive Then AADebugGapEdgeRejected distance, gap, errorMM, _
+            If largestGap > 0# Then
+                If distance < largestGap + errorMM + edgeError - AA_DISTANCE_TOLERANCE_MM Then
+                    If AADebugGapWitnessActive Then AADebugGapEdgeRejected distance, largestGap, errorMM, _
                         edgeError, AA_DISTANCE_TOLERANCE_MM, ax, ay, bx, by, cx, cy, ex, ey
                     Exit Function
                 End If

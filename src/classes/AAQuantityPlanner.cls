@@ -186,8 +186,8 @@ End Function
 Private Function TemplateFits(ByVal plan As AALayoutPlan, ByVal planner As AAPlanner, _
                               ByVal settings As AASettings, ByVal sourceDocument As Document) As Boolean
     ' CopySlot mempertahankan collision dan posisi template yang sudah lolos
-    ' planner. Jangan mengubah kontrak gap template, termasuk ZigZag 88% bawaan
-    ' Minimum. Hanya bounds artwork pengganti yang perlu diperiksa kembali.
+    ' planner dengan gap kontur mm. Hanya bounds artwork pengganti yang perlu
+    ' diperiksa kembali; pembagian Design tidak mengubah posisi atau gap.
     TemplateFits = planner.FinalPlanFits(plan, settings, sourceDocument)
 End Function
 

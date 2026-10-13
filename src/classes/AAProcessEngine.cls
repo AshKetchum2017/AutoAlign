@@ -3,7 +3,6 @@ Option Explicit
 Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
                ByVal areaWidthText As String, ByVal areaHeightText As String, _
                ByVal horizontalGapText As String, ByVal verticalGapText As String, _
-               ByVal horizontalPercent As Boolean, ByVal verticalPercent As Boolean, _
                ByRef lastProcessCompleted As Boolean, ByRef feedback As String, _
                ByRef feedbackStyle As VbMsgBoxStyle, _
                Optional ByVal layoutMode As Long = AA_MODE_MINIMUM)
@@ -69,8 +68,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         vbObjectError + 5329, "AAProcessEngine", "Mode penyusunan belum tersedia."
     Set settings = New AASettings
     settings.Configure modelMode, areaWidthText, areaHeightText, _
-        horizontalGapText, verticalGapText, horizontalPercent, verticalPercent, _
-        layoutMode = AA_MODE_MEDIUM
+        horizontalGapText, verticalGapText
     AADebugSettings settings
 
     operation = "memeriksa dokumen dan halaman sumber"

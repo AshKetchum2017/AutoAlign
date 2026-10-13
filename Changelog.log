@@ -166,3 +166,9 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 2026-10-12
 [Kiss Cut: workaround posisi mark]
 ~ Mark sudut atas digeser 1 mm ke atas dan mark sudut bawah 1 mm ke bawah. Pengguna mengonfirmasi perubahan ini berhasil pada kasus slot sudut yang sebelumnya tidak terisi.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-13
+[Minimum: gap kontur mm - hasil uji diterima]
+- Menghapus opsi Percent pada Minimum; H/V memakai gap kontur mm dengan batas minimal 0. Langkah Straight dan ZigZag mengikuti kontur serta gap yang diminta.
+~ Pemilihan gap mengikuti arah antarpusat acuan: sebaris memakai H, sekolom V, diagonal nilai terbesar H/V. H=0 tidak lagi membesar akibat kemiringan segmen ellipse. Default tiap model dan pengecualian rectangle bersudut runcing dipertahankan.

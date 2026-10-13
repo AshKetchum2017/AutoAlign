@@ -11,15 +11,11 @@ Private mHorizontalGap As Double
 Private mVerticalGap As Double
 Private mHasHorizontalGap As Boolean
 Private mHasVerticalGap As Boolean
-Private mHorizontalPercent As Boolean
-Private mVerticalPercent As Boolean
 Private mModelMode As Long
 
 Public Sub Configure(ByVal modelMode As Long, ByVal areaWidthText As String, _
                      ByVal areaHeightText As String, ByVal horizontalGapText As String, _
-                     ByVal verticalGapText As String, ByVal horizontalPercent As Boolean, _
-                     ByVal verticalPercent As Boolean, _
-                     Optional ByVal mediumMode As Boolean = False)
+                     ByVal verticalGapText As String)
     If modelMode <> AA_MODEL_CUSTOM And modelMode <> AA_MODEL_KISS_A And _
         modelMode <> AA_MODEL_DIE_A Then Err.Raise vbObjectError + 5324, _
         "AASettings", "Model area tidak dikenal."
@@ -27,16 +23,14 @@ Public Sub Configure(ByVal modelMode As Long, ByVal areaWidthText As String, _
     mAreaWidthMM = AA_DEFAULT_AREA_WIDTH_MM
     mAreaHeightMM = AA_DEFAULT_AREA_HEIGHT_MM
     If modelMode = AA_MODEL_CUSTOM And Len(Trim$(areaWidthText)) > 0 Then
-        mAreaWidthMM = ParseDecimal(areaWidthText, "Lebar area", False)
+        mAreaWidthMM = ParseDecimal(areaWidthText, "Lebar area")
     End If
     If modelMode = AA_MODEL_CUSTOM And Len(Trim$(areaHeightText)) > 0 Then
-        mAreaHeightMM = ParseDecimal(areaHeightText, "Tinggi area", False)
+        mAreaHeightMM = ParseDecimal(areaHeightText, "Tinggi area")
     End If
     If mAreaWidthMM <= 0# Or mAreaHeightMM <= 0# Then Err.Raise _
         vbObjectError + 5320, "AASettings", "Lebar dan tinggi area harus lebih besar dari nol."
 
-    mHorizontalPercent = horizontalPercent
-    mVerticalPercent = verticalPercent
     mHasHorizontalGap = False
     mHasVerticalGap = False
     mHorizontalGap = 0#
@@ -44,22 +38,14 @@ Public Sub Configure(ByVal modelMode As Long, ByVal areaWidthText As String, _
     mHasHorizontalGap = (Len(Trim$(horizontalGapText)) > 0)
     mHasVerticalGap = (Len(Trim$(verticalGapText)) > 0)
     If mHasHorizontalGap Then
-        mHorizontalGap = ParseDecimal(horizontalGapText, "Gap horizontal", mHorizontalPercent)
-        If mHorizontalPercent And mHorizontalGap <= 0# Then Err.Raise _
-            vbObjectError + 5321, "AASettings", "Persen gap horizontal harus lebih besar dari nol."
+        mHorizontalGap = ParseDecimal(horizontalGapText, "Gap horizontal")
     End If
     If mHasVerticalGap Then
-        mVerticalGap = ParseDecimal(verticalGapText, "Gap vertikal", mVerticalPercent)
-        If mVerticalPercent And mVerticalGap <= 0# Then Err.Raise _
-            vbObjectError + 5322, "AASettings", "Persen gap vertikal harus lebih besar dari nol."
+        mVerticalGap = ParseDecimal(verticalGapText, "Gap vertikal")
     End If
-    If mediumMode Then
-        If horizontalPercent Or verticalPercent Then Err.Raise vbObjectError + 5327, _
-            "AASettings", "Persen gap belum tersedia pada mode Medium."
-        If (mHasHorizontalGap And mHorizontalGap < 0#) Or _
-           (mHasVerticalGap And mVerticalGap < 0#) Then Err.Raise vbObjectError + 5328, _
-            "AASettings", "Gap Medium tidak boleh negatif. Gunakan nilai minimal 0 mm."
-    End If
+    If (mHasHorizontalGap And mHorizontalGap < 0#) Or _
+       (mHasVerticalGap And mVerticalGap < 0#) Then Err.Raise vbObjectError + 5328, _
+        "AASettings", "Gap tidak boleh negatif. Gunakan nilai minimal 0 mm."
 End Sub
 
 Public Property Get ModelMode() As Long
@@ -89,6 +75,7 @@ Public Property Get DefaultVerticalGapMM() As Double
 End Property
 
 Public Property Get DefaultZigZagVerticalFactor() As Double
+    ' Hanya seed pencarian Medium; bukan gap atau pitch grid Minimum.
     If mModelMode = AA_MODEL_DIE_A Then
         DefaultZigZagVerticalFactor = 0.89
     Else
@@ -120,16 +107,7 @@ Public Property Get VerticalGap() As Double
     VerticalGap = mVerticalGap
 End Property
 
-Public Property Get HorizontalPercent() As Boolean
-    HorizontalPercent = mHorizontalPercent
-End Property
-
-Public Property Get VerticalPercent() As Boolean
-    VerticalPercent = mVerticalPercent
-End Property
-
-Private Function ParseDecimal(ByVal rawText As String, ByVal fieldName As String, _
-                              ByVal percentMode As Boolean) As Double
+Private Function ParseDecimal(ByVal rawText As String, ByVal fieldName As String) As Double
     Dim numberText As String
     Dim character As String
     Dim digitCount As Long
@@ -137,9 +115,6 @@ Private Function ParseDecimal(ByVal rawText As String, ByVal fieldName As String
     Dim i As Long
 
     numberText = Trim$(rawText)
-    If percentMode And Right$(numberText, 1) = "%" Then
-        numberText = Trim$(Left$(numberText, Len(numberText) - 1))
-    End If
 
     For i = 1 To Len(numberText)
         character = Mid$(numberText, i, 1)
@@ -162,5 +137,5 @@ Private Function ParseDecimal(ByVal rawText As String, ByVal fieldName As String
 
 InvalidNumber:
     Err.Raise vbObjectError + 5323, "AASettings", _
-        fieldName & " harus berisi angka" & IIf(percentMode, " dengan % opsional.", ".")
+        fieldName & " harus berisi angka."
 End Function

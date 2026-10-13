@@ -603,8 +603,8 @@ Public Sub AADebugSettings(ByVal settings As AASettings)
     h = "default": v = "default"
     If settings.HasHorizontalGap Then h = CStr(settings.HorizontalGap)
     If settings.HasVerticalGap Then v = CStr(settings.VerticalGap)
-    If settings.HorizontalPercent Then h = h & "%"
-    If settings.VerticalPercent Then v = v & "%"
+    If settings.HasHorizontalGap Then h = h & " mm"
+    If settings.HasVerticalGap Then v = v & " mm"
     AADebugWrite "Input", "area=" & CStr(settings.AreaWidthMM) & "x" & _
         CStr(settings.AreaHeightMM) & " mm; gap H=" & h & "; V=" & v
 TraceFailed:

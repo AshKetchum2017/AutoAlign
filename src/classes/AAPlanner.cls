@@ -753,7 +753,7 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
                                ByVal forbidden As Collection, _
                                ByVal settings As AASettings, ByVal offsets As Object, _
                                ByVal horizontalGap As Double, ByVal verticalGap As Double, _
-                               Optional ByVal checkSameDesign As Boolean = False) As Boolean
+                               Optional ByVal traceGapFailure As Boolean = False) As Boolean
     Dim placed As AAPlacement
     Dim footprint As AAGeometry
     Dim collisionFootprint As AAGeometry
@@ -785,22 +785,20 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
             AADebugRejectSlot "overlap"
             Exit Function
         End If
-        If placed.DesignIndex <> candidate.DesignIndex Or checkSameDesign Then
-            If candidate.UsesContourGap And placed.UsesContourGap Then
-                If Not candidate.HasClearance(placed) Then
-                    AADebugRejectSlot "gap"
-                    If checkSameDesign Then AADebugMinimumGapRejected candidate, placed, "Minimum local candidate"
-                    Exit Function
-                End If
-            Else
-                ' Gap negatif/persen tetap mengikuti kontrak langkah sebelumnya.
-                If spacingFootprint.RightX + horizontalGap > placedSpacing.LeftX + AA_EDGE_TOLERANCE_MM And _
-                   spacingFootprint.LeftX - horizontalGap < placedSpacing.RightX - AA_EDGE_TOLERANCE_MM And _
-                   spacingFootprint.TopY + verticalGap > placedSpacing.BottomY + AA_EDGE_TOLERANCE_MM And _
-                   spacingFootprint.BottomY - verticalGap < placedSpacing.TopY - AA_EDGE_TOLERANCE_MM Then
-                    AADebugRejectSlot "gap"
-                    Exit Function
-                End If
+        ' Grid dan posisi tambahan memeriksa gap terhadap semua Design.
+        If candidate.UsesContourGap And placed.UsesContourGap Then
+            If Not candidate.HasClearance(placed) Then
+                AADebugRejectSlot "gap"
+                If traceGapFailure Then AADebugMinimumGapRejected candidate, placed, "Minimum local candidate"
+                Exit Function
+            End If
+        Else
+            If spacingFootprint.RightX + horizontalGap > placedSpacing.LeftX + AA_EDGE_TOLERANCE_MM And _
+               spacingFootprint.LeftX - horizontalGap < placedSpacing.RightX - AA_EDGE_TOLERANCE_MM And _
+               spacingFootprint.TopY + verticalGap > placedSpacing.BottomY + AA_EDGE_TOLERANCE_MM And _
+               spacingFootprint.BottomY - verticalGap < placedSpacing.TopY - AA_EDGE_TOLERANCE_MM Then
+                AADebugRejectSlot "gap"
+                Exit Function
             End If
         End If
     Next placed
