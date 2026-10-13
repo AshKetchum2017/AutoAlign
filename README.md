@@ -50,7 +50,9 @@ Saat beberapa Design memakai satu Cut Line bersama tanpa Quantity `/n`, susunan 
 
 Rectangle, termasuk rectangle dengan sudut lengkung, memakai Straight. Jika seluruh acuan aktif berupa rectangle, perbandingan ZigZag dilewati.
 
-Perencanaan memeriksa batas area, zona mark, dan collision. Saat susunan perlu menyesuaikan posisi terhadap mark, Minimum mencoba pergeseran bersama sebelum mengurangi isi susunan.
+Perencanaan memeriksa batas area, zona mark, gap kontur, dan collision. Langkah Straight dan ZigZag mengikuti kontur acuan serta gap yang diminta. Saat susunan perlu menyesuaikan posisi terhadap mark, Minimum mencoba pergeseran bersama sebelum mengurangi isi susunan.
+
+Untuk Quantity berupa angka dengan beberapa Design berbeda dalam satu container, Minimum juga mencoba posisi tambahan berdasarkan tepi dan alignment tetangga pada **rotasi 0°** sebelum membuka container baru. Pencarian tambahan ini tetap dibatasi dan harus memenuhi gap, batas area, serta zona mark.
 
 ### Medium
 
@@ -58,9 +60,11 @@ Perencanaan memeriksa batas area, zona mark, dan collision. Saat susunan perlu m
 
 - Bentuk non-rectangle mencoba rotasi relatif terhadap sumber dengan langkah **45°**: `0°`, `45°`, `90°`, `135°`, `180°`, `225°`, `270°`, dan `315°`.
 - Rectangle memakai rotasi dengan langkah **90°**.
-- Segitiga dan kurva custom sederhana yang memenuhi syarat dapat mencoba pola pasangan dengan rotasi berlawanan, termasuk offset dan perapatan menurut kontur.
-- Pemilihan mempertimbangkan kapasitas, jumlah area, keteraturan pola, dan luas bounding box acuan collision saat hasil utama sama.
+- Segitiga dan kurva custom sederhana yang memenuhi syarat dapat mencoba pola pasangan dengan rotasi berlawanan, termasuk offset dan perapatan menurut kontur. Kurva berlekuk dengan sedikit node tetapi banyak segmen kontur, seperti kasus PinPoint, juga dapat mencoba pasangan `0°/180°` dengan offset vertikal dua arah melalui pencarian terbatas.
+- Pemilihan mengutamakan jumlah area paling sedikit, jumlah Design paling banyak, lalu keteraturan pola. Setelah itu, luas bounding box acuan collision ikut dibandingkan.
 - Perapatan dan perataan tetangga tetap diperiksa terhadap gap, collision, batas area, dan mark.
+
+Jika lebar dan tinggi susunan acuan collision pada **setiap area** setara dalam toleransi **0,001 mm**, Medium memilih total rotasi tambahan paling sedikit terhadap orientasi sumber. Toleransi ini hanya untuk membandingkan kandidat, bukan kelonggaran gap atau batas area. Jika total rotasi juga sama, isi area awal diprioritaskan.
 
 Medium memakai pencarian heuristik dengan batas kandidat. Hasilnya bukan jaminan nesting paling optimal untuk setiap bentuk. Waktu Process dapat bertambah pada kurva kompleks, banyak sumber, atau pencarian Quantity kelompok.
 
@@ -76,8 +80,11 @@ Kolom ukuran area hanya aktif pada Custom. Lebar dan tinggi harus lebih besar da
 
 Zona mark preset menjadi area yang dihindari saat menyusun objek:
 
-- **KissA:** empat zona persegi **10 × 10 mm** dan satu zona persegi **12 × 12 mm**.
-- **DieA:** empat zona ellipse **11 × 11 mm**, dengan pusat `(11; 11)`, `(11; 474)`, `(314; 11)`, dan `(314; 474)` dalam koordinat sheet preset, satuan mm.
+| Model | Bentuk dan ukuran zona | Pusat zona pada sheet preset, dalam mm |
+| --- | --- | --- |
+| KissA | Empat persegi **10 × 10 mm** | `(6; 10)`, `(6; 475)`, `(319; 10)`, `(319; 475)` |
+| KissA | Satu persegi **12 × 12 mm** | `(162,5; 11,5)` |
+| DieA | Empat ellipse **11 × 11 mm** | `(11; 11)`, `(11; 474)`, `(314; 11)`, `(314; 474)` |
 
 Pemeriksaan zona mark memakai toleransi penetrasi **0,2 mm** dari tepi mark. Zona ini adalah acuan perencanaan; Process tidak membuat objek sensor atau mark fisik.
 
@@ -85,23 +92,29 @@ Ukuran sheet preset dipakai sementara saat Process, lalu **ukuran halaman asli d
 
 ### Gap Horizontal dan Vertical
 
-Gap diatur melalui `txbGapHorizontal` dan `txbGapVertical`. Kolom kosong memakai default sesuai model dan pola:
+Gap diatur melalui `txbGapHorizontal` dan `txbGapVertical`. **Minimum dan Medium sama-sama memakai gap kontur dalam mm**, dengan nilai minimal **0 mm**. Opsi **Percent** tidak tersedia lagi. Nilai negatif dan input dengan tanda `%` ditolak.
 
-| Model | Gap H default | Gap V Straight default | Langkah V ZigZag default |
-| --- | --- | --- | --- |
-| KissA | **1 mm** | **1 mm** | **88%** tinggi objek acuan |
-| DieA | **1,5 mm** | **1,5 mm** | **89%** tinggi objek acuan |
-| Custom | **0 mm** | **0 mm** | **88%** tinggi objek acuan |
+Kolom kosong memakai default model pada kedua mode:
 
-Pada KissA/DieA, rectangle bersudut runcing memakai gap default **0 mm**. Input manual diutamakan.
+| Model | Gap H default | Gap V default |
+| --- | --- | --- |
+| KissA | **1 mm** | **1 mm** |
+| DieA | **1,5 mm** | **1,5 mm** |
+| Custom | **0 mm** | **0 mm** |
 
-Objek acuan adalah Cut Line pada pasangan, atau Design pada standalone.
+Pada KissA/DieA, rectangle bersudut runcing memakai gap default **0 mm**. Input manual diutamakan. Angka desimal dapat menggunakan titik atau koma, misalnya `1.5` atau `1,5`.
 
-**Minimum** mendukung `chkHPercent` dan `chkVPercent`. Nilai persen menentukan **langkah penempatan** berdasarkan lebar atau tinggi objek acuan, bukan persentase celah kosong. Misalnya, `100%` berarti langkah sebesar satu ukuran acuan. Nilai persen harus lebih besar dari nol.
+Objek acuan adalah Cut Line pada pasangan, atau Design pada standalone. Pemilihan gap mengikuti arah antarpusat bounding box acuan collision:
 
-**Medium** memakai gap kontur dalam mm dan menerima nilai minimal **0 mm**. Persen dinonaktifkan; sisi miring memakai nilai terbesar antara Gap H dan Gap V. Kolom kosong tetap mengikuti default model, dengan penyesuaian rectangle bersudut runcing.
+| Posisi relatif acuan | Gap yang dipakai |
+| --- | --- |
+| Sebaris | Gap H |
+| Sekolom | Gap V |
+| Diagonal | Nilai terbesar antara Gap H dan Gap V |
 
-Input gap Minimum dan Medium disimpan terpisah saat berpindah mode. Angka abu-abu pada kolom kosong adalah placeholder, bukan nilai manual.
+Gap diperiksa terhadap kontur; kemiringan segmen kurva tidak mengubah pilihan H/V menjadi nilai lain. Gap `0` diperbolehkan, sementara collision tetap diperiksa. Pada Minimum, langkah Straight dan ZigZag dihitung dari kontur serta gap yang diminta.
+
+Input gap Minimum dan Medium disimpan terpisah saat berpindah mode. Pada kunjungan pertama ke Medium, input mm dari Minimum diteruskan sebagai nilai awal. Angka abu-abu pada kolom kosong adalah placeholder, bukan nilai manual.
 
 ### Quantity
 
@@ -121,6 +134,21 @@ Tanda `-` yang tampil saat Quantity kosong adalah placeholder; gunakan kolom kos
 Kelompok diproses menurut nomor, lalu Design dengan Quantity biasa diproses terpisah. Pembagian memakai template jika acuan sesuai, atau mencari kuota yang muat dalam satu area. Pembagian template memiliki selisih maksimal satu objek; pencarian kuota dan surplus mengizinkan selisih maksimal **dua objek** antar Design. Nomor setelah `/` adalah **ID kelompok**, bukan jumlah salinan atau pembagi.
 
 Susunan Cut Line bersama yang identik dapat memakai satu template Cut Line. Kelompok `/n` tetap harus muat dalam satu container.
+
+### Indikator Progres Process
+
+Indikator progres tampil tanpa perlu mengaktifkan Debug:
+
+| Kontrol | Tampilan |
+| --- | --- |
+| `lblProgressStage` | Tahap yang sedang berjalan, seperti membaca geometri, mencari susunan, merapatkan, atau mengelompokkan hasil. |
+| `lblProgressDetail` | Detail pekerjaan, kelompok Quantity, nomor percobaan/pola, atau jumlah yang sudah diproses. |
+| `lblProgressTime` | Durasi Process dalam format menit:detik. |
+| `frmProgress` dan `lblProgressFill` | Bar aktivitas atau progres tahap yang sedang berjalan. |
+
+Saat pencarian susunan, bar bergerak sebagai indikator aktivitas; bar ini **bukan persentase keseluruhan Process**. Pada tahap yang mempunyai total, seperti membaca geometri dan membuat objek hasil, isi bar mengikuti jumlah yang telah diproses.
+
+Selama Process, input dan tombol form dikunci, penutupan form dicegah, serta interaksi dengan jendela dokumen dinonaktifkan sementara. Setelah proses berakhir, kontrol dipulihkan ke status sebelumnya. Indikator hanya untuk tampilan dan tidak menyediakan tombol pembatalan.
 
 ### Hasil, Layer, dan Undo
 
@@ -157,6 +185,7 @@ Repository menyediakan source VBA berupa code-behind UserForm, class module, dan
 | `src/classes/AAModel.cls`, `AAGeometry.cls`, `AAContour.cls`, `AAOccupiedIndex.cls` | Acuan bentuk, kontur, rotasi, gap, dan pemeriksaan tetangga. |
 | `src/modules/AAAlgorithm.bas` | Konstanta serta aturan layer dan Z-Order. |
 | `src/modules/AADebug.bas` | Debug, profiling, dan diagnostik memori. |
+| `src/modules/AAProgress.bas` | Indikator tahap/detail/durasi, pembaruan bar, serta penguncian sementara jendela dokumen saat Process. |
 | `src/modules/MRTargetBridge.bas` | Membuka form melalui `OpenMacro` dan menghubungkan callback MacroRunner. |
 | `Changelog.log` | Riwayat pengembangan dan catatan pengujian. |
 
@@ -164,7 +193,7 @@ Integrasi MacroRunner yang tersedia menghubungkan pembukaan/penutupan form serta
 
 ### Debug Opsional
 
-Debug nonaktif secara default. Jalankan perintah berikut di **Immediate Window** pada project VBA AutoAlign:
+Helper Debug dan progres disembunyikan dari daftar macro workspace. Debug nonaktif secara default. Jalankan perintah berikut di **Immediate Window** pada project VBA AutoAlign:
 
 ```vb
 AADebugOn           ' Ringkas
