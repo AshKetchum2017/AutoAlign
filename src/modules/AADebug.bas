@@ -202,6 +202,18 @@ Public Sub AADebugProcessStart(ByVal layoutMode As Long, ByVal modelMode As Long
     AADebugMemoryStart
 End Sub
 
+Public Sub AADebugOptimizeStart(ByVal modelMode As Long)
+    Dim modelName As String
+    If Not mEnabled Then Exit Sub
+    mSlotsActive = False
+    AADebugPerfReset
+    modelName = "Custom"
+    If modelMode = AA_MODEL_KISS_A Then modelName = "KissA"
+    If modelMode = AA_MODEL_DIE_A Then modelName = "DieA"
+    AADebugWrite "Optimize", "start / " & modelName
+    AADebugMemoryStart
+End Sub
+
 Public Sub AADebugCandidateStart(ByVal label As String)
     mCandidateTiming = AADebugProfiling
     If mCandidateTiming Then mCandidateStarted = AADebugPerfBegin()

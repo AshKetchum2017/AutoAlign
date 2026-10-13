@@ -73,7 +73,45 @@ Private Sub optKissA_Click()
 End Sub
 
 Private Sub cmdOptimize_Click()
-' Salah satu fungsi terakhir AutoAlign adalah mengoptimalkan grup yang ada. Tombol ini memicu proses optimalisasi tersebut.
+    Dim modelMode As Long, feedback As String, feedbackStyle As VbMsgBoxStyle
+    Dim completed As Boolean
+    Dim errorNumber As Long, errorSource As String, errorDescription As String
+
+    If mProcessRunning Or AAProgressRunning Then Exit Sub
+    If optCustom.value Then
+        modelMode = AA_MODEL_CUSTOM
+    ElseIf optKissA.value Then
+        modelMode = AA_MODEL_KISS_A
+    ElseIf optDieA.value Then
+        modelMode = AA_MODEL_DIE_A
+    Else
+        MsgBox "Pilih model area terlebih dahulu.", vbExclamation, "Auto Align"
+        Exit Sub
+    End If
+    If mPresenter Is Nothing Then Set mPresenter = New AAPresenter
+    mProcessRunning = True
+    On Error GoTo OptimizeFailed
+    AALockInputs
+    AAProgressBegin Me
+    mPresenter.OptimizeLayout modelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
+        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), completed, feedback, feedbackStyle
+    AARefreshObjects
+    AAProgressEnd completed
+    AAUnlockInputs
+    mProcessRunning = False
+    AAUpdateQuantityEditor
+    If Len(feedback) > 0 Then MsgBox feedback, feedbackStyle, "Auto Align Optimize"
+    Exit Sub
+
+OptimizeFailed:
+    errorNumber = Err.Number: errorSource = Err.Source: errorDescription = Err.Description
+    On Error Resume Next
+    AAProgressEnd False
+    AAUnlockInputs
+    mProcessRunning = False
+    AAUpdateQuantityEditor
+    On Error GoTo 0
+    Err.Raise errorNumber, errorSource, errorDescription
 End Sub
 
 Private Sub optMaximum_Click()
