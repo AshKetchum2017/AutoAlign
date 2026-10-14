@@ -146,11 +146,13 @@ Private Sub cmdOptimize_Click() ' Kontrol ini masih dalam tahap pengembangan.
 OptimizeFailed:
     errorNumber = Err.number: errorSource = Err.source: errorDescription = Err.description
     On Error Resume Next
+    AAProgressBeginCleanup (errorNumber = AA_ERROR_CANCELLED)
     AAProgressEnd False
     AAUnlockInputs
     mProcessRunning = False
     AAUpdateQuantityEditor
     On Error GoTo 0
+    If errorNumber = AA_ERROR_CANCELLED Then Exit Sub
     Err.Raise errorNumber, errorSource, errorDescription
 End Sub
 
@@ -193,6 +195,7 @@ Private Sub UserForm_Initialize()
     Set mPresenter = New AAPresenter
     Set mDefaultPreferences = New AADefaultPreferences
     mDefaultPreferences.Load
+    cmdClose.Caption = "Close"
     mQuantityIndex = -1
     lbxObjects.MultiSelect = fmMultiSelectExtended
     mInputColor(1) = txbGapHorizontal.ForeColor
@@ -229,7 +232,14 @@ Private Sub cmdClear_Click()
 End Sub
 
 Private Sub cmdClose_Click()
-    If mProcessRunning Or AAProgressRunning Then Exit Sub
+    If mProcessRunning Or AAProgressRunning Then
+        If AAProgressRequestCancel() Then
+            cmdClose.Caption = "Membatalkan..."
+            cmdClose.enabled = False
+            Me.Repaint
+        End If
+        Exit Sub
+    End If
     Unload Me
 End Sub
 
@@ -384,25 +394,37 @@ ProcessFailed:
     errorSource = Err.source
     errorDescription = Err.description
     On Error Resume Next
+    AAProgressBeginCleanup (errorNumber = AA_ERROR_CANCELLED)
     AAProgressEnd False
     AAUnlockInputs
     mProcessRunning = False
     AAUpdateQuantityEditor
     MRNotifyProcessTiming False
     On Error GoTo 0
+    If errorNumber = AA_ERROR_CANCELLED Then Exit Sub
     Err.Raise errorNumber, errorSource, errorDescription
 End Sub
 
 Private Sub AALockInputs()
-    Dim control As Object
     Set mLockedControls = New Collection
     Set mEnabledStates = New Collection
-    For Each control In Me.Controls
-        ' Frame lain ikut dikunci agar seluruh input di dalamnya nonaktif.
-        If TypeName(control) <> "Label" And control.Name <> "frmProgress" Then
-            mLockedControls.Add control
-            mEnabledStates.Add CBool(control.enabled)
-            control.enabled = False
+    AALockContainer Me
+    cmdClose.Caption = "Cancel"
+    cmdClose.enabled = True
+End Sub
+
+Private Sub AALockContainer(ByVal container As Object)
+    Dim control As Object
+    For Each control In container.Controls
+        If control.Name <> "frmProgress" And control.Name <> "cmdClose" Then
+            If TypeName(control) = "Frame" Then
+                ' Frame tetap aktif agar Close di dalamnya dapat menerima klik.
+                AALockContainer control
+            ElseIf TypeName(control) <> "Label" Then
+                mLockedControls.Add control
+                mEnabledStates.Add CBool(control.enabled)
+                control.enabled = False
+            End If
         End If
     Next control
 End Sub
@@ -415,6 +437,8 @@ Private Sub AAUnlockInputs()
     Next i
     Set mLockedControls = Nothing
     Set mEnabledStates = Nothing
+    cmdClose.Caption = "Close"
+    cmdClose.enabled = True
 End Sub
 
 Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
@@ -428,7 +452,7 @@ Public Sub AAProgressRender(ByVal stage As String, ByVal detail As String, _
     Dim seconds As Long
     lblProgressStage.Caption = stage
     If total > 0 And stage <> "Selesai" And stage <> "Siap" And _
-       stage <> "Proses dihentikan" Then
+       stage <> "Proses dihentikan" And stage <> "Dibatalkan" Then
         If Len(detail) > 0 Then detail = detail & " | "
         detail = detail & CStr(done) & " / " & CStr(total)
     End If

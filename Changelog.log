@@ -180,4 +180,8 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 2026-10-14
 [DefaultSettings: preferensi Area/Gap]
 + KissA/DieA membaca default Area W/H dan Gap H/V dari preferensi pengguna di registry. Save menyimpan draft kedua model; Cancel/X membuang perubahan. Hint form utama mengikuti preferensi, input manual tetap diutamakan, dan rectangle bersudut runcing tetap memakai default gap 0 mm.
-~ Pembukaan editor menjaga instance form utama dan memulihkan visibilitasnya bila tersembunyi. Pengguna mengonfirmasi Save/Cancel kembali normal setelah restart CorelDRAW; penyebab penutupan sebelumnya belum dipastikan.
+~ Pembukaan editor menjaga instance form utama dan memulihkan visibilitasnya bila tersembunyi.
+
+[Process: Close/Cancel - hasil uji diterima]
++ Close berubah menjadi Cancel selama pemrosesan. Pembatalan ditangani pada checkpoint berikutnya, lalu form tetap terbuka dan tombol kembali menjadi Close setelah pemulihan.
+~ Penguncian window dokumen menjaga form tetap responsif terhadap klik Cancel.

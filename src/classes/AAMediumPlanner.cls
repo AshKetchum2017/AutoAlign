@@ -85,6 +85,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     If Err.Number <> 0 Then lastError = Err.Description
     Err.Clear
     On Error GoTo 0
+    AAProgressCheckCancelled
     If Not minimum Is Nothing Then
         Set candidate = AdaptMinimum(minimum, models)
         If ValidPlan(candidate, forbidden, settings, "Baseline Minimum") Then
@@ -116,6 +117,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                 End If
                 Err.Clear
                 On Error GoTo 0
+                AAProgressCheckCancelled
             End If
             If AADebugEnabled Then AADebugWrite "Pair", "eligible=" & CStr(pairEligible) & _
                 "; contour edge limit=" & CStr(AA_MAX_PAIR_CONTOUR_EDGES)
@@ -150,6 +152,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                             End If
                             Err.Clear
                             On Error GoTo 0
+                            AAProgressCheckCancelled
                             AADebugCandidateEnd
                             If Len(buildError) > 0 Then AADebugWrite "Pair", candidateLabel & " -> " & buildError
                             Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
@@ -203,6 +206,7 @@ NextPairPattern:
             End If
             Err.Clear
             On Error GoTo 0
+            AAProgressCheckCancelled
             AADebugCandidateEnd
             If Len(buildError) > 0 Then AADebugWrite "Medium", candidateLabel & " -> " & buildError
             Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
@@ -899,6 +903,7 @@ Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Lon
                 If Err.Number <> 0 Then buildError = "Error " & CStr(Err.Number) & ": " & Err.Description
                 Err.Clear
                 On Error GoTo 0
+                AAProgressCheckCancelled
                 AADebugCandidateEnd
                 If Len(buildError) > 0 Then AADebugWrite "Pair", label & " -> " & buildError
                 Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _

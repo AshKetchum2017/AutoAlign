@@ -192,17 +192,21 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
         cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT, singleAreaOnly)
     If Err.Number <> 0 Then straightError = Err.Description
     Err.Clear
+    On Error GoTo 0
+    AAProgressCheckCancelled
     AADebugCandidateEnd
     AADebugPlan "Minimum Straight", straightPlan
     AAProgressCandidate
     AADebugCandidateStart "Minimum ZigZag"
+    On Error Resume Next
     Set zigZagPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
         cutCount, quantities, settings, sourceDocument, AA_MODE_ZIGZAG, singleAreaOnly)
     If Err.Number <> 0 Then zigZagError = Err.Description
     Err.Clear
+    On Error GoTo 0
+    AAProgressCheckCancelled
     AADebugCandidateEnd
     AADebugPlan "Minimum ZigZag", zigZagPlan
-    On Error GoTo 0
 
     If straightPlan Is Nothing And zigZagPlan Is Nothing Then Err.Raise _
         vbObjectError + 5230, "AAPlanner", "Straight: " & straightError & _

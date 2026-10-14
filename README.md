@@ -152,7 +152,7 @@ Indikator progres tampil tanpa perlu mengaktifkan Debug:
 
 Saat pencarian susunan, bar bergerak sebagai indikator aktivitas; bar ini **bukan persentase keseluruhan Process**. Pada tahap yang mempunyai total, seperti membaca geometri dan membuat objek hasil, isi bar mengikuti jumlah yang telah diproses.
 
-Selama Process, input dan tombol form dikunci, penutupan form dicegah, serta interaksi dengan jendela dokumen dinonaktifkan sementara. Setelah proses berakhir, kontrol dipulihkan ke status sebelumnya. Indikator hanya untuk tampilan dan tidak menyediakan tombol pembatalan.
+Selama Process, input form dan interaksi dengan jendela dokumen dinonaktifkan sementara. Tombol **Close** berubah menjadi **Cancel** untuk meminta pembatalan. Permintaan diproses pada checkpoint berikutnya; operasi CorelDRAW yang sedang berjalan perlu selesai terlebih dahulu. Selama pemulihan, tombol menampilkan **Membatalkan...**. Setelah pembatalan, perubahan Process dipulihkan, form tetap terbuka, dan tombol kembali menjadi **Close**. Saat tidak ada proses berjalan, **Close** menutup form.
 
 ### Hasil, Layer, dan Undo
 

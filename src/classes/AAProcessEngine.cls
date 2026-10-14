@@ -27,6 +27,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim plan As AALayoutPlan
     Dim builder As AAResultBuilder
     Dim resultSelection As ShapeRange
+    Dim originalSelection As ShapeRange, selectionIDs() As Long, selectionCount As Long
     Dim previousUnit As cdrUnit
     Dim previousHUnit As cdrUnit
     Dim previousVUnit As cdrUnit
@@ -39,6 +40,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim pageSizeChanged As Boolean
     Dim mutationStarted As Boolean
     Dim rollbackSucceeded As Boolean
+    Dim cancelled As Boolean
+    Dim cleanupFailed As Boolean
     Dim errorNumber As Long
     Dim errorSource As String
     Dim errorDescription As String
@@ -80,6 +83,14 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         "AAProcessEngine", "Aktifkan dokumen tempat object didaftarkan."
     If targetPage.Index <> objects.SourcePageIndex Then Err.Raise vbObjectError + 5312, _
         "AAProcessEngine", "Aktifkan halaman tempat object didaftarkan."
+    Set originalSelection = ActiveSelectionRange
+    selectionCount = originalSelection.Count
+    If selectionCount > 0 Then
+        ReDim selectionIDs(1 To selectionCount)
+        For entryIndex = 1 To selectionCount
+            selectionIDs(entryIndex) = CLng(originalSelection(entryIndex).StaticID)
+        Next entryIndex
+    End If
 
     ReDim sourceShapes(0 To entryCount - 1)
     ReDim models(0 To entryCount - 1)
@@ -225,6 +236,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         perfStage = vbNullString
     End If
 
+    AAProgressCheckCancelled
     ' Preset memakai ukuran sheet baku hanya selama Process. Semua koordinat
     ' hasil tetap mengacu pada pusat halaman asli yang disimpan di atas.
     If modelMode <> AA_MODEL_CUSTOM Then
@@ -259,6 +271,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     lastProcessCompleted = True
 
 CleanExit:
+    AAProgressCheckCancelled
+    AAProgressBeginCleanup
     AAProgressStage "Memulihkan dokumen"
     perfStage = "Restore document"
     perfStarted = AADebugPerfBegin()
@@ -284,17 +298,28 @@ RunFailed:
     errorNumber = Err.Number
     errorSource = Err.Source
     errorDescription = Err.Description
+    cancelled = (errorNumber = AA_ERROR_CANCELLED)
+    AAProgressBeginCleanup cancelled
     AADebugCandidateEnd
-    If Len(perfStage) > 0 Then AADebugStageEnd perfStage & " (failed)", perfStarted
-    AADebugWrite "Process", "FAILED during " & operation & "; Error " & _
-        CStr(errorNumber) & " (" & errorSource & "): " & errorDescription
+    If cancelled Then
+        If Len(perfStage) > 0 Then AADebugStageEnd perfStage & " (cancelled)", perfStarted
+        AADebugWrite "Process", "CANCELLED during " & operation
+    Else
+        If Len(perfStage) > 0 Then AADebugStageEnd perfStage & " (failed)", perfStarted
+        AADebugWrite "Process", "FAILED during " & operation & "; Error " & _
+            CStr(errorNumber) & " (" & errorSource & "): " & errorDescription
+    End If
     On Error Resume Next
+    Err.Clear
     If pageSizeChanged Then targetPage.SetSize originalPageWidth, originalPageHeight
+    If Err.Number <> 0 Then cleanupFailed = True
+    Err.Clear
     If unitsSaved Then
         doc.Rulers.VUnits = previousVUnit
         doc.Rulers.HUnits = previousHUnit
         doc.Unit = previousUnit
     End If
+    If Err.Number <> 0 Then cleanupFailed = True
     If commandGroupOpen Then
         Err.Clear
         doc.EndCommandGroup
@@ -309,8 +334,24 @@ RunFailed:
             End If
         End If
     End If
+    If cancelled And Not doc Is Nothing Then
+        Err.Clear
+        RestoreCancelledSelection doc, targetPage, selectionIDs, selectionCount
+        If Err.Number <> 0 Then cleanupFailed = True
+    End If
     On Error GoTo 0
 
+    If cancelled Then
+        AADebugPerfFinish "CANCELLED; completed checks only"
+        lastProcessCompleted = False
+        feedbackStyle = vbInformation
+        feedback = vbNullString
+        If cleanupFailed Or commandGroupOpen Or (mutationStarted And Not rollbackSucceeded) Then
+            feedbackStyle = vbCritical
+            feedback = "Pemrosesan dibatalkan, tetapi pemulihan perubahan belum lengkap. Periksa Undo dan dokumen."
+        End If
+        Exit Sub
+    End If
     AADebugPerfFinish "FAILED; completed checks only"
     lastProcessCompleted = False
     feedbackStyle = vbCritical
@@ -329,6 +370,40 @@ RunFailed:
             "Periksa hasil di dokumen sebelum melanjutkan."
     End If
 End Sub
+
+Private Sub RestoreCancelledSelection(ByVal doc As Document, ByVal targetPage As Page, _
+                                      ByRef ids() As Long, ByVal count As Long)
+    Dim restored As New ShapeRange, selected As Shape, i As Long
+    If count = 0 Then
+        doc.ClearSelection
+        Exit Sub
+    End If
+    For i = 1 To count
+        ' Undo dapat mengganti wrapper COM; cari kembali melalui StaticID.
+        Set selected = FindSelectionShape(targetPage, ids(i))
+        If selected Is Nothing Then Err.Raise vbObjectError + 5391, "AAProcessEngine", _
+            "Seleksi awal tidak dapat dipulihkan."
+        restored.Add selected
+    Next i
+    restored.CreateSelection
+End Sub
+
+Private Function FindSelectionShape(ByVal parent As Object, ByVal staticID As Long) As Shape
+    Dim candidate As Shape, found As Shape
+    For Each candidate In parent.Shapes
+        If CLng(candidate.StaticID) = staticID Then
+            Set FindSelectionShape = candidate
+            Exit Function
+        End If
+        If candidate.Type = cdrGroupShape Then
+            Set found = FindSelectionShape(candidate, staticID)
+            If Not found Is Nothing Then
+                Set FindSelectionShape = found
+                Exit Function
+            End If
+        End If
+    Next candidate
+End Function
 
 Private Function BuildQuantityGroups(ByVal objects As AAObjectStore, ByRef models() As AAModel, _
                                      ByRef designIndexes() As Long, ByVal designCount As Long, _

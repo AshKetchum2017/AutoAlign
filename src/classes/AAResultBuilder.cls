@@ -63,6 +63,7 @@ Public Function Build(ByVal plan As AALayoutPlan, ByRef sourceShapes() As Shape,
     Set sourceBuckets = CreateObject("Scripting.Dictionary")
     Set sourceOrder = New Collection
     For i = 1 To placements.Count
+        AAProgressPulse
         Set placement = placements(i)
         AddToBucket sourceBuckets, sourceOrder, placement.AreaIndex, _
             placement.DesignIndex, AA_ROLE_DESIGN, designs(i)

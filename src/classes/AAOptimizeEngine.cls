@@ -18,6 +18,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim unitsSaved As Boolean, groupOpen As Boolean, mutationStarted As Boolean, rollbackOK As Boolean
     Dim errorNumber As Long, errorSource As String, errorDescription As String, started As Double
     Dim cleanupError As String
+    Dim cancelled As Boolean
 
     completed = False: feedback = vbNullString: feedbackStyle = vbExclamation
     On Error GoTo Failed
@@ -105,12 +106,20 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         If Not layout.AppliedValid Then Err.Raise vbObjectError + 5369, "AAOptimizeEngine", _
             "Hasil pergeseran tidak lolos validasi aktual. Posisi semula dipulihkan."
     Next layout
+    AAProgressCheckCancelled
+    AAProgressBeginCleanup
     completed = True
     GoTo Cleanup
 
 Failed:
     errorNumber = Err.Number: errorSource = Err.Source: errorDescription = Err.Description
-    AADebugWrite "Optimize", "FAILED: " & CStr(errorNumber) & " " & errorSource & " " & errorDescription
+    cancelled = (errorNumber = AA_ERROR_CANCELLED)
+    AAProgressBeginCleanup cancelled
+    If cancelled Then
+        AADebugWrite "Optimize", "CANCELLED"
+    Else
+        AADebugWrite "Optimize", "FAILED: " & CStr(errorNumber) & " " & errorSource & " " & errorDescription
+    End If
     If mutationStarted Then
         rollbackOK = True
         On Error Resume Next
@@ -124,6 +133,10 @@ Failed:
             vbCrLf & "Pemulihan posisi belum lengkap. Gunakan Undo satu kali."
     End If
     feedback = errorDescription
+    If cancelled And (Not mutationStarted Or rollbackOK) Then
+        feedback = vbNullString
+        feedbackStyle = vbInformation
+    End If
 Cleanup:
     On Error Resume Next
     Err.Clear
@@ -147,6 +160,8 @@ Cleanup:
     If completed Then
         AADebugWrite "Optimize", "OK; count and rotations preserved"
         AADebugPerfFinish "Optimize OK"
+    ElseIf cancelled Then
+        AADebugPerfFinish "Optimize CANCELLED"
     Else
         AADebugPerfFinish "Optimize FAILED"
     End If
