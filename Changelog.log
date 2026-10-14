@@ -175,3 +175,9 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Rectangle bersudut membulat - hasil uji diterima]
 ~ Memperbaiki penolakan slot pada gap nominal yang membuat Minimum tampak ZigZag dan Medium kehilangan slot kiri atas pada kasus rectangle 60 x 60 mm dengan radius sudut 3,3 mm. Pemeriksaan menerima gap yang terbukti aman dari bounds kurva asli; pemeriksaan kontur detail dan overlap tetap dipakai saat diperlukan.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-14
+[DefaultSettings: preferensi Area/Gap]
++ KissA/DieA membaca default Area W/H dan Gap H/V dari preferensi pengguna di registry. Save menyimpan draft kedua model; Cancel/X membuang perubahan. Hint form utama mengikuti preferensi, input manual tetap diutamakan, dan rectangle bersudut runcing tetap memakai default gap 0 mm.
+~ Pembukaan editor menjaga instance form utama dan memulihkan visibilitasnya bila tersembunyi. Pengguna mengonfirmasi Save/Cancel kembali normal setelah restart CorelDRAW; penyebab penutupan sebelumnya belum dipastikan.

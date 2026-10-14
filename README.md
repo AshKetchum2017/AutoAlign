@@ -35,7 +35,7 @@ AutoAlign mendukung tiga susunan input:
 
 Untuk pasangan, **Cut Line menjadi acuan pola, gap, dan collision antarunit**. Bounds Design tetap diperiksa agar muat di dalam area. Artwork Design berpasangan dapat bertumpuk selama acuan Cut Line memenuhi aturan susunan.
 
-Untuk pasangan selain rectangle bersudut runcing, validasi ukuran mengizinkan Design lebih kecil maksimal **0,2 mm** atau lebih besar maksimal **2 mm** dari Cut Line pada setiap sumbu. Pasangan rectangle bersudut runcing memakai jalur penanganan tersendiri.
+Untuk pasangan selain rectangle bersudut runcing, Design boleh lebih kecil maksimal **0,2 mm** atau lebih besar maksimal **2 mm** dari Cut Line pada setiap sumbu.
 
 Saat beberapa Design memakai satu Cut Line bersama tanpa Quantity `/n`, susunan Design pertama yang aktif menjadi template untuk Design lain pada container terpisah. Satu susunan Cut Line dibuat untuk dipakai bersama. Quantity Design pertama menjadi acuan template; Quantity `0` tetap melewati Design terkait.
 
@@ -48,7 +48,7 @@ Saat beberapa Design memakai satu Cut Line bersama tanpa Quantity `/n`, susunan 
 3. Isi area awal lebih banyak.
 4. **Straight** jika hasil tetap sama.
 
-Rectangle, termasuk rectangle dengan sudut lengkung, memakai Straight. Jika seluruh acuan aktif berupa rectangle, perbandingan ZigZag dilewati.
+Rectangle, termasuk rectangle dengan sudut lengkung, disusun dengan pola Straight.
 
 Perencanaan memeriksa batas area, zona mark, gap kontur, dan collision. Langkah Straight dan ZigZag mengikuti kontur acuan serta gap yang diminta. Saat susunan perlu menyesuaikan posisi terhadap mark, Minimum mencoba pergeseran bersama sebelum mengurangi isi susunan.
 
@@ -60,7 +60,7 @@ Untuk Quantity berupa angka dengan beberapa Design berbeda dalam satu container,
 
 - Bentuk non-rectangle mencoba rotasi relatif terhadap sumber dengan langkah **45°**: `0°`, `45°`, `90°`, `135°`, `180°`, `225°`, `270°`, dan `315°`.
 - Rectangle memakai rotasi dengan langkah **90°**.
-- Segitiga dan kurva custom sederhana yang memenuhi syarat dapat mencoba pola pasangan dengan rotasi berlawanan, termasuk offset dan perapatan menurut kontur. Kurva berlekuk dengan sedikit node tetapi banyak segmen kontur, seperti kasus PinPoint, juga dapat mencoba pasangan `0°/180°` dengan offset vertikal dua arah melalui pencarian terbatas.
+- Segitiga dan kurva custom yang memenuhi syarat dapat memakai pola pasangan dengan rotasi berlawanan, offset vertikal, dan perapatan menurut kontur.
 - Pemilihan mengutamakan jumlah area paling sedikit, jumlah Design paling banyak, lalu keteraturan pola. Setelah itu, luas bounding box acuan collision ikut dibandingkan.
 - Perapatan dan perataan tetangga tetap diperiksa terhadap gap, collision, batas area, dan mark.
 
@@ -72,8 +72,8 @@ Medium memakai pencarian heuristik dengan batas kandidat. Hasilnya bukan jaminan
 
 | Model | Kontrol | Area susun | Acuan sheet untuk mark |
 | --- | --- | --- | --- |
-| KissA | `optKissA` | **320 × 470 mm** | **325 × 485 mm** |
-| DieA | `optDieA` | **320 × 470 mm** | **325 × 485 mm** |
+| KissA | `optKissA` | Preferensi; awal **320 × 470 mm** | **325 × 485 mm** |
+| DieA | `optDieA` | Preferensi; awal **320 × 470 mm** | **325 × 485 mm** |
 | Custom | `optCustom` | `txbAreaWidth` × `txbAreaHeight`; default **320 × 470 mm** | Tanpa zona mark preset |
 
 Kolom ukuran area hanya aktif pada Custom. Lebar dan tinggi harus lebih besar dari nol.
@@ -92,17 +92,21 @@ Ukuran sheet preset dipakai sementara saat Process, lalu **ukuran halaman asli d
 
 ### Gap Horizontal dan Vertical
 
-Gap diatur melalui `txbGapHorizontal` dan `txbGapVertical`. **Minimum dan Medium sama-sama memakai gap kontur dalam mm**, dengan nilai minimal **0 mm**. Opsi **Percent** tidak tersedia lagi. Nilai negatif dan input dengan tanda `%` ditolak.
+Gap diatur melalui `txbGapHorizontal` dan `txbGapVertical`. Isi jarak kontur dalam **mm**, dengan nilai minimal **0 mm**. Pengaturan ini berlaku pada Minimum dan Medium.
 
-Kolom kosong memakai default model pada kedua mode:
+Kolom kosong memakai preferensi default model. Nilai bawaan:
 
 | Model | Gap H default | Gap V default |
 | --- | --- | --- |
-| KissA | **1 mm** | **1 mm** |
-| DieA | **1,5 mm** | **1,5 mm** |
+| KissA | **0 mm** | **0 mm** |
+| DieA | **0 mm** | **0 mm** |
 | Custom | **0 mm** | **0 mm** |
 
 Pada KissA/DieA, rectangle bersudut runcing memakai gap default **0 mm**. Input manual diutamakan. Angka desimal dapat menggunakan titik atau koma, misalnya `1.5` atau `1,5`.
+
+Tombol `cmdDefaultSetting` membuka **DefaultSettings** untuk mengatur Area W/H dan Gap H/V per model. Berpindah KissA/DieA mempertahankan draft masing-masing; **Save** menyimpan keduanya, sedangkan **Cancel** atau tombol X membuang perubahan. Area harus positif, gap minimal 0 mm, dan seluruh kolom harus terisi. Hint form utama mengikuti preferensi setelah Save; input gap manual dan input area Custom dipertahankan.
+
+Preferensi disimpan di registry Windows dan dimuat saat AutoAlign digunakan kembali. Ukuran halaman preset dan koordinat mark terpisah dari pengaturan area susun.
 
 Objek acuan adalah Cut Line pada pasangan, atau Design pada standalone. Pemilihan gap mengikuti arah antarpusat bounding box acuan collision:
 
@@ -112,7 +116,7 @@ Objek acuan adalah Cut Line pada pasangan, atau Design pada standalone. Pemiliha
 | Sekolom | Gap V |
 | Diagonal | Nilai terbesar antara Gap H dan Gap V |
 
-Gap diperiksa terhadap kontur; kemiringan segmen kurva tidak mengubah pilihan H/V menjadi nilai lain. Gap `0` diperbolehkan, sementara collision tetap diperiksa. Pada Minimum, langkah Straight dan ZigZag dihitung dari kontur serta gap yang diminta.
+Gap diperiksa terhadap kontur acuan sesuai arah tetangga pada tabel. Gap `0` memperbolehkan objek bersinggungan, dengan pemeriksaan collision tetap aktif. Pada Minimum, langkah Straight dan ZigZag mengikuti kontur serta gap yang diminta.
 
 Input gap Minimum dan Medium disimpan terpisah saat berpindah mode. Pada kunjungan pertama ke Medium, input mm dari Minimum diteruskan sebagai nilai awal. Angka abu-abu pada kolom kosong adalah placeholder, bukan nilai manual.
 
@@ -156,9 +160,9 @@ Selama Process, input dan tombol form dikunci, penutupan form dicegah, serta int
 - Objek sumber digunakan sebagai hasil pertama, lalu diduplikasi untuk slot berikutnya.
 - Hasil digroup menurut area, sumber, peran, dan layer; Design dan Cut Line tetap terpisah.
 - Layer sumber dipertahankan dengan koreksi urutan pasangan bila diperlukan. Pada layer bernama `Layer n`, pasangan yang terbalik dapat ditukar layernya; Cut Line pada layer yang sama ditempatkan di depan Design.
-- Z-Order anggota group mengikuti urutan slot dalam rencana.
+- Urutan anggota group mengikuti urutan penempatan.
 - Group hasil menjadi selection aktif. Process mengaktifkan **Pick Tool**, termasuk jika dijalankan saat **Shape Tool** aktif.
-- Operasi berada dalam satu `CommandGroup`; gunakan **Undo sekali** sebelum mencoba mode lain dengan daftar sumber yang sama.
+- Gunakan **Undo sekali** untuk membatalkan hasil Process sebelum mencoba mode lain dengan daftar sumber yang sama.
 - Satuan dokumen dan ruler yang dipakai sementara dipulihkan setelah Process.
 
 ## Cara menggunakan
@@ -180,6 +184,7 @@ Repository menyediakan source VBA berupa code-behind UserForm, class module, dan
 | --- | --- |
 | `src/forms/AutoAlignMenu.vba` | Pendaftaran objek, pilihan model/mode, input gap, Quantity, Process, dan callback MacroRunner. |
 | `src/classes/AAPresenter.cls`, `AAObjectStore.cls`, `AASettings.cls` | Penghubung form, daftar objek, dan validasi pengaturan. |
+| `src/classes/AADefaultPreferences.cls`, `src/forms/DefaultSettings.vba` | Preferensi Area/Gap per model, draft editor dan penyimpanan registry. |
 | `src/classes/AAProcessEngine.cls`, `AAResultBuilder.cls` | Menjalankan proses, menangani pasangan/kelompok, dan membangun hasil. |
 | `src/classes/AAPlanner.cls`, `AAMediumPlanner.cls`, `AAQuantityPlanner.cls` | Perencanaan Minimum, Medium, dan kuota kelompok. |
 | `src/classes/AAModel.cls`, `AAGeometry.cls`, `AAContour.cls`, `AAOccupiedIndex.cls` | Acuan bentuk, kontur, rotasi, gap, dan pemeriksaan tetangga. |
@@ -187,9 +192,11 @@ Repository menyediakan source VBA berupa code-behind UserForm, class module, dan
 | `src/modules/AADebug.bas` | Debug, profiling, dan diagnostik memori. |
 | `src/modules/AAProgress.bas` | Indikator tahap/detail/durasi, pembaruan bar, serta penguncian sementara jendela dokumen saat Process. |
 | `src/modules/MRTargetBridge.bas` | Membuka form melalui `OpenMacro` dan menghubungkan callback MacroRunner. |
-| `Changelog.log` | Riwayat pengembangan dan catatan pengujian. |
+| `Changelog.log` | Riwayat perubahan. |
 
-Integrasi MacroRunner yang tersedia menghubungkan pembukaan/penutupan form serta pemberitahuan waktu mulai dan selesai Process. Source ini belum menyediakan `ValidateBehavior` atau `RunBehavior` untuk MacroBehavior otomatis.
+Integrasi MacroRunner mendukung pembukaan/penutupan form dan pencatatan durasi Process. Pengaturan serta penyusunan dijalankan melalui form AutoAlign.
+
+Preferensi pengguna tersimpan pada `HKCU\Software\VB and VBA Program Settings\RinCorelMacros\AutoAlignDefaults`, nilai `ProfilesV1`.
 
 ### Debug Opsional
 
@@ -207,11 +214,11 @@ Debug menyediakan informasi kandidat, waktu tahap Process, pemeriksaan gap/overl
 
 ## Status dan Batasan
 
-- Mode yang aktif adalah **Minimum** dan **Medium**. `optMaximum` dinonaktifkan dan `cmdOptimize` belum memiliki implementasi pemrosesan.
+- Process menyediakan mode **Minimum** dan **Medium**. `optMaximum` dinonaktifkan. Optimize bersifat eksperimental; periksa hasil pemadatannya sebelum digunakan.
 - Perencanaan dibatasi hingga **5000 objek per sumber**; satu Cut Line bersama juga mempunyai batas jumlah terkait.
 - Sumber harus mempunyai ukuran yang valid dan kurva yang dapat dibaca. Pada group yang perlu dibaca geometrinya, anggota tanpa kurva dapat menyebabkan validasi gagal.
 - Daftar mempertahankan ID sumber. Jika sumber dihapus, dipindah, atau berubah struktur, pulihkan sumber atau daftarkan ulang sebelum Process.
-- Hasil bergantung pada bentuk, jumlah sumber, model area, gap, Quantity, dan batas pencarian. Catatan pengujian pada Changelog mengacu pada kasus yang disebutkan di sana.
+- Hasil bergantung pada bentuk, jumlah sumber, model area, gap, Quantity, dan batas pencarian.
 
 ## Lisensi dan Masukan
 

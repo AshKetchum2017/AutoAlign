@@ -1,7 +1,5 @@
 Option Explicit
 
-Private Const AA_DEFAULT_AREA_WIDTH_MM As Double = 320#
-Private Const AA_DEFAULT_AREA_HEIGHT_MM As Double = 470#
 Private Const AA_PRESET_PAGE_WIDTH_MM As Double = 325#
 Private Const AA_PRESET_PAGE_HEIGHT_MM As Double = 485#
 
@@ -12,16 +10,22 @@ Private mVerticalGap As Double
 Private mHasHorizontalGap As Boolean
 Private mHasVerticalGap As Boolean
 Private mModelMode As Long
+Private mDefaultHorizontalGapMM As Double, mDefaultVerticalGapMM As Double
 
 Public Sub Configure(ByVal modelMode As Long, ByVal areaWidthText As String, _
                      ByVal areaHeightText As String, ByVal horizontalGapText As String, _
                      ByVal verticalGapText As String)
+    Dim preferences As AADefaultPreferences
     If modelMode <> AA_MODEL_CUSTOM And modelMode <> AA_MODEL_KISS_A And _
         modelMode <> AA_MODEL_DIE_A Then Err.Raise vbObjectError + 5324, _
         "AASettings", "Model area tidak dikenal."
     mModelMode = modelMode
-    mAreaWidthMM = AA_DEFAULT_AREA_WIDTH_MM
-    mAreaHeightMM = AA_DEFAULT_AREA_HEIGHT_MM
+    Set preferences = New AADefaultPreferences
+    preferences.Load
+    mAreaWidthMM = preferences.AreaWidthMM(modelMode)
+    mAreaHeightMM = preferences.AreaHeightMM(modelMode)
+    mDefaultHorizontalGapMM = preferences.GapHorizontalMM(modelMode)
+    mDefaultVerticalGapMM = preferences.GapVerticalMM(modelMode)
     If modelMode = AA_MODEL_CUSTOM And Len(Trim$(areaWidthText)) > 0 Then
         mAreaWidthMM = ParseDecimal(areaWidthText, "Lebar area")
     End If
@@ -61,17 +65,11 @@ Public Property Get PresetPageHeightMM() As Double
 End Property
 
 Public Property Get DefaultHorizontalGapMM() As Double
-    If mModelMode = AA_MODEL_CUSTOM Then
-        DefaultHorizontalGapMM = 0#
-    ElseIf mModelMode = AA_MODEL_DIE_A Then
-        DefaultHorizontalGapMM = 1.5
-    Else
-        DefaultHorizontalGapMM = 1#
-    End If
+    DefaultHorizontalGapMM = mDefaultHorizontalGapMM
 End Property
 
 Public Property Get DefaultVerticalGapMM() As Double
-    DefaultVerticalGapMM = DefaultHorizontalGapMM
+    DefaultVerticalGapMM = mDefaultVerticalGapMM
 End Property
 
 Public Property Get DefaultZigZagVerticalFactor() As Double
@@ -107,7 +105,7 @@ Public Property Get VerticalGap() As Double
     VerticalGap = mVerticalGap
 End Property
 
-Private Function ParseDecimal(ByVal rawText As String, ByVal fieldName As String) As Double
+Friend Function ParseDecimal(ByVal rawText As String, ByVal fieldName As String) As Double
     Dim numberText As String
     Dim character As String
     Dim digitCount As Long
