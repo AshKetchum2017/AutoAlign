@@ -211,6 +211,12 @@ NextPairPattern:
             If Len(buildError) > 0 Then AADebugWrite "Medium", candidateLabel & " -> " & buildError
             Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
                 sourceDocument, sharedPlanner, candidateLabel)
+            If designCount = 1 Then
+                If quantities(firstIndex) < 0 And models(firstIndex).IsRectangle Then
+                    Set candidate = RefillCenteredRectangle(candidate, models(firstIndex), _
+                        forbidden, settings, candidateLabel)
+                End If
+            End If
             ConsiderCandidate candidate, best, candidateLabel, bestLabel, sharedPlanner
             If capacityTarget > 0 Then
                 If Not candidate Is Nothing Then
@@ -351,6 +357,94 @@ Private Function FinalizeCandidate(ByVal candidate As AALayoutPlan, ByRef models
     End If
     AADebugStageEnd "finalize: " & label, perfStarted
     Set FinalizeCandidate = candidate
+End Function
+
+Private Function RefillCenteredRectangle(ByVal plan As AALayoutPlan, ByVal model As AAModel, _
+                                         ByVal forbidden As Collection, ByVal settings As AASettings, _
+                                         ByVal label As String) As AALayoutPlan
+    Dim result As AALayoutPlan, occupied As Collection, slots As Collection, unique As Object
+    Dim placed As AAPlacement, seed As AAPlacement, candidate As AAPlacement
+    Dim orientation As AARotationVariant, angles As Collection, angle As Variant, slot As Variant
+    Dim leftX As Double, rightX As Double, topY As Double, bottomY As Double, h As Double, v As Double
+    Dim i As Long, added As Long, probes As Long
+    Set RefillCenteredRectangle = plan
+    If plan Is Nothing Then Exit Function
+    If plan.AreaCount <> 1 Or plan.DesignCount = 0 Or _
+       plan.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit Function
+
+    Set result = New AALayoutPlan
+    result.Configure AA_MODE_MEDIUM
+    result.SetRegularPattern plan.HasRegularPattern
+    Set occupied = New Collection
+    For Each placed In plan.Placements
+        result.Add placed
+        occupied.Add placed
+        If occupied.Count = 1 Then
+            leftX = placed.Footprint.LeftX: rightX = placed.Footprint.RightX
+            topY = placed.Footprint.TopY: bottomY = placed.Footprint.BottomY
+        Else
+            leftX = MinValue(leftX, placed.Footprint.LeftX)
+            rightX = MaxValue(rightX, placed.Footprint.RightX)
+            topY = MaxValue(topY, placed.Footprint.TopY)
+            bottomY = MinValue(bottomY, placed.Footprint.BottomY)
+        End If
+    Next placed
+    model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+    Set angles = AnglesFor(model, 0#)
+    ' Slot mentah dapat terkena mark, lalu menjadi aman sesudah common shift.
+    ' Isi celah pola yang sudah ada tanpa menggeser objek atau memperluas bounds.
+    For Each angle In angles
+        Set orientation = model.RotationVariant(CDbl(angle))
+        Set slots = New Collection
+        Set unique = CreateObject("Scripting.Dictionary")
+        Set seed = Nothing
+        For Each placed In occupied
+            If Abs(placed.RotationDelta - CDbl(angle)) <= AA_EDGE_TOLERANCE_MM Then
+                Set seed = placed
+                unique(CStr(Round(placed.Footprint.LeftX, 4)) & "|" & _
+                       CStr(Round(placed.Footprint.TopY, 4))) = True
+            End If
+        Next placed
+        If Not seed Is Nothing Then
+            For Each placed In occupied
+                If Abs(placed.RotationDelta - CDbl(angle)) <= AA_EDGE_TOLERANCE_MM Then
+                    SeedNeighbors slots, unique, placed, orientation, h, v, False
+                    AddSlot slots, unique, placed.Footprint.LeftX, placed.CollisionFootprint.TopY + _
+                        MaxValue(v, placed.GapV) + orientation.ReferenceHeight + orientation.InsetY
+                End If
+            Next placed
+            Set slots = SortedSlots(slots)
+            i = 1
+            Do While i <= slots.Count
+                AAProgressPulse
+                slot = slots(i)
+                If CDbl(slot(0)) >= leftX - AA_EDGE_TOLERANCE_MM And _
+                   CDbl(slot(0)) + orientation.Width <= rightX + AA_EDGE_TOLERANCE_MM And _
+                   CDbl(slot(1)) <= topY + AA_EDGE_TOLERANCE_MM And _
+                   CDbl(slot(1)) - orientation.Height >= bottomY - AA_EDGE_TOLERANCE_MM Then
+                    probes = probes + 1
+                    Set candidate = TryExactSlot(orientation, seed.DesignIndex, seed.CutIndex, _
+                        seed.AreaIndex, CDbl(slot(0)), CDbl(slot(1)), occupied, forbidden, settings, h, v)
+                    If Not candidate Is Nothing Then
+                        If Not seed.CreatesCutLine Then candidate.SuppressCutLine
+                        result.Add candidate: occupied.Add candidate: added = added + 1
+                        AADebugWrite "Refill", label & "; angle=" & CStr(angle) & _
+                            "; x/y=" & Format$(slot(0), "0.000000") & "/" & Format$(slot(1), "0.000000")
+                        If result.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit Do
+                        SeedNeighbors slots, unique, candidate, orientation, h, v, False
+                        AddSlot slots, unique, candidate.Footprint.LeftX, candidate.CollisionFootprint.TopY + _
+                            MaxValue(v, candidate.GapV) + orientation.ReferenceHeight + orientation.InsetY
+                    End If
+                End If
+                i = i + 1
+            Loop
+        End If
+        If result.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit For
+    Next angle
+    AADebugWrite "Refill", label & "; added=" & CStr(added) & "; probes=" & CStr(probes)
+    If added > 0 Then
+        If ValidPlan(result, forbidden, settings, label & " refill") Then Set RefillCenteredRectangle = result
+    End If
 End Function
 
 Private Function CompactPlan(ByVal plan As AALayoutPlan, ByRef models() As AAModel, _

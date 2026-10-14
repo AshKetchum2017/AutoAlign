@@ -185,3 +185,6 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 [Process: Close/Cancel - hasil uji diterima]
 + Close berubah menjadi Cancel selama pemrosesan. Pembatalan ditangani pada checkpoint berikutnya, lalu form tetap terbuka dan tombol kembali menjadi Close setelah pemulihan.
 ~ Penguncian window dokumen menjaga form tetap responsif terhadap klik Cancel.
+
+[Medium: pengisian ulang slot rectangle - hasil uji diterima]
+~ Mengisi kembali celah rectangle yang menjadi aman setelah pemusatan, tanpa menggeser objek yang sudah terpasang atau memperbesar susunan. Berlaku untuk satu Design rectangle dengan Quantity tak terbatas dalam satu container.
