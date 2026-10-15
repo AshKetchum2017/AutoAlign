@@ -9,7 +9,8 @@ Private Const AA_OPTIMIZE_LINE_TOLERANCE_MM As Double = 0.001
 Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
                ByVal areaWidthText As String, ByVal areaHeightText As String, _
                ByVal horizontalGapText As String, ByVal verticalGapText As String, _
-               ByRef completed As Boolean, ByRef feedback As String, ByRef feedbackStyle As VbMsgBoxStyle)
+               ByRef completed As Boolean, ByRef feedback As String, ByRef feedbackStyle As VbMsgBoxStyle, _
+               Optional ByVal layoutMode As Long = AA_MODE_MINIMUM)
     Dim settings As AASettings, planner As AAPlanner, forbidden As Collection
     Dim doc As Document, page As Page, selection As ShapeRange, root As Shape, cut As Shape
     Dim designs As New Collection, cuts As New Collection, batches As New Collection
@@ -19,10 +20,14 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim errorNumber As Long, errorSource As String, errorDescription As String, started As Double
     Dim cleanupError As String
     Dim cancelled As Boolean
+    Dim minimum As AAOptimizeMinimum
 
     completed = False: feedback = vbNullString: feedbackStyle = vbExclamation
     On Error GoTo Failed
+    If layoutMode <> AA_MODE_MINIMUM And layoutMode <> AA_MODE_MEDIUM Then _
+        Err.Raise vbObjectError + 5371, "AAOptimizeEngine", "Pilih mode Minimum atau Medium."
     AADebugOptimizeStart modelMode
+    AADebugWrite "Optimize", "mode=" & CStr(layoutMode)
     started = AADebugPerfBegin()
     If objects.Count = 0 Then Err.Raise vbObjectError + 5361, "AAOptimizeEngine", _
         "Daftarkan group susunan ke ListBox terlebih dahulu."
@@ -75,21 +80,33 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
                 "AAOptimizeEngine", "Susunan container Design tidak identik dalam toleransi template 1 mm."
         Next previous
         batch.Add layout: allLayouts.Add layout
-        If Not layout.Valid Then Err.Raise vbObjectError + 5366, "AAOptimizeEngine", _
-            "Susunan awal tidak memenuhi Area, Gap, atau zona mark. Tidak ada objek yang digeser."
+        If layoutMode = AA_MODE_MEDIUM Then
+            If Not layout.Valid Then Err.Raise vbObjectError + 5366, "AAOptimizeEngine", _
+                "Susunan awal tidak memenuhi Area, Gap, atau zona mark. Tidak ada objek yang digeser."
+        End If
     Next i
     AADebugStageEnd "Optimize prepare", started
     started = AADebugPerfBegin()
     For i = 1 To batches.Count
         Set batch = batches(i)
-        AAProgressStage "Merapatkan susunan", "Container " & CStr(i) & " / " & CStr(batches.Count)
-        Compact batch
+        If layoutMode = AA_MODE_MINIMUM Then
+            Set minimum = New AAOptimizeMinimum
+            minimum.Align batch
+        Else
+            AAProgressStage "Merapatkan susunan", "Container " & CStr(i) & " / " & CStr(batches.Count)
+            Compact batch
+        End If
     Next i
     AADebugStageEnd "Optimize compact", started
     AAProgressStage "Memvalidasi susunan"
     For Each layout In allLayouts
-        If Not layout.Valid Then Err.Raise vbObjectError + 5367, "AAOptimizeEngine", _
-            "Rencana Optimize gagal validasi. Tidak ada objek yang digeser."
+        If layoutMode = AA_MODE_MINIMUM Then
+            If Not layout.MinimumValid Then Err.Raise vbObjectError + 5367, "AAOptimizeEngine", _
+                "Alignment Minimum tidak memenuhi Gap, Area, atau zona mark. Susunan awal dipertahankan."
+        Else
+            If Not layout.Valid Then Err.Raise vbObjectError + 5367, "AAOptimizeEngine", _
+                "Rencana Optimize gagal validasi. Tidak ada objek yang digeser."
+        End If
     Next layout
     AAProgressStage "Menerapkan pergeseran"
     mutationStarted = True
@@ -103,7 +120,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Next i
     AAProgressStage "Memeriksa hasil aktual"
     For Each layout In allLayouts
-        If Not layout.AppliedValid Then Err.Raise vbObjectError + 5369, "AAOptimizeEngine", _
+        If Not layout.AppliedValid(layoutMode = AA_MODE_MINIMUM) Then Err.Raise vbObjectError + 5369, "AAOptimizeEngine", _
             "Hasil pergeseran tidak lolos validasi aktual. Posisi semula dipulihkan."
     Next layout
     AAProgressCheckCancelled

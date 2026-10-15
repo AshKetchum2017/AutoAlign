@@ -188,3 +188,9 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Medium: pengisian ulang slot rectangle - hasil uji diterima]
 ~ Mengisi kembali celah rectangle yang menjadi aman setelah pemusatan, tanpa menggeser objek yang sudah terpasang atau memperbesar susunan. Berlaku untuk satu Design rectangle dengan Quantity tak terbatas dalam satu container.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-15
+[Optimize: Minimum dan Medium]
++ Minimum merapikan baris lalu kolom berdasarkan anchor dengan toleransi 25% ukuran acuan, sekaligus memperbesar atau merapatkan gap hingga aman.
+~ Optimize mengikuti pilihan Minimum/Medium; algoritma pemadatan sebelumnya ditempatkan pada Medium. Minimum mencatat kelompok sebelum pergeseran dan membatalkan operasi dengan pesan bila posisi aman tidak ditemukan.

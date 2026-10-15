@@ -165,6 +165,22 @@ Selama Process, input form dan interaksi dengan jendela dokumen dinonaktifkan se
 - Gunakan **Undo sekali** untuk membatalkan hasil Process sebelum mencoba mode lain dengan daftar sumber yang sama.
 - Satuan dokumen dan ruler yang dipakai sementara dipulihkan setelah Process.
 
+### Optimize susunan yang sudah ada
+
+`cmdOptimize` membaca anggota group container yang terdaftar di `lbxObjects`. Pilihan `optMinimum` atau `optMedium` menentukan algoritma Optimize. Jumlah, rotasi, struktur group, dan offset pasangan Design/Cut Line dipertahankan; Quantity tidak mengubah susunan pada operasi ini. Container yang hanya berisi Cut Line juga didukung.
+
+**Optimize Minimum** ditujukan untuk susunan baris/kolom sederhana:
+
+1. Catat keanggotaan baris dan kolom dari posisi awal. Pusat bounding box Cut Line menjadi acuan untuk pasangan; tanpa pasangan, gunakan pusat Design. Toleransi baris adalah **25% tinggi anchor**, sedangkan toleransi kolom **25% lebar anchor**. Anggota dibandingkan langsung dengan anchor tetap, tanpa pengelompokan berantai melalui tetangga.
+2. Proses baris dari pusat Y terbesar ke terkecil. Anchor tiap baris adalah objek paling kiri; pusat Y anggota mengikuti anchor. Objek berikutnya digeser ke kanan jika gap terlalu kecil atau ke kiri jika terlalu lebar, dengan urutan kiri ke kanan tetap dipakai.
+3. Pakai keanggotaan kolom yang sudah dicatat. Anchor paling atas pada tiap kolom mengikuti posisi hasil tahap baris. Pusat X anggota di bawahnya mengikuti anchor; pergeseran ke atas/bawah menyesuaikan gap vertikal. Koreksi ini dapat mengubah pusat Y anggota setelah tahap baris.
+
+Pencarian memakai pemeriksaan gap kontur dan collision yang sama dengan planner, serta memeriksa bounds Design dan zona mark. Gap awal yang terlalu kecil dapat diperbaiki; susunan boleh melebar atau meninggi sampai batas area. Minimum mempertahankan anchor tanpa memusatkan ulang seluruh hasil. Jika pencarian tidak menemukan posisi aman atau mencapai batas pencarian, proses dibatalkan dengan pesan dan posisi objek asli dipertahankan.
+
+**Optimize Medium** merapatkan kelompok baris, kolom, dan objek individual, kemudian mencoba memusatkan hasil jika valid. Susunan awal harus memenuhi area, gap, dan mark. Mode ini dapat dicoba untuk susunan dengan bentuk/ukuran campuran; hasilnya tetap perlu diperiksa. `optMaximum` dinonaktifkan.
+
+Satu Optimize memakai satu CommandGroup dan memulihkan unit dokumen/ruler serta seleksi. Seluruh rencana divalidasi sebelum perubahan diterapkan; hasil aktual diperiksa lagi dan posisi dipulihkan bila gagal. Cancel tersedia melalui lifecycle progres yang sama dengan Process. Pengguna mengonfirmasi compile VBE aman dan melaporkan pengujian awal susunan Straight standar. Rincian hasil gap/anchor, variasi bentuk, serta satu Undo belum dikonfirmasi untuk perubahan ini; simulasi dengan geometri/host mock tetap dibedakan dari hasil runtime tersebut.
+
 ## Cara menggunakan
 
 1. Buka dokumen dan halaman sumber di CorelDRAW, lalu buka `AutoAlignMenu`.
@@ -186,6 +202,7 @@ Repository menyediakan source VBA berupa code-behind UserForm, class module, dan
 | `src/classes/AAPresenter.cls`, `AAObjectStore.cls`, `AASettings.cls` | Penghubung form, daftar objek, dan validasi pengaturan. |
 | `src/classes/AADefaultPreferences.cls`, `src/forms/DefaultSettings.vba` | Preferensi Area/Gap per model, draft editor dan penyimpanan registry. |
 | `src/classes/AAProcessEngine.cls`, `AAResultBuilder.cls` | Menjalankan proses, menangani pasangan/kelompok, dan membangun hasil. |
+| `src/classes/AAOptimizeEngine.cls`, `AAOptimizeMinimum.cls`, `AAOptimizeLayout.cls` | Optimize Minimum/Medium, snapshot kelompok, validasi, dan penerapan translasi. Import sebagai Class Module dengan nama yang sesuai. |
 | `src/classes/AAPlanner.cls`, `AAMediumPlanner.cls`, `AAQuantityPlanner.cls` | Perencanaan Minimum, Medium, dan kuota kelompok. |
 | `src/classes/AAModel.cls`, `AAGeometry.cls`, `AAContour.cls`, `AAOccupiedIndex.cls` | Acuan bentuk, kontur, rotasi, gap, dan pemeriksaan tetangga. |
 | `src/modules/AAAlgorithm.bas` | Konstanta serta aturan layer dan Z-Order. |

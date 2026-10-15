@@ -114,6 +114,7 @@ End Sub
 
 Private Sub cmdOptimize_Click() ' Kontrol ini masih dalam tahap pengembangan.
     Dim ModelMode As Long, feedback As String, feedbackStyle As VbMsgBoxStyle
+    Dim layoutMode As Long
     Dim completed As Boolean
     Dim errorNumber As Long, errorSource As String, errorDescription As String
 
@@ -128,13 +129,15 @@ Private Sub cmdOptimize_Click() ' Kontrol ini masih dalam tahap pengembangan.
         MsgBox "Pilih model area terlebih dahulu.", vbExclamation, "Auto Align"
         Exit Sub
     End If
+    layoutMode = AA_MODE_MINIMUM
+    If optMedium.value Then layoutMode = AA_MODE_MEDIUM
     If mPresenter Is Nothing Then Set mPresenter = New AAPresenter
     mProcessRunning = True
     On Error GoTo OptimizeFailed
     AALockInputs
     AAProgressBegin Me
     mPresenter.OptimizeLayout ModelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
-        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), completed, feedback, feedbackStyle
+        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), completed, feedback, feedbackStyle, layoutMode
     AARefreshObjects
     AAProgressEnd completed
     AAUnlockInputs

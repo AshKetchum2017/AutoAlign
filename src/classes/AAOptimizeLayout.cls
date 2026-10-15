@@ -278,6 +278,59 @@ Public Function Valid() As Boolean
     Valid = True
 End Function
 
+' Minimum memeriksa tetangga yang sudah ditetapkan. Anggota yang masih
+' menunggu boleh memiliki gap awal terlalu kecil dan diperbaiki kemudian.
+Friend Sub BeginMinimumTrial(ByVal settled As Collection)
+    Dim i As Long
+    Set mOccupied = New Collection
+    For i = 1 To settled.Count
+        mOccupied.Add mCurrent(CLng(settled(i)))
+    Next i
+    mIndex.Clear
+End Sub
+
+Friend Function MinimumCanMove(ByVal index As Long, ByVal dx As Double, _
+                               ByVal dy As Double, ByVal checkAreaAndMarks As Boolean) As Boolean
+    Dim candidate As AAPlacement, other As AAPlacement, obstacle As AAGeometry
+    Dim box As AAGeometry, nearby As Collection, gap As Double
+    Set candidate = mCurrent(index).CopyForPlan
+    If dx <> 0# Or dy <> 0# Then candidate.Translate dx, dy
+    If checkAreaAndMarks Then
+        Set box = candidate.Footprint
+        If box.LeftX < -AA_EDGE_TOLERANCE_MM Or box.BottomY < -AA_EDGE_TOLERANCE_MM Or _
+           box.RightX > mSettings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
+           box.TopY > mSettings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then Exit Function
+        For Each obstacle In mForbidden
+            If candidate.CollisionFootprint.Overlaps(obstacle) Then Exit Function
+        Next obstacle
+    End If
+    Set box = candidate.CollisionFootprint
+    gap = candidate.GapH
+    If candidate.GapV > gap Then gap = candidate.GapV
+    Set nearby = mIndex.Nearby(mOccupied, box.LeftX, box.BottomY, box.RightX, box.TopY, gap)
+    For Each other In nearby
+        If other.DesignIndex <> index Then
+            If Not candidate.HasClearance(other) Then Exit Function
+            If box.Overlaps(other.CollisionFootprint) Then Exit Function
+        End If
+    Next other
+    MinimumCanMove = True
+End Function
+
+Friend Function MinimumValid() As Boolean
+    Dim indices As Collection, i As Long
+    Set indices = New Collection
+    For i = 1 To mCount
+        indices.Add i
+    Next i
+    BeginMinimumTrial indices
+    For i = 1 To mCount
+        AAProgressPulse
+        If Not MinimumCanMove(i, 0#, 0#, True) Then Exit Function
+    Next i
+    MinimumValid = True
+End Function
+
 Public Sub MovePlan(ByVal index As Long, ByVal dx As Double, ByVal dy As Double)
     mCurrent(index).Translate dx, dy
 End Sub
@@ -319,7 +372,7 @@ Public Sub Restore()
 End Sub
 
 ' Verifikasi ulang kurva aktual sesudah Move; origin area tetap snapshot awal.
-Public Function AppliedValid() As Boolean
+Public Function AppliedValid(Optional ByVal minimumAlignment As Boolean = False) As Boolean
     Dim i As Long, design As Shape, cut As Shape
     Dim geometry As AAGeometry, collision As AAGeometry, box As AAGeometry
     Dim orientation As AARotationVariant, h As Double, v As Double
@@ -350,7 +403,11 @@ Public Function AppliedValid() As Boolean
         orientation.Configure 0#, geometry, collision
         Set mCurrent(i) = orientation.MakePlacement(i, -1, 0, box.LeftX, box.TopY, h, v)
     Next i
-    AppliedValid = Valid
+    If minimumAlignment Then
+        AppliedValid = MinimumValid
+    Else
+        AppliedValid = Valid
+    End If
 End Function
 
 Private Function MidX(ByVal p As AAPlacement) As Double

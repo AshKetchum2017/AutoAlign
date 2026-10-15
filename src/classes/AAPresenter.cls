@@ -90,9 +90,10 @@ End Sub
 Public Sub OptimizeLayout(ByVal modelMode As Long, ByVal areaWidthText As String, _
                           ByVal areaHeightText As String, ByVal horizontalGapText As String, _
                           ByVal verticalGapText As String, ByRef completed As Boolean, _
-                          ByRef feedback As String, ByRef feedbackStyle As VbMsgBoxStyle)
+                          ByRef feedback As String, ByRef feedbackStyle As VbMsgBoxStyle, _
+                          Optional ByVal layoutMode As Long = AA_MODE_MINIMUM)
     Dim engine As AAOptimizeEngine
     Set engine = New AAOptimizeEngine
     engine.Run mStore, modelMode, areaWidthText, areaHeightText, horizontalGapText, _
-        verticalGapText, completed, feedback, feedbackStyle
+        verticalGapText, completed, feedback, feedbackStyle, layoutMode
 End Sub
