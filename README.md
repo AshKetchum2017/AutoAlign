@@ -234,6 +234,8 @@ Debug menyediakan informasi kandidat, waktu tahap Process, pemeriksaan gap/overl
 
 Pada pencarian kuota Medium, `Quota reject cache` mencatat pemeriksaan posisi gagal yang dipakai ulang (`hits`), pencarian tanpa kecocokan (`misses`), dan penggantian slot cache (`replacements`). Counter ini membantu membandingkan biaya trial pada kasus yang sama.
 
+`edge batches` mencatat pemakaian query indeks untuk kelompok segmen: `queries` adalah query gabungan, `prechecks` pemeriksaan awal per kelompok, dan `rechecks` verifikasi penolakan melalui query per segmen. `fallback cells/spread/dense` membedakan batas luas sel, pelebaran query, dan kepadatan kandidat; `fallback` juga mencakup kelompok yang terlalu pendek. `source edges` menghitung segmen sumber pada jalur tanpa fallback, termasuk pemeriksaan awal. `offered` adalah jumlah kandidat yang disediakan untuk pemeriksaan batch, bukan jumlah pasangan yang benar-benar dihitung jaraknya.
+
 Untuk membandingkan biaya fungsi jarak, import `AAGapBenchmark.bas`, lalu jalankan `AADebugBenchmarkGap` saat Process tidak berjalan. Helper memakai 4096 pasangan segmen sintetis yang tetap, memeriksa kesamaan hasil, melakukan pemanasan, lalu menjalankan delapan putaran dengan urutan A/B bergantian. A memakai rumus empat akar, B rumus satu akar. `median paired ratio B/A` di bawah 1 berarti B lebih cepat pada corpus tersebut; angka ini tidak mewakili percepatan Process atau pengujian kurva native.
 
 Benchmark tidak memerlukan dokumen atau seleksi. Hasil tampil di Immediate Window dan mengikuti file debug jika aktif. Contoh penyimpanan log:

@@ -11,6 +11,8 @@ Private Const AA_MAX_CELLS_PER_EDGE As Long = 256
 Private Const AA_MAX_QUERY_CELLS As Long = 4096
 Private Const AA_INDEX_MIN_EDGES As Long = 32
 Private Const AA_EDGE_GROUP_SIZE As Long = 16
+Private Const AA_EDGE_BATCH_MAX_CELLS As Long = 128
+Private Const AA_EDGE_BATCH_MAX_CANDIDATES As Long = 128
 
 Private mEdgeCount As Long
 ' Data Double dan batas segmen disiapkan sekali.
@@ -305,7 +307,7 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
                         ByVal otherDY As Double, ByVal gapH As Double, _
                         ByVal gapV As Double) As Boolean
     Dim index As Long, first As Long, last As Long, group As Long, groupSize As Long
-    Dim grouped As Boolean, skipGroup As Boolean
+    Dim grouped As Boolean, skipGroup As Boolean, useBatches As Boolean
     Dim checked As Long, skipped As Long, skippedEdges As Long, detailEdges As Long
     Dim ax As Double, ay As Double, bx As Double, by As Double
     Dim largestGap As Double, otherError As Double
@@ -353,6 +355,7 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
         Exit Function
     End If
     grouped = (mEdgeCount > AA_INDEX_MIN_EDGES)
+    useBatches = grouped And other.EdgeCount > AA_INDEX_MIN_EDGES
     groupSize = mEdgeCount
     If grouped Then
         If mEdgeGroupCount = 0 Then BuildEdgeGroups
@@ -378,6 +381,15 @@ Public Function ClearOf(ByVal other As AAContour, ByVal dx As Double, _
             If AADebugProfiling Then
                 skipped = skipped + 1
                 skippedEdges = skippedEdges + last - first + 1
+            End If
+        ElseIf useBatches Then
+            If Not other.IsClearOfEdgeGroup(mEdgeData, first, last, dx, dy, _
+                otherDX, otherDY, largestGap, detailEdges) Then
+                If AADebugProfiling Then
+                    AADebugEdgeGroups checked, skipped, skippedEdges, detailEdges
+                    AADebugPerfEnd AA_PERF_GAP, perfStarted
+                End If
+                Exit Function
             End If
         Else
             For index = first To last
@@ -423,17 +435,147 @@ Friend Function IsClearOfEdge(ByVal ax As Double, ByVal ay As Double, _
                              ByVal bx As Double, ByVal by As Double, _
                              ByVal errorMM As Double, ByVal dx As Double, ByVal dy As Double, _
                              ByVal largestGap As Double) As Boolean
-    Dim nearby As Collection, item As Variant, index As Long
+    Dim nearby As Collection
     Dim minX As Double, minY As Double, maxX As Double, maxY As Double
-    Dim cx As Double, cy As Double, ex As Double, ey As Double
-    Dim searchAllowance As Double, allowance As Double, edgeError As Double
-    Dim vx As Double, vy As Double, distance As Double
+    Dim searchAllowance As Double
     minX = MinValue(ax, bx): maxX = MaxValue(ax, bx)
     minY = MinValue(ay, by): maxY = MaxValue(ay, by)
     searchAllowance = largestGap + errorMM + mMaxError
     Set nearby = CandidateEdgeIndexes(minX - dx - searchAllowance, _
         minY - dy - searchAllowance, maxX - dx + searchAllowance, _
         maxY - dy + searchAllowance)
+    IsClearOfEdge = ClearOfEdgeCandidates(nearby, ax, ay, bx, by, minX, minY, maxX, maxY, _
+        errorMM, dx, dy, largestGap, True)
+End Function
+
+' Union query memakai batas tiap query lama persis, termasuk urutan operasi
+' translasi/error. Semua ID lama termasuk dalam superset; data tidak digeser.
+Friend Function IsClearOfEdgeGroup(ByRef data() As Double, ByVal first As Long, _
+                                  ByVal last As Long, ByVal sourceDX As Double, _
+                                  ByVal sourceDY As Double, ByVal dx As Double, _
+                                  ByVal dy As Double, ByVal gap As Double, _
+                                  ByRef detailEdges As Long) As Boolean
+    Dim world(0 To 9, 0 To AA_EDGE_GROUP_SIZE - 1) As Double
+    Dim nearby As Collection, index As Long, slot As Long, active As Long, processed As Long
+    Dim leftX As Double, rightX As Double, bottomY As Double, topY As Double
+    Dim queryLeft As Double, queryRight As Double, queryBottom As Double, queryTop As Double
+    Dim allowance As Double, cells As Double, singleCells As Double
+    Dim usedQuery As Boolean, fallback As Boolean, rechecks As Long, reason As Long, prechecks As Long
+    Dim offered As Double
+    If last - first < 1 Or last - first >= AA_EDGE_GROUP_SIZE Or _
+       mEdgeCount <= AA_INDEX_MIN_EDGES Then GoTo SingleEdges
+    ' Hindari menyiapkan union bila segmen pertama langsung menolak gap.
+    prechecks = 1: processed = 1
+    If Not IsClearOfEdge(data(0, first) + sourceDX, data(1, first) + sourceDY, _
+        data(2, first) + sourceDX, data(3, first) + sourceDY, data(4, first), _
+        dx, dy, gap) Then GoTo GroupDone
+    first = first + 1
+    If first = last Then GoTo SingleEdges
+    For index = first To last
+        slot = index - first
+        world(0, slot) = data(0, index) + sourceDX: world(1, slot) = data(1, index) + sourceDY
+        world(2, slot) = data(2, index) + sourceDX: world(3, slot) = data(3, index) + sourceDY
+        world(4, slot) = MinValue(world(0, slot), world(2, slot))
+        world(5, slot) = MinValue(world(1, slot), world(3, slot))
+        world(6, slot) = MaxValue(world(0, slot), world(2, slot))
+        world(7, slot) = MaxValue(world(1, slot), world(3, slot))
+        world(8, slot) = data(4, index)
+        allowance = gap + world(8, slot) + mMaxError
+        leftX = world(4, slot) - dx - allowance: rightX = world(6, slot) - dx + allowance
+        bottomY = world(5, slot) - dy - allowance: topY = world(7, slot) - dy + allowance
+        ' Query lama keluar sebelum menghitung sel jika di luar bounds kontur.
+        If leftX <= mMaxX And rightX >= mMinX And bottomY <= mMaxY And topY >= mMinY Then
+            world(9, slot) = 1#
+            If active = 0 Then
+                queryLeft = leftX: queryRight = rightX: queryBottom = bottomY: queryTop = topY
+            Else
+                queryLeft = MinValue(queryLeft, leftX): queryRight = MaxValue(queryRight, rightX)
+                queryBottom = MinValue(queryBottom, bottomY): queryTop = MaxValue(queryTop, topY)
+            End If
+            active = active + 1
+            singleCells = singleCells + _
+                (Int(rightX / AA_INDEX_CELL_MM) - Int(leftX / AA_INDEX_CELL_MM) + 1#) * _
+                (Int(topY / AA_INDEX_CELL_MM) - Int(bottomY / AA_INDEX_CELL_MM) + 1#)
+        End If
+    Next index
+    If active = 0 Then
+        processed = processed + last - first + 1
+        IsClearOfEdgeGroup = True
+        GoTo GroupDone
+    End If
+    cells = (Int(queryRight / AA_INDEX_CELL_MM) - Int(queryLeft / AA_INDEX_CELL_MM) + 1#) * _
+        (Int(queryTop / AA_INDEX_CELL_MM) - Int(queryBottom / AA_INDEX_CELL_MM) + 1#)
+    ' Batasi luas query dan pelebaran terhadap rata-rata query per segmen.
+    If cells > AA_EDGE_BATCH_MAX_CELLS Then
+        reason = 1
+        GoTo SingleEdges
+    End If
+    If cells * active > 2# * singleCells Then
+        reason = 2
+        GoTo SingleEdges
+    End If
+    usedQuery = True
+    Set nearby = CandidateEdgeIndexes(queryLeft, queryBottom, queryRight, queryTop)
+    If nearby.Count > AA_EDGE_BATCH_MAX_CANDIDATES Then
+        reason = 3
+        GoTo SingleEdges
+    End If
+    For index = first To last
+        processed = processed + 1: slot = index - first
+        If world(9, slot) <> 0# Then
+            offered = offered + nearby.Count
+            If Not ClearOfEdgeCandidates(nearby, world(0, slot), world(1, slot), _
+                world(2, slot), world(3, slot), world(4, slot), world(5, slot), _
+                world(6, slot), world(7, slot), world(8, slot), dx, dy, gap, False) Then
+                ' Urutan union dapat berbeda. Verifikasi lewat query lama agar
+                ' keputusan batas dan witness blocker pertama tetap identik.
+                rechecks = rechecks + 1
+                If Not IsClearOfEdge(world(0, slot), world(1, slot), world(2, slot), _
+                    world(3, slot), world(8, slot), dx, dy, gap) Then GoTo GroupDone
+            End If
+        End If
+    Next index
+    IsClearOfEdgeGroup = True
+    GoTo GroupDone
+SingleEdges:
+    fallback = True
+    For index = first To last
+        processed = processed + 1
+        If Not IsClearOfEdge(data(0, index) + sourceDX, data(1, index) + sourceDY, _
+            data(2, index) + sourceDX, data(3, index) + sourceDY, data(4, index), _
+            dx, dy, gap) Then GoTo GroupDone
+    Next index
+    IsClearOfEdgeGroup = True
+GroupDone:
+    If AADebugProfiling Then
+        detailEdges = detailEdges + processed
+        AADebugEdgeBatchGroups = AADebugEdgeBatchGroups + 1#
+        If fallback Then AADebugEdgeBatchFallbacks = AADebugEdgeBatchFallbacks + 1#
+        If reason = 1 Then AADebugEdgeBatchWide = AADebugEdgeBatchWide + 1#
+        If reason = 2 Then AADebugEdgeBatchSpread = AADebugEdgeBatchSpread + 1#
+        If reason = 3 Then AADebugEdgeBatchDense = AADebugEdgeBatchDense + 1#
+        If usedQuery Then AADebugEdgeBatchQueries = AADebugEdgeBatchQueries + 1#
+        AADebugEdgeBatchRechecks = AADebugEdgeBatchRechecks + rechecks
+        AADebugEdgeBatchPrechecks = AADebugEdgeBatchPrechecks + prechecks
+        If Not fallback Then
+            AADebugEdgeBatchEdges = AADebugEdgeBatchEdges + processed
+            AADebugEdgeBatchOffered = AADebugEdgeBatchOffered + offered
+        End If
+    End If
+End Function
+
+' Predikat detail bersama untuk query tunggal dan union; threshold tetap mm.
+Private Function ClearOfEdgeCandidates(ByVal nearby As Collection, _
+                                       ByVal ax As Double, ByVal ay As Double, _
+                                       ByVal bx As Double, ByVal by As Double, _
+                                       ByVal minX As Double, ByVal minY As Double, _
+                                       ByVal maxX As Double, ByVal maxY As Double, _
+                                       ByVal errorMM As Double, ByVal dx As Double, _
+                                       ByVal dy As Double, ByVal largestGap As Double, _
+                                       ByVal reportWitness As Boolean) As Boolean
+    Dim item As Variant, index As Long
+    Dim edgeError As Double, allowance As Double, cx As Double, cy As Double, ex As Double, ey As Double
+    Dim distance As Double, vx As Double, vy As Double
     For Each item In nearby
         index = CLng(item)
         edgeError = mEdgeData(4, index)
@@ -447,14 +589,14 @@ Friend Function IsClearOfEdge(ByVal ax As Double, ByVal ay As Double, _
             distance = EdgeDistance(ax, ay, bx, by, cx, cy, ex, ey, vx, vy)
             If largestGap > 0# Then
                 If distance < largestGap + errorMM + edgeError - AA_DISTANCE_TOLERANCE_MM Then
-                    If AADebugGapWitnessActive Then AADebugGapEdgeRejected distance, largestGap, errorMM, _
+                    If reportWitness And AADebugGapWitnessActive Then AADebugGapEdgeRejected distance, largestGap, errorMM, _
                         edgeError, AA_DISTANCE_TOLERANCE_MM, ax, ay, bx, by, cx, cy, ex, ey
                     Exit Function
                 End If
             End If
         End If
     Next item
-    IsClearOfEdge = True
+    ClearOfEdgeCandidates = True
 End Function
 
 Private Function EdgeDistance(ByVal ax As Double, ByVal ay As Double, _

@@ -194,3 +194,19 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 [Optimize: Minimum dan Medium]
 + Minimum merapikan baris lalu kolom berdasarkan anchor dengan toleransi 25% ukuran acuan, sekaligus memperbesar atau merapatkan gap hingga aman.
 ~ Optimize mengikuti pilihan Minimum/Medium; algoritma pemadatan sebelumnya ditempatkan pada Medium. Minimum mencatat kelompok sebelum pergeseran dan membatalkan operasi dengan pesan bila posisi aman tidak ditemukan.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-17
+[Medium: cache penolakan trial kuota dan interval progres]
++ Trial kapasitas memakai ulang penolakan posisi selama daftar penempatan hanya bertambah; urutan pencarian dan aturan gap tetap dipertahankan.
+~ Interval pembaruan progres dan pemrosesan event menjadi 200 ms pada checkpoint.
+
+[Kontur: perhitungan jarak segmen]
+~ Mengurangi operasi akar kuadrat pada perhitungan jarak antarsegmen kontur; satuan mm, toleransi, galat chord, dan aturan gap tetap dipertahankan.
+
+[Debug: benchmark fungsi jarak]
++ AADebugBenchmarkGap membandingkan rumus jarak lama/baru melalui Immediate Window dengan corpus sintetis tetap, urutan bergantian, dan ringkasan median; hasil dapat disimpan melalui file debug.
+
+[Kontur: query indeks per kelompok]
++ Debug menampilkan pemakaian batch, fallback, pemeriksaan awal, dan verifikasi ulang penolakan gap.
+~ Segmen berdekatan dapat memakai satu kumpulan kandidat indeks dengan batas luas/kepadatan; penolakan diverifikasi melalui jalur per segmen untuk menjaga keputusan dan penghalang pertama.

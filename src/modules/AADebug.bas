@@ -21,6 +21,11 @@ Public AADebugProfiling As Boolean
 Public AADebugGapWitnessActive As Boolean
 ' Counter ditambah langsung di query agar tidak ada call/printing per query.
 Public AADebugQueryCacheHits As Double, AADebugQueryCacheMisses As Double
+Public AADebugEdgeBatchGroups As Double, AADebugEdgeBatchFallbacks As Double
+Public AADebugEdgeBatchQueries As Double, AADebugEdgeBatchRechecks As Double
+Public AADebugEdgeBatchPrechecks As Double
+Public AADebugEdgeBatchEdges As Double, AADebugEdgeBatchOffered As Double
+Public AADebugEdgeBatchWide As Double, AADebugEdgeBatchSpread As Double, AADebugEdgeBatchDense As Double
 Private mPerfSeconds(1 To 5) As Double, mPerfCalls(1 To 5) As Double
 Private mClockFrequency As Currency, mClockStart As Currency
 Private mClockTimerStart As Double, mClockUsesCounter As Boolean
@@ -248,6 +253,11 @@ Private Sub AADebugPerfReset()
         mPerfCalls(i) = 0#: mPerfSeconds(i) = 0#
     Next i
     AADebugQueryCacheHits = 0#: AADebugQueryCacheMisses = 0#
+    AADebugEdgeBatchGroups = 0#: AADebugEdgeBatchFallbacks = 0#
+    AADebugEdgeBatchQueries = 0#: AADebugEdgeBatchRechecks = 0#
+    AADebugEdgeBatchPrechecks = 0#
+    AADebugEdgeBatchEdges = 0#: AADebugEdgeBatchOffered = 0#
+    AADebugEdgeBatchWide = 0#: AADebugEdgeBatchSpread = 0#: AADebugEdgeBatchDense = 0#
     mGroupsChecked = 0#: mGroupsSkipped = 0#
     mGroupEdgesSkipped = 0#: mGroupEdgesDetailed = 0#
     mOccupiedQueries = 0#: mOccupiedAvailable = 0#: mOccupiedOffered = 0#
@@ -372,6 +382,15 @@ Public Sub AADebugPerfFinish(ByVal status As String)
         "; edges detailed=" & Format$(mGroupEdgesDetailed, "0")
     AADebugWrite "Perf", "edge query cache (indexed): hits=" & Format$(AADebugQueryCacheHits, "0") & _
         "; misses=" & Format$(AADebugQueryCacheMisses, "0")
+    AADebugWrite "Perf", "edge batches: groups=" & Format$(AADebugEdgeBatchGroups, "0") & _
+        "; fallback=" & Format$(AADebugEdgeBatchFallbacks, "0") & _
+        "; queries=" & Format$(AADebugEdgeBatchQueries, "0") & _
+        "; prechecks=" & Format$(AADebugEdgeBatchPrechecks, "0") & _
+        "; rechecks=" & Format$(AADebugEdgeBatchRechecks, "0") & _
+        "; source edges=" & Format$(AADebugEdgeBatchEdges, "0") & _
+        "; offered=" & Format$(AADebugEdgeBatchOffered, "0") & _
+        "; fallback cells/spread/dense=" & Format$(AADebugEdgeBatchWide, "0") & "/" & _
+        Format$(AADebugEdgeBatchSpread, "0") & "/" & Format$(AADebugEdgeBatchDense, "0")
     AADebugWrite "Perf", "occupied index: queries=" & Format$(mOccupiedQueries, "0") & _
         "; builds=" & Format$(mOccupiedBuilds, "0") & "; added=" & Format$(mOccupiedAdded, "0") & _
         "; cache hits=" & Format$(mOccupiedCacheHits, "0") & "; fallbacks=" & Format$(mOccupiedFallbacks, "0") & _
