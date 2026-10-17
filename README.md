@@ -152,6 +152,8 @@ Indikator progres tampil tanpa perlu mengaktifkan Debug:
 
 Saat pencarian susunan, bar bergerak sebagai indikator aktivitas; bar ini **bukan persentase keseluruhan Process**. Pada tahap yang mempunyai total, seperti membaca geometri dan membuat objek hasil, isi bar mengikuti jumlah yang telah diproses.
 
+Pembaruan panel dan pemrosesan event memakai interval 200 ms pada checkpoint. Operasi CorelDRAW yang sedang berjalan dapat membuat jeda aktual lebih panjang.
+
 Selama Process, input form dan interaksi dengan jendela dokumen dinonaktifkan sementara. Tombol **Close** berubah menjadi **Cancel** untuk meminta pembatalan. Permintaan diproses pada checkpoint berikutnya; operasi CorelDRAW yang sedang berjalan perlu selesai terlebih dahulu. Selama pemulihan, tombol menampilkan **Membatalkan...**. Setelah pembatalan, perubahan Process dipulihkan, form tetap terbuka, dan tombol kembali menjadi **Close**. Saat tidak ada proses berjalan, **Close** menutup form.
 
 ### Hasil, Layer, dan Undo
@@ -207,6 +209,7 @@ Repository menyediakan source VBA berupa code-behind UserForm, class module, dan
 | `src/classes/AAModel.cls`, `AAGeometry.cls`, `AAContour.cls`, `AAOccupiedIndex.cls` | Acuan bentuk, kontur, rotasi, gap, dan pemeriksaan tetangga. |
 | `src/modules/AAAlgorithm.bas` | Konstanta serta aturan layer dan Z-Order. |
 | `src/modules/AADebug.bas` | Debug, profiling, dan diagnostik memori. |
+| `src/modules/AAGapBenchmark.bas` | Benchmark diagnostik fungsi jarak lama/baru melalui Immediate Window. Import sebagai Standard Module bernama `AAGapBenchmark`. |
 | `src/modules/AAProgress.bas` | Indikator tahap/detail/durasi, pembaruan bar, serta penguncian sementara jendela dokumen saat Process. |
 | `src/modules/MRTargetBridge.bas` | Membuka form melalui `OpenMacro` dan menghubungkan callback MacroRunner. |
 | `Changelog.log` | Riwayat perubahan. |
@@ -228,6 +231,19 @@ AADebugOff          ' Matikan debug dan tutup file log
 ```
 
 Debug menyediakan informasi kandidat, waktu tahap Process, pemeriksaan gap/overlap, penempatan, dan snapshot memori proses CorelDRAW. `AADebugFileOn` juga menerima path file dan menambahkan log ke isi yang sudah ada.
+
+Pada pencarian kuota Medium, `Quota reject cache` mencatat pemeriksaan posisi gagal yang dipakai ulang (`hits`), pencarian tanpa kecocokan (`misses`), dan penggantian slot cache (`replacements`). Counter ini membantu membandingkan biaya trial pada kasus yang sama.
+
+Untuk membandingkan biaya fungsi jarak, import `AAGapBenchmark.bas`, lalu jalankan `AADebugBenchmarkGap` saat Process tidak berjalan. Helper memakai 4096 pasangan segmen sintetis yang tetap, memeriksa kesamaan hasil, melakukan pemanasan, lalu menjalankan delapan putaran dengan urutan A/B bergantian. A memakai rumus empat akar, B rumus satu akar. `median paired ratio B/A` di bawah 1 berarti B lebih cepat pada corpus tersebut; angka ini tidak mewakili percepatan Process atau pengujian kurva native.
+
+Benchmark tidak memerlukan dokumen atau seleksi. Hasil tampil di Immediate Window dan mengikuti file debug jika aktif. Contoh penyimpanan log:
+
+```vb
+AADebugOn
+AADebugFileOn Environ$("TEMP") & "\AutoAlign-GapBenchmark.txt"
+AADebugBenchmarkGap
+AADebugOff
+```
 
 ## Status dan Batasan
 

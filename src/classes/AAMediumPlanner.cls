@@ -49,7 +49,17 @@ Private mGapCacheReady As Boolean, mGapCacheDisabled As Boolean
 Private mGapHits As Double, mGapMisses As Double, mGapBypasses As Double
 Private mGapCollisions As Double, mGapStored As Long
 
+' Hanya FillArea pada trial kapasitas: occupied tidak berubah kecuali append.
+' Penolakan lama tetap benar setelah append; blocker pertama juga tetap sama.
+Private Const AA_QUOTA_REJECT_CACHE_SIZE As Long = 32749
+Private mRejectOrientations() As AARotationVariant, mRejectBlockers() As AAPlacement
+Private mRejectKeys() As Double, mRejectUsedSlots() As Long, mRejectUsed As Long
+Private mRejectOccupied As Collection, mRejectOccupiedCount As Long
+Private mRejectReady As Boolean, mRejectDisabled As Boolean, mCapacitySearch As Boolean
+Private mRejectHits As Double, mRejectMisses As Double, mRejectCollisions As Double
+
 Friend Sub BeginQuotaSearch()
+    EndQuotaRejectCache
     Set mQuotaFills = CreateObject("Scripting.Dictionary")
     mCachedPlacements = 0
     Erase mGapOrientations: Erase mGapOthers: Erase mGapKeys: Erase mGapResults
@@ -75,8 +85,10 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     Dim perfStarted As Double, capacityValidated As Boolean
     mFillHits = 0: mFillMisses = 0: mFillReused = 0
     mGapHits = 0#: mGapMisses = 0#: mGapBypasses = 0#: mGapCollisions = 0#
+    mRejectHits = 0#: mRejectMisses = 0#: mRejectCollisions = 0#
     ' Capacity hanya untuk quota finite pada satu area; caller biasa memakai -1.
     If Not singleAreaOnly Then capacityTarget = -1
+    mCapacitySearch = (capacityTarget > 0)
     Set forbidden = sharedPlanner.ForbiddenFor(settings, sourceDocument)
     perfStarted = AADebugPerfBegin()
     On Error Resume Next
@@ -314,6 +326,10 @@ BuildComplete:
         "; collisions=" & Format$(mGapCollisions, "0") & "; bypass=" & Format$(mGapBypasses, "0") & _
         "; stored=" & CStr(mGapStored) & "; slots=" & CStr(AA_QUOTA_GAP_CACHE_SIZE) & _
         "; buckets=" & CStr(AA_QUOTA_GAP_BUCKETS) & "; ways=" & CStr(AA_QUOTA_GAP_WAYS)
+    If Not mQuotaFills Is Nothing Then AADebugWrite "Quota reject cache", _
+        "hits=" & Format$(mRejectHits, "0") & "; misses=" & Format$(mRejectMisses, "0") & _
+        "; replacements=" & Format$(mRejectCollisions, "0") & _
+        "; slots=" & CStr(AA_QUOTA_REJECT_CACHE_SIZE)
     Set mOccupiedIndex = Nothing
     Set Build = best
 End Function
@@ -894,6 +910,7 @@ Private Function FillQuotaArea(ByVal key As String, ByVal result As AALayoutPlan
                                ByVal zigZag As Boolean) As Long
     Dim entry As Collection, saved As Collection, placed As AAPlacement
     Dim previousCount As Long, startCount As Long, added As Long, i As Long
+    Dim errorNumber As Long, errorSource As String, errorDescription As String
     If mQuotaFills.Exists(key) Then
         Set entry = mQuotaFills(key)
         Set saved = entry(1)
@@ -919,8 +936,12 @@ Private Function FillQuotaArea(ByVal key As String, ByVal result As AALayoutPlan
     End If
     mFillMisses = mFillMisses + 1
     startCount = result.DesignCount
+    On Error GoTo FillFailed
+    If mCapacitySearch Then BeginQuotaRejectCache occupied
     added = FillArea(result, model, designIndex, cutIndex, 0, occupied, forbidden, _
         settings, limit, firstAngle, zigZag)
+    EndQuotaRejectCache
+    On Error GoTo 0
     ' Error FillArea tidak masuk cache. Batas memori tidak memotong pencarian;
     ' entry yang tidak tertampung dihitung ulang dengan jalur biasa.
     If mCachedPlacements - previousCount + added <= AA_MAX_CACHED_PLACEMENTS Then
@@ -937,6 +958,13 @@ Private Function FillQuotaArea(ByVal key As String, ByVal result As AALayoutPlan
         mCachedPlacements = mCachedPlacements - previousCount + added
     End If
     FillQuotaArea = added
+    Exit Function
+FillFailed:
+    errorNumber = Err.Number: errorSource = Err.Source: errorDescription = Err.Description
+    On Error Resume Next
+    EndQuotaRejectCache
+    On Error GoTo 0
+    Err.Raise errorNumber, errorSource, errorDescription
 End Function
 
 Private Function AnglesFor(ByVal model As AAModel, ByVal firstAngle As Double) As Collection
@@ -1454,7 +1482,30 @@ Private Function HasClearanceAt(ByVal orientation As AARotationVariant, ByVal x 
                                 ByVal h As Double, ByVal v As Double) As Boolean
     Dim placed As AAPlacement, other As AAGeometry, gap As Double
     Dim nearby As Collection, clear As Boolean
-    Dim leftX As Double, rightX As Double, topY As Double, bottomY As Double
+    Dim leftX As Double, rightX As Double, topY As Double, bottomY As Double, rejectSlot As Long
+    rejectSlot = -1
+    If Not mRejectOccupied Is Nothing Then
+        If mRejectOccupied Is occupied Then
+            If occupied.Count < mRejectOccupiedCount Then
+                EndQuotaRejectCache
+            Else
+                mRejectOccupiedCount = occupied.Count
+                rejectSlot = QuotaGapSlot(x, y, 0#, 0#, h, v, orientation.Angle, 0#)
+                If rejectSlot >= 0 Then
+                    rejectSlot = (rejectSlot \ AA_QUOTA_GAP_WAYS) Mod AA_QUOTA_REJECT_CACHE_SIZE
+                    If mRejectOrientations(rejectSlot) Is orientation Then
+                        If mRejectKeys(0, rejectSlot) = x And mRejectKeys(1, rejectSlot) = y And _
+                           mRejectKeys(2, rejectSlot) = h And mRejectKeys(3, rejectSlot) = v Then
+                            mRejectHits = mRejectHits + 1#
+                            AADebugGapRejected orientation, x, y, mRejectBlockers(rejectSlot), h, v
+                            Exit Function
+                        End If
+                    End If
+                    mRejectMisses = mRejectMisses + 1#
+                End If
+            End If
+        End If
+    End If
     leftX = x + orientation.InsetX: rightX = leftX + orientation.ReferenceWidth
     topY = y - orientation.InsetY: bottomY = topY - orientation.ReferenceHeight
     Set nearby = NearbyOccupied(occupied, leftX, bottomY, rightX, topY, MaxValue(h, v))
@@ -1469,12 +1520,63 @@ Private Function HasClearanceAt(ByVal orientation As AARotationVariant, ByVal x 
                 clear = QuotaClearanceAt(orientation, x, y, placed, h, v)
             End If
             If Not clear Then
+                If rejectSlot >= 0 Then
+                    If mRejectOrientations(rejectSlot) Is Nothing Then
+                        mRejectUsedSlots(mRejectUsed) = rejectSlot
+                        mRejectUsed = mRejectUsed + 1
+                    Else
+                        mRejectCollisions = mRejectCollisions + 1#
+                    End If
+                    Set mRejectOrientations(rejectSlot) = orientation
+                    Set mRejectBlockers(rejectSlot) = placed
+                    mRejectKeys(0, rejectSlot) = x: mRejectKeys(1, rejectSlot) = y
+                    mRejectKeys(2, rejectSlot) = h: mRejectKeys(3, rejectSlot) = v
+                End If
                 AADebugGapRejected orientation, x, y, placed, h, v
                 Exit Function
             End If
         End If
     Next placed
     HasClearanceAt = True
+End Function
+
+Private Sub BeginQuotaRejectCache(ByVal occupied As Collection)
+    EndQuotaRejectCache
+    If mRejectDisabled Then Exit Sub
+    If Not mRejectReady Then
+        If Not InitializeQuotaRejectCache() Then Exit Sub
+    End If
+    Set mRejectOccupied = occupied
+    mRejectOccupiedCount = occupied.Count
+End Sub
+
+Private Sub EndQuotaRejectCache()
+    Dim i As Long, slot As Long
+    For i = 0 To mRejectUsed - 1
+        slot = mRejectUsedSlots(i)
+        Set mRejectOrientations(slot) = Nothing
+        Set mRejectBlockers(slot) = Nothing
+    Next i
+    mRejectUsed = 0: mRejectOccupiedCount = 0
+    Set mRejectOccupied = Nothing
+End Sub
+
+Private Function InitializeQuotaRejectCache() As Boolean
+    On Error GoTo CacheUnavailable
+    ReDim mRejectOrientations(0 To AA_QUOTA_REJECT_CACHE_SIZE - 1)
+    ReDim mRejectBlockers(0 To AA_QUOTA_REJECT_CACHE_SIZE - 1)
+    ReDim mRejectKeys(0 To 3, 0 To AA_QUOTA_REJECT_CACHE_SIZE - 1)
+    ReDim mRejectUsedSlots(0 To AA_QUOTA_REJECT_CACHE_SIZE - 1)
+    mRejectReady = True
+    InitializeQuotaRejectCache = True
+    Exit Function
+CacheUnavailable:
+    mRejectDisabled = True: mRejectReady = False
+    On Error Resume Next
+    Erase mRejectOrientations: Erase mRejectBlockers
+    Erase mRejectKeys: Erase mRejectUsedSlots
+    Set mRejectOccupied = Nothing
+    mRejectUsed = 0
 End Function
 
 ' Cache hanya menahan kontur/orientasi milik models; tidak menahan placement

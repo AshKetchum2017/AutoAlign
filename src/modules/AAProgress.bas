@@ -17,7 +17,7 @@ Private Declare Function AAIsWindowEnabled Lib "user32" Alias "IsWindowEnabled" 
 Private mHostWindow As Long
 #End If
 
-Private Const AA_PROGRESS_INTERVAL As Double = 0.25
+Private Const AA_PROGRESS_INTERVAL As Double = 0.2
 Public Const AA_ERROR_CANCELLED As Long = vbObjectError + 5390
 Private mView As Object
 Private mPumping As Boolean

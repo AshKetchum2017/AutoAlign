@@ -473,28 +473,37 @@ Private Function EdgeDistance(ByVal ax As Double, ByVal ay As Double, _
             Exit Function
         End If
     End If
-    best = PointDistance(ax, ay, cx, cy, dx, dy, px, py)
+    ' Akar bersifat monoton: min(Sqr(d2)) = Sqr(min(d2)). Pilih jarak
+    ' kuadrat dahulu agar hanya satu akar diperlukan; hasil tetap dalam mm.
+    best = PointDistanceSquared(ax, ay, cx, cy, dx, dy, px, py)
     vx = ax - px: vy = ay - py
-    value = PointDistance(bx, by, cx, cy, dx, dy, px, py)
+    value = PointDistanceSquared(bx, by, cx, cy, dx, dy, px, py)
     If value < best Then best = value: vx = bx - px: vy = by - py
-    value = PointDistance(cx, cy, ax, ay, bx, by, px, py)
+    value = PointDistanceSquared(cx, cy, ax, ay, bx, by, px, py)
     If value < best Then best = value: vx = px - cx: vy = py - cy
-    value = PointDistance(dx, dy, ax, ay, bx, by, px, py)
+    value = PointDistanceSquared(dx, dy, ax, ay, bx, by, px, py)
     If value < best Then best = value: vx = px - dx: vy = py - dy
-    EdgeDistance = best
+    EdgeDistance = Sqr(best)
 End Function
 
 Private Function PointDistance(ByVal x As Double, ByVal y As Double, _
                                ByVal ax As Double, ByVal ay As Double, _
                                ByVal bx As Double, ByVal by As Double, _
                                ByRef px As Double, ByRef py As Double) As Double
+    PointDistance = Sqr(PointDistanceSquared(x, y, ax, ay, bx, by, px, py))
+End Function
+
+Private Function PointDistanceSquared(ByVal x As Double, ByVal y As Double, _
+                                      ByVal ax As Double, ByVal ay As Double, _
+                                      ByVal bx As Double, ByVal by As Double, _
+                                      ByRef px As Double, ByRef py As Double) As Double
     Dim length2 As Double, t As Double
     length2 = (bx - ax) ^ 2 + (by - ay) ^ 2
     If length2 > 0# Then t = ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / length2
     If t < 0# Then t = 0#
     If t > 1# Then t = 1#
     px = ax + t * (bx - ax): py = ay + t * (by - ay)
-    PointDistance = Sqr((x - px) ^ 2 + (y - py) ^ 2)
+    PointDistanceSquared = (x - px) ^ 2 + (y - py) ^ 2
 End Function
 
 Private Function MinValue(ByVal a As Double, ByVal b As Double) As Double
