@@ -8,6 +8,7 @@ Private mLockedControls As Collection, mEnabledStates As Collection
 Private mPresenter As AAPresenter
 Private mUpdatingQuantity As Boolean
 Private mUpdatingRotation As Boolean
+Private mUpdatingPair As Boolean
 Private mQuantityIndex As Long
 Private mHintReady As Boolean
 Private mUpdatingHint As Boolean
@@ -24,9 +25,90 @@ Private mDefaultPreferences As AADefaultPreferences
 Private mAreaModel As Long
 Private mCustomAreaWidth As String, mCustomAreaHeight As String
 
+Private Sub cmbCutPartner_Change()
+    Dim i As Long, cutID As Long
+    If mProcessRunning Or mUpdatingPair Or mUpdatingQuantity Or mUpdatingRotation Then Exit Sub
+    If mPresenter Is Nothing Then Exit Sub
+    If cmbCutPartner.ListIndex < 0 Then Exit Sub
+    cutID = CLng(cmbCutPartner.List(cmbCutPartner.ListIndex, 1))
+    If cutID < 0 Then Exit Sub ' Status Campuran/hilang bukan pilihan pasangan.
+    On Error GoTo InvalidPair
+    mUpdatingPair = True
+    For i = 0 To lbxObjects.ListCount - 1
+        If lbxObjects.selected(i) Then
+            If mPresenter.ObjectRoleAt(i) = AA_ROLE_DESIGN Then
+                mPresenter.SetObjectCutPartner i, cutID
+                lbxObjects.List(i) = mPresenter.ObjectListText(i)
+            End If
+        End If
+    Next i
+    mUpdatingPair = False
+    AAUpdatePairEditor
+    Exit Sub
+InvalidPair:
+    mUpdatingPair = False
+    MsgBox Err.description, vbExclamation, "Auto Align"
+    AAUpdatePairEditor
+End Sub
+
+Private Sub AAUpdatePairEditor()
+    Dim i As Long, commonID As Long, designCount As Long, mixed As Boolean
+    Dim selectedOption As Long, cutID As Long
+    If mProcessRunning Or mUpdatingPair Or mUpdatingQuantity Or mUpdatingRotation Then Exit Sub
+    If mPresenter Is Nothing Then Exit Sub
+    For i = 0 To lbxObjects.ListCount - 1
+        If lbxObjects.selected(i) Then
+            If mPresenter.ObjectRoleAt(i) = AA_ROLE_DESIGN Then
+                If designCount = 0 Then
+                    commonID = mPresenter.ObjectCutPartnerIDAt(i)
+                ElseIf commonID <> mPresenter.ObjectCutPartnerIDAt(i) Then
+                    mixed = True
+                End If
+                designCount = designCount + 1
+            End If
+        End If
+    Next i
+    mUpdatingPair = True
+    cmbCutPartner.clear
+    cmbCutPartner.Style = fmStyleDropDownList
+    cmbCutPartner.ColumnCount = 2
+    cmbCutPartner.ColumnWidths = "170 pt;0 pt"
+    cmbCutPartner.AddItem "Tanpa Cut Line"
+    cmbCutPartner.List(0, 1) = "0"
+    selectedOption = -1
+    If commonID = 0 Then selectedOption = 0
+    For i = 0 To mPresenter.ObjectCount - 1
+        If mPresenter.ObjectRoleAt(i) = AA_ROLE_CUT_LINE Then
+            cutID = mPresenter.ObjectIDAt(i)
+            cmbCutPartner.AddItem "Cut /" & CStr(cutID)
+            cmbCutPartner.List(cmbCutPartner.ListCount - 1, 1) = CStr(cutID)
+            If cutID = commonID Then selectedOption = cmbCutPartner.ListCount - 1
+        End If
+    Next i
+    If designCount > 0 Then
+        If mixed Or selectedOption < 0 Then
+            If mixed Then
+                cmbCutPartner.AddItem "Campuran"
+            Else
+                cmbCutPartner.AddItem "Pasangan hilang /" & CStr(commonID)
+            End If
+            selectedOption = cmbCutPartner.ListCount - 1
+            cmbCutPartner.List(selectedOption, 1) = "-1"
+        End If
+        cmbCutPartner.ListIndex = selectedOption
+    Else
+        cmbCutPartner.ListIndex = -1
+    End If
+    cmbCutPartner.enabled = (designCount > 0)
+    cmbCutPartner.ControlTipText = "Pasangan untuk Design terpilih; Ctrl/Shift untuk mengatur beberapa Design."
+    cmdSelectPair.enabled = (designCount = 1)
+    cmdSelectPair.ControlTipText = "Pilih satu baris Design untuk menyeleksi Design beserta Cut Line-nya di dokumen."
+    mUpdatingPair = False
+End Sub
+
 Private Sub cmbRotation_Change()
     Dim i As Long, mode As Long
-    If mProcessRunning Or mUpdatingRotation Or mUpdatingQuantity Then Exit Sub
+    If mProcessRunning Or mUpdatingRotation Or mUpdatingQuantity Or mUpdatingPair Then Exit Sub
     If mPresenter Is Nothing Then Exit Sub
     mode = cmbRotation.ListIndex
     If mode < AA_ROTATION_AUTO Or mode > AA_ROTATION_QUARTER Then Exit Sub
@@ -52,21 +134,20 @@ End Sub
 Private Sub AAInitializeRotationEditor()
     Dim mode As Long
     mUpdatingRotation = True
-    cmbRotation.Clear
+    cmbRotation.clear
     cmbRotation.Style = fmStyleDropDownList
     For mode = AA_ROTATION_AUTO To AA_ROTATION_QUARTER
         cmbRotation.AddItem AARotationText(mode)
     Next mode
     cmbRotation.ListIndex = -1
-    cmbRotation.Enabled = False
-    lblRotation.Caption = "Rotasi Design"
+    cmbRotation.enabled = False
     cmbRotation.ControlTipText = "Sudut tambahan terhadap orientasi sumber saat Process; Minimum tetap 0 derajat."
     mUpdatingRotation = False
 End Sub
 
 Private Sub AAUpdateRotationEditor()
     Dim i As Long, commonMode As Long, hasDesign As Boolean, mixed As Boolean
-    If mProcessRunning Or mUpdatingQuantity Or mUpdatingRotation Then Exit Sub
+    If mProcessRunning Or mUpdatingQuantity Or mUpdatingRotation Or mUpdatingPair Then Exit Sub
     If mPresenter Is Nothing Then Exit Sub
     For i = 0 To lbxObjects.ListCount - 1
         If lbxObjects.selected(i) Then
@@ -81,7 +162,8 @@ Private Sub AAUpdateRotationEditor()
         End If
     Next i
     mUpdatingRotation = True
-    cmbRotation.Enabled = hasDesign
+    cmbRotation.enabled = hasDesign
+    lblRotation.Caption = "Rotasi Design"
     If hasDesign And Not mixed Then
         cmbRotation.ListIndex = commonMode
     Else
@@ -126,6 +208,24 @@ OpenFailed:
     Set owner = Nothing
     On Error GoTo 0
     MsgBox message, vbExclamation, "Default Settings"
+End Sub
+
+Private Sub cmdSelectPair_Click()
+    Dim i As Long, designIndex As Long, designCount As Long
+    If mProcessRunning Or AAProgressRunning Then Exit Sub
+    If mPresenter Is Nothing Then Exit Sub
+    On Error GoTo SelectFailed
+    For i = 0 To lbxObjects.ListCount - 1
+        If lbxObjects.selected(i) Then
+            If mPresenter.ObjectRoleAt(i) = AA_ROLE_DESIGN Then
+                designIndex = i: designCount = designCount + 1
+            End If
+        End If
+    Next i
+    If designCount = 1 Then mPresenter.SelectObjectPair designIndex
+    Exit Sub
+SelectFailed:
+    MsgBox Err.description, vbExclamation, "Pilih Pasangan"
 End Sub
 
 Private Sub frmProgress_Click()
@@ -183,7 +283,7 @@ End Sub
 Private Sub cmdOptimize_Click() ' Kontrol ini masih dalam tahap pengembangan.
     Dim modelMode As Long, feedback As String, feedbackStyle As VbMsgBoxStyle
     Dim layoutMode As Long
-    Dim Completed As Boolean
+    Dim completed As Boolean
     Dim errorNumber As Long, errorSource As String, errorDescription As String
 
     If mProcessRunning Or AAProgressRunning Then Exit Sub
@@ -205,9 +305,9 @@ Private Sub cmdOptimize_Click() ' Kontrol ini masih dalam tahap pengembangan.
     AALockInputs
     AAProgressBegin Me
     mPresenter.OptimizeLayout modelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
-        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), Completed, feedback, feedbackStyle, layoutMode
+        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), completed, feedback, feedbackStyle, layoutMode
     AARefreshObjects
-    AAProgressEnd Completed
+    AAProgressEnd completed
     AAUnlockInputs
     mProcessRunning = False
     AAUpdateQuantityEditor
@@ -252,7 +352,7 @@ Private Sub cmdCheckLayout_Click()
     AAProgressBegin Me
     Set report = mPresenter.CheckLayout(modelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
         AAInputText(txbGapHorizontal), AAInputText(txbGapVertical))
-    AAProgressEnd report.Completed
+    AAProgressEnd report.completed
     AAUnlockInputs
     mProcessRunning = False
     ' Hasil modal menjaga daftar/setting tetap selama hasil diperiksa.
@@ -456,7 +556,7 @@ Private Sub AAUpdateQuantityEditor()
     Dim mixedQuantity As Boolean
 
     If mProcessRunning Then Exit Sub
-    If mUpdatingQuantity Or mUpdatingRotation Or mPresenter Is Nothing Then Exit Sub
+    If mUpdatingQuantity Or mUpdatingRotation Or mUpdatingPair Or mPresenter Is Nothing Then Exit Sub
     mQuantityIndex = -1
     For i = 0 To lbxObjects.ListCount - 1
         If lbxObjects.selected(i) Then
@@ -484,6 +584,7 @@ Private Sub AAUpdateQuantityEditor()
     mUpdatingQuantity = False
     AAShowHint txbQuantity
     AAUpdateRotationEditor
+    AAUpdatePairEditor
 End Sub
 
 Private Sub AARunMode(ByVal modelMode As Long)
@@ -557,7 +658,7 @@ End Sub
 Private Sub AAUnlockInputs()
     Dim i As Long
     If mLockedControls Is Nothing Then Exit Sub
-    For i = 1 To mLockedControls.Count
+    For i = 1 To mLockedControls.count
         mLockedControls(i).enabled = mEnabledStates(i)
     Next i
     Set mLockedControls = Nothing

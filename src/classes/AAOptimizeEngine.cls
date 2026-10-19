@@ -21,6 +21,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim cleanupError As String
     Dim cancelled As Boolean
     Dim minimum As AAOptimizeMinimum
+    Dim roots() As Shape, designIndexes() As Long, cutIndexes() As Long
+    Dim designCount As Long, cutCount As Long
 
     completed = False: feedback = vbNullString: feedbackStyle = vbExclamation
     On Error GoTo Failed
@@ -40,16 +42,21 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     If Not (doc Is objects.SourceDocument) Or page.Index <> objects.SourcePageIndex Then _
         Err.Raise vbObjectError + 5363, "AAOptimizeEngine", "Aktifkan dokumen dan halaman sumber."
     Set selection = ActiveSelectionRange
+    objects.BuildPairing designIndexes, designCount, cutIndexes, cutCount
+    ReDim roots(0 To objects.Count - 1)
     For i = 0 To objects.Count - 1
         Set root = FindRoot(page, objects.StaticIDAt(i))
         If root Is Nothing Then Err.Raise vbObjectError + 5364, "AAOptimizeEngine", _
             "Container terdaftar tidak ditemukan. Perbarui daftar."
         CheckEditable root
-        If objects.RoleAt(i) = AA_ROLE_DESIGN Then designs.Add root Else cuts.Add root
+        Set roots(i) = root
     Next i
-    If designs.Count > 0 And cuts.Count > 1 And cuts.Count <> designs.Count Then _
-        Err.Raise vbObjectError + 5365, "AAOptimizeEngine", _
-            "Jumlah container Cut Line harus satu atau sama dengan container Design."
+    For i = 0 To designCount - 1
+        designs.Add roots(designIndexes(i))
+    Next i
+    For i = 0 To cutCount - 1
+        cuts.Add roots(cutIndexes(i))
+    Next i
     ' Cut Line saja juga dapat dioptimasi sebagai susunan standalone.
     If designs.Count = 0 Then
         Set designs = cuts

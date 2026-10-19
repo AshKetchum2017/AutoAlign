@@ -15,7 +15,7 @@ Objek yang akan diproses didaftarkan ke `lbxObjects` sebagai:
 - **Design** melalui `cmdSetDesign`.
 - **Cut Line** melalui `cmdSetCutLine`.
 
-Daftar menyimpan peran, `StaticID`, Quantity, dan pilihan rotasi setiap Design. Objek dengan ID yang sama tidak ditambahkan dua kali.
+Daftar menyimpan peran, `StaticID`, ID pasangan Cut Line, Quantity, dan pilihan rotasi setiap Design. Objek dengan ID yang sama tidak ditambahkan dua kali.
 
 Pendaftaran beberapa objek sekaligus mengikuti urutan baris dari atas ke bawah, lalu kiri ke kanan. Baris ditentukan dari pusat Y tertinggi dengan toleransi **1 mm** terhadap objek pertama pada baris tersebut.
 
@@ -30,8 +30,27 @@ AutoAlign mendukung tiga susunan input:
 | Input | Perilaku |
 | --- | --- |
 | Design tanpa Cut Line | Susunan memakai siluet luar Design sebagai acuan. |
-| Satu Cut Line | Cut Line digunakan bersama oleh Design yang didaftarkan. |
-| Cut Line sebanyak Design | Design ke-1 dipasangkan dengan Cut Line ke-1, dan seterusnya menurut urutan masing-masing peran dalam daftar. |
+| Satu Cut Line | Semua Design dipasangkan ke ID Cut Line yang sama. |
+| Cut Line sebanyak Design | Setiap Design dipasangkan ke satu ID Cut Line berbeda yang dipilih melalui Pasangan Cut Line. |
+
+Setelah mendaftarkan objek, pilih baris Design lalu tentukan **Pasangan Cut Line** melalui `cmbCutPartner`. Hubungan disimpan berdasarkan ID dalam dokumen sumber. Contoh ringkasan daftar: `Design | Obj. ID: /19 -> Cut /26`. Pendaftaran tidak memilih pasangan secara otomatis; urutan baris tidak menentukan pasangan.
+
+- **Ctrl/Shift** dapat memilih beberapa Design untuk diberi pasangan yang sama; baris Cut Line diabaikan. Pilihan berbeda ditampilkan sebagai **Campuran** tanpa mengubah hubungan sampai pengguna memilih Cut Line atau **Tanpa Cut Line**.
+- Untuk susunan tanpa pasangan, pilih **Tanpa Cut Line** pada semua Design dan hapus semua baris Cut Line dari daftar. Campuran Design standalone dan berpasangan, beberapa kelompok yang berbagi Cut Line berbeda, serta Cut Line tidak terpakai belum didukung.
+- Menghapus baris Cut Line mempertahankan ID pasangan pada Design dan menampilkan **Pasangan hilang /ID**. Pilih ulang pasangan atau lepaskan secara eksplisit. Remove/Clear hanya mengubah daftar, bukan objek dokumen. Quantity dan rotasi tetap mengikuti Design.
+- **Pilih Pasangan** (`cmdSelectPair`) aktif ketika tepat satu Design dipilih. Tombol menyeleksi Design beserta Cut Line-nya pada dokumen/halaman sumber, atau Design saja bila tanpa pasangan. Jika salah satu ID hilang, seleksi dokumen dipertahankan.
+- Process, Optimize, dan Periksa Susunan memvalidasi hubungan yang sama. Pasangan belum dipilih, hilang, atau di luar tiga susunan ditolak sebelum pemrosesan. Untuk Optimize/Periksa Susunan, daftarkan container hasil dan pilih ulang hubungan container tersebut. Keduanya juga mendukung daftar yang hanya berisi Cut Line.
+- Hubungan berlaku selama daftar aktif; Clear, penghapusan Design, atau penutupan form membuang hubungan terkait. Hubungan tidak disimpan ke registry atau dokumen.
+
+Pada `AutoAlignMenu`, siapkan kontrol berikut; tidak diperlukan form atau macro publik tambahan:
+
+| Tipe | `(Name)` | Pengaturan |
+| --- | --- | --- |
+| Label | `lblCutPartner` | Caption `Pasangan Cut Line`. |
+| ComboBox | `cmbCutPartner` | Style `fmStyleDropDownList`; RowSource dan ControlSource kosong. Pilihan dan kolom ID tersembunyi diatur kode. |
+| CommandButton | `cmdSelectPair` | Caption `Pilih Pasangan`. |
+
+Perbarui lima Class Module yang sudah ada: `AAObjectStore`, `AAPresenter`, `AAProcessEngine`, `AAOptimizeEngine`, `AAInspectionEngine`, serta kode form `AutoAlignMenu.vba`. Pertahankan nama Class Module di VBE dan resource form yang sudah digunakan.
 
 Untuk pasangan, **Cut Line menjadi acuan pola, gap, dan collision antarunit**. Bounds Design tetap diperiksa agar muat di dalam area. Artwork Design berpasangan dapat bertumpuk selama acuan Cut Line memenuhi aturan susunan.
 
@@ -213,7 +232,7 @@ Pemeriksaan menampilkan temuan **Collision**, **Gap**, **Batas area**, **Zona ma
 
 - Acuan area mengikuti grid Process: area pertama berpusat pada halaman sumber, berikutnya ke kanan dengan jarak antararea **50 mm**. Kolom dipilih dari pusat bounding box container terdekat; origin area tidak dipusatkan ulang mengikuti susunan. Pemeriksa tidak menyimpan nomor area historis: container yang dipindahkan satu kolom penuh akan dianggap berada pada kolom tersebut. Gunakan ukuran area dan posisi halaman yang sama dengan saat Process.
 - Struktur yang dibaca adalah `container -> subgroup sumber -> instance`; group pada tingkat instance tetap satu unit. Objek individual non-group juga dapat didaftarkan. Group manual atau struktur yang telah diubah perlu disesuaikan dahulu; pemeriksa tidak menebak kedalaman group sembarang.
-- Satu container Cut Line dapat menjadi template bersama. Selain itu, jumlah container Cut Line harus sama dengan Design, dipasangkan menurut urutan masing-masing peran dalam daftar. Anggota dicocokkan secara unik melalui pusat bounds relatif terhadap area, dengan toleransi **1 mm**. Ini pencocokan posisi, bukan pembuktian kesamaan bentuk/rotasi atau toleransi gap.
+- Satu container Cut Line dapat menjadi template bersama. Selain itu, setiap container Design harus dipasangkan ke satu container Cut Line berbeda melalui Pasangan Cut Line. Anggota di dalam pasangan container dicocokkan secara unik melalui pusat bounds relatif terhadap area, dengan toleransi **1 mm**. Ini pencocokan posisi, bukan pembuktian kesamaan bentuk/rotasi atau toleransi gap.
 - Pemeriksa hanya membaca objek terdaftar. Gap/collision antarkontur acuan diperiksa di dalam area yang sama, termasuk antarcontainer; objek lain di halaman tidak ikut diperiksa. Template Cut Line bersama diperiksa sekali pada posisi fisiknya.
 - Gap memakai validator kontur AA yang sama dengan penyusunan. Temuan menunjukkan kegagalan aturan H/V, bukan angka jarak aktual atau verifikasi independen terhadap algoritma AA.
 
@@ -241,7 +260,7 @@ Siapkan tiga **Class Module** bernama persis `AAInspectionEngine`, `AAInspection
 
 1. Buka dokumen dan halaman sumber di CorelDRAW, lalu buka `AutoAlignMenu`.
 2. Pilih objek Design dan tekan `cmdSetDesign`.
-3. Jika memakai Cut Line, daftarkan satu Cut Line bersama atau pasangan sebanyak Design melalui `cmdSetCutLine`. Periksa urutan pasangan dalam daftar.
+3. Jika memakai Cut Line, daftarkan satu Cut Line bersama atau pasangan sebanyak Design melalui `cmdSetCutLine`. Pilih Design di daftar lalu tetapkan ID melalui Pasangan Cut Line. Gunakan Pilih Pasangan untuk memeriksa pilihan pada dokumen.
 4. Pilih KissA, DieA, atau Custom. Untuk Custom, isi ukuran area jika ingin mengganti default.
 5. Pilih Minimum atau Medium, lalu atur Gap H/V sesuai kebutuhan. Untuk Medium, pilih Design di daftar dan atur Rotasi Design bila orientasinya perlu dibatasi.
 6. Pilih Design di `lbxObjects` dan atur Quantity. Gunakan Ctrl/Shift untuk menerapkan jumlah atau `/n` ke beberapa Design sekaligus.

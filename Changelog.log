@@ -221,3 +221,7 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 [Batas rotasi per Design]
 + Process Medium menyediakan Otomatis, Tanpa rotasi, 0 / 180, dan Kelipatan 90 untuk setiap Design melalui daftar Objects, termasuk pengaturan beberapa Design sekaligus.
 + Cut Line mengikuti Design; satu Cut Line bersama memakai irisan sudut semua Design aktif. Minimum tetap 0 derajat dan Optimize mempertahankan orientasi susunan.
+
+[Pengelolaan pasangan]
++ Pasangan Cut Line dipilih berdasarkan ID per Design, dengan dukungan pilihan banyak Design, status Campuran/pasangan hilang dan tombol Pilih Pasangan.
++ Process, Optimize dan Periksa Susunan memakai hubungan yang sama untuk tiga susunan: tanpa Cut Line, satu Cut Line bersama, atau satu Cut Line berbeda per Design. Pasangan wajib dipilih setelah pendaftaran; penghapusan baris tidak mengalihkan pasangan secara otomatis.

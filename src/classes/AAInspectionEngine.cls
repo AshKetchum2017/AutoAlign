@@ -18,6 +18,8 @@ Public Function Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim previousUnit As cdrUnit, previousH As cdrUnit, previousV As cdrUnit
     Dim number As Long, description As String, cancelled As Boolean, cleanupError As String
     Dim started As Double, modelName As String, h As Double, v As Double
+    Dim roots() As Shape, designIndexes() As Long, cutIndexes() As Long
+    Dim designCount As Long, cutCount As Long
     Set mReport = New AAInspectionReport
     Set Run = mReport
     On Error GoTo Failed
@@ -43,6 +45,8 @@ Public Function Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         Format$(mSettings.AreaHeightMM, "0.###") & " mm; Gap H/V " & Format$(h, "0.###") & "/" & _
         Format$(v, "0.###") & " mm (pengecualian default rectangle preset tetap berlaku)." & vbCrLf & _
         "Grid Process AA, jarak antararea 50 mm. Kolom area dipilih dari pusat container terdekat."
+    objects.BuildPairing designIndexes, designCount, cutIndexes, cutCount
+    ReDim roots(0 To objects.Count - 1)
     previousUnit = doc.Unit: previousH = doc.Rulers.HUnits: previousV = doc.Rulers.VUnits
     unitSaved = True
     doc.Unit = cdrMillimeter
@@ -57,7 +61,13 @@ Public Function Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         Set root = mReport.Resolve(objects.StaticIDAt(i))
         If root Is Nothing Then Err.Raise vbObjectError + 5415, "AAInspectionEngine", _
             "Objek terdaftar ID " & CStr(objects.StaticIDAt(i)) & " tidak ditemukan; perbarui daftar."
-        If objects.RoleAt(i) = AA_ROLE_DESIGN Then designs.Add root Else cuts.Add root
+        Set roots(i) = root
+    Next i
+    For i = 0 To designCount - 1
+        designs.Add roots(designIndexes(i))
+    Next i
+    For i = 0 To cutCount - 1
+        cuts.Add roots(cutIndexes(i))
     Next i
     ' Design berpasangan hanya dibaca bounds-nya. Cut Line diperiksa sebagai
     ' acuan fisik gap/collision; satu template Cut Line bersama dibaca sekali.
@@ -69,16 +79,10 @@ Public Function Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         InspectRoot cuts(i), True, False
     Next i
     If designs.Count > 0 And cuts.Count > 0 Then
-        If cuts.Count <> 1 And cuts.Count <> designs.Count Then
-            mReport.AddIssue "Pasangan", 0, 0, 0, _
-                "Jumlah container Cut Line harus satu atau sama dengan container Design."
-            mReport.MarkIncomplete "Pemetaan pasangan belum dapat ditentukan."
-        Else
-            For i = 1 To designs.Count
-                If cuts.Count = 1 Then Set cut = cuts(1) Else Set cut = cuts(i)
-                InspectPairs designs(i), cut
-            Next i
-        End If
+        For i = 1 To designs.Count
+            If cuts.Count = 1 Then Set cut = cuts(1) Else Set cut = cuts(i)
+            InspectPairs designs(i), cut
+        Next i
     End If
     AAProgressCheckCancelled
     mReport.Finish

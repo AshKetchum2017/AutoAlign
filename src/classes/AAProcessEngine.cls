@@ -95,8 +95,6 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     ReDim sourceShapes(0 To entryCount - 1)
     ReDim models(0 To entryCount - 1)
     ReDim quantities(0 To entryCount - 1)
-    ReDim designIndexes(0 To entryCount - 1)
-    ReDim cutIndexes(0 To entryCount - 1)
     operation = "mencari semua object terdaftar"
     For entryIndex = 0 To entryCount - 1
         objects.ValidateQuantityAt entryIndex
@@ -116,19 +114,11 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
             "Layer Obj. ID: /" & CStr(objects.StaticIDAt(entryIndex)) & _
             " tidak dapat diedit."
         quantities(entryIndex) = objects.QuantityAt(entryIndex)
-        If objects.RoleAt(entryIndex) = AA_ROLE_DESIGN Then
-            designIndexes(designCount) = entryIndex
-            designCount = designCount + 1
-        Else
-            cutIndexes(cutCount) = entryIndex
-            cutCount = cutCount + 1
-        End If
     Next entryIndex
+    operation = "memeriksa pasangan Design dan Cut Line"
+    objects.BuildPairing designIndexes, designCount, cutIndexes, cutCount
     If designCount = 0 Then Err.Raise vbObjectError + 5318, _
         "AAProcessEngine", "Process memerlukan sedikitnya satu Design."
-    If cutCount <> 0 And cutCount <> 1 And cutCount <> designCount Then _
-        Err.Raise vbObjectError + 5319, "AAProcessEngine", _
-            "Jumlah Cut Line harus satu atau sama dengan jumlah Design."
     AADebugWrite "Model", "Design=" & CStr(designCount) & " Cut=" & CStr(cutCount)
 
     operation = "memulai CommandGroup"

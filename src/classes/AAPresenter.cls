@@ -18,10 +18,67 @@ End Property
 Public Function ObjectListText(ByVal index As Long) As String
     ObjectListText = mStore.RoleAt(index) & " | Obj. ID: /" & CStr(mStore.StaticIDAt(index))
     If mStore.RoleAt(index) = AA_ROLE_DESIGN Then
+        ObjectListText = ObjectListText & " -> " & mStore.CutPartnerTextAt(index)
         If Len(mStore.QuantityTextAt(index)) > 0 Then _
             ObjectListText = ObjectListText & " | Qty: " & mStore.QuantityTextAt(index)
         ObjectListText = ObjectListText & " | Rot: " & AARotationText(mStore.RotationModeAt(index))
     End If
+End Function
+
+Public Function ObjectIDAt(ByVal index As Long) As Long
+    ObjectIDAt = mStore.StaticIDAt(index)
+End Function
+
+Public Function ObjectCutPartnerIDAt(ByVal index As Long) As Long
+    ObjectCutPartnerIDAt = mStore.CutPartnerIDAt(index)
+End Function
+
+Public Sub SetObjectCutPartner(ByVal index As Long, ByVal cutID As Long)
+    mStore.SetCutPartnerAt index, cutID
+End Sub
+
+Public Sub SelectObjectPair(ByVal index As Long)
+    Dim doc As Document, page As Page, design As Shape, cut As Shape
+    Dim selected As New ShapeRange, id As Long
+    If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5436, _
+        "AAPresenter", "Tidak ada dokumen aktif."
+    Set doc = ActiveDocument: Set page = doc.ActivePage
+    If Not (doc Is mStore.SourceDocument) Or page.Index <> mStore.SourcePageIndex Then _
+        Err.Raise vbObjectError + 5437, "AAPresenter", "Aktifkan dokumen dan halaman sumber."
+    If mStore.RoleAt(index) <> AA_ROLE_DESIGN Then Err.Raise vbObjectError + 5438, _
+        "AAPresenter", "Pilih satu baris Design pada daftar Objects."
+    Set design = FindPairShape(page.Shapes, mStore.StaticIDAt(index))
+    If design Is Nothing Then Err.Raise vbObjectError + 5439, _
+        "AAPresenter", "Design tidak ditemukan pada halaman sumber. Perbarui daftar."
+    id = mStore.CutPartnerIDAt(index)
+    If id <> 0 Then
+        If mStore.CutIndexForID(id) < 0 Then Err.Raise vbObjectError + 5440, _
+            "AAPresenter", "Pasangan Cut Line hilang dari daftar. Pilih ulang pasangan."
+        Set cut = FindPairShape(page.Shapes, id)
+        If cut Is Nothing Then Err.Raise vbObjectError + 5441, _
+            "AAPresenter", "Cut Line tidak ditemukan pada halaman sumber. Perbarui daftar."
+        selected.Add cut
+    End If
+    ' Selesaikan semua resolusi sebelum mengganti seleksi dokumen.
+    selected.Add design
+    selected.CreateSelection
+End Sub
+
+Private Function FindPairShape(ByVal shapes As Shapes, ByVal id As Long) As Shape
+    Dim item As Shape, found As Shape
+    For Each item In shapes
+        If CLng(item.StaticID) = id Then
+            Set FindPairShape = item
+            Exit Function
+        End If
+        If item.Type = cdrGroupShape Then
+            Set found = FindPairShape(item.Shapes, id)
+            If Not found Is Nothing Then
+                Set FindPairShape = found
+                Exit Function
+            End If
+        End If
+    Next item
 End Function
 
 Public Function ObjectRotationModeAt(ByVal index As Long) As Long

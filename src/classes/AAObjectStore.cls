@@ -8,6 +8,7 @@ Private Type AAObjectEntry
     Quantity As Long  ' -1 berarti kosong: isi area aktif, lalu area baru jika tidak muat.
     QuantityGroup As Long  ' 0: perilaku lama; positif: /n; -1: prefix / belum lengkap.
     RotationMode As Long
+    CutPartnerID As Long  ' 0: tanpa pasangan; ID hilang tetap disimpan sampai dipilih ulang.
 End Type
 
 Private mEntries() As AAObjectEntry
@@ -18,6 +19,90 @@ Private mSourcePageIndex As Long
 Public Property Get Count() As Long
     Count = mCount
 End Property
+
+Public Function CutPartnerIDAt(ByVal index As Long) As Long
+    CheckIndex index
+    CutPartnerIDAt = mEntries(index).CutPartnerID
+End Function
+
+Public Function CutIndexForID(ByVal staticID As Long) As Long
+    Dim i As Long
+    CutIndexForID = -1
+    For i = 0 To mCount - 1
+        If mEntries(i).RoleLabel = AA_ROLE_CUT_LINE And mEntries(i).StaticID = staticID Then
+            CutIndexForID = i
+            Exit Function
+        End If
+    Next i
+End Function
+
+Public Sub SetCutPartnerAt(ByVal index As Long, ByVal cutID As Long)
+    CheckIndex index
+    If mEntries(index).RoleLabel <> AA_ROLE_DESIGN Then Err.Raise vbObjectError + 5430, _
+        "AAObjectStore", "Pasangan hanya dapat diatur pada Design."
+    If cutID <> 0 Then
+        If CutIndexForID(cutID) < 0 Then Err.Raise vbObjectError + 5431, _
+            "AAObjectStore", "Pilih Cut Line yang terdaftar di Objects."
+    End If
+    mEntries(index).CutPartnerID = cutID
+End Sub
+
+Public Function CutPartnerTextAt(ByVal index As Long) As String
+    Dim id As Long
+    id = CutPartnerIDAt(index)
+    If id = 0 Then
+        CutPartnerTextAt = "Tanpa Cut Line"
+    ElseIf CutIndexForID(id) < 0 Then
+        CutPartnerTextAt = "Pasangan hilang /" & CStr(id)
+    Else
+        CutPartnerTextAt = "Cut /" & CStr(id)
+    End If
+End Function
+
+' Satu kontrak untuk Process, Optimize dan Check Layout. Urutan Cut hasil
+' mengikuti pasangan eksplisit Design; urutan pendaftaran tidak menentukan pasangan.
+Public Sub BuildPairing(ByRef designIndexes() As Long, ByRef designCount As Long, _
+                        ByRef cutIndexes() As Long, ByRef cutCount As Long)
+    Dim i As Long, j As Long, id As Long, cutIndex As Long
+    Dim used As Object
+    designCount = 0: cutCount = 0
+    Erase designIndexes: Erase cutIndexes
+    If mCount = 0 Then Exit Sub
+    ReDim designIndexes(0 To mCount - 1)
+    ReDim cutIndexes(0 To mCount - 1)
+    For i = 0 To mCount - 1
+        If mEntries(i).RoleLabel = AA_ROLE_DESIGN Then
+            designIndexes(designCount) = i: designCount = designCount + 1
+        Else
+            cutIndexes(cutCount) = i: cutCount = cutCount + 1
+        End If
+    Next i
+    ' Optimize/Check Layout tetap mendukung Cut Line saja; Process menolaknya.
+    If designCount = 0 Then Exit Sub
+    Set used = CreateObject("Scripting.Dictionary")
+    For j = 0 To designCount - 1
+        i = designIndexes(j)
+        id = mEntries(i).CutPartnerID
+        If id = 0 Then
+            If cutCount > 0 Then Err.Raise vbObjectError + 5432, "AAObjectStore", _
+                "Design /" & CStr(mEntries(i).StaticID) & _
+                " belum dipasangkan. Pilih Pasangan Cut Line, atau hapus semua Cut Line dari daftar untuk susunan tanpa pasangan."
+        Else
+            cutIndex = CutIndexForID(id)
+            If cutIndex < 0 Then Err.Raise vbObjectError + 5433, "AAObjectStore", _
+                "Pasangan Design /" & CStr(mEntries(i).StaticID) & " hilang: Cut /" & CStr(id) & _
+                ". Pilih ulang pasangan atau pilih Tanpa Cut Line."
+            If cutCount > 1 And used.Exists(CStr(id)) Then Err.Raise vbObjectError + 5434, _
+                "AAObjectStore", "Cut /" & CStr(id) & _
+                " dipakai lebih dari satu Design. Gunakan satu Cut Line bersama untuk semua Design, atau pasangan satu-per-satu."
+            used(CStr(id)) = True
+            If cutCount > 1 Then cutIndexes(j) = cutIndex
+        End If
+    Next j
+    If cutCount <> 0 And cutCount <> 1 And cutCount <> designCount Then _
+        Err.Raise vbObjectError + 5435, "AAObjectStore", _
+            "Gunakan tanpa Cut Line, satu Cut Line bersama, atau satu Cut Line berbeda per Design. Hapus Cut Line yang tidak dipakai dari daftar."
+End Sub
 
 Public Property Get SourceDocument() As Document
     Set SourceDocument = mSourceDocument
@@ -271,6 +356,7 @@ Private Sub AppendEntry(ByVal roleLabel As String, ByVal staticID As Long)
     mEntries(mCount).Quantity = -1
     mEntries(mCount).QuantityGroup = 0
     mEntries(mCount).RotationMode = AA_ROTATION_AUTO
+    mEntries(mCount).CutPartnerID = 0
     mCount = mCount + 1
 End Sub
 
