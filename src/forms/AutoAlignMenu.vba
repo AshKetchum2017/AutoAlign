@@ -7,6 +7,7 @@ Private mProcessRunning As Boolean
 Private mLockedControls As Collection, mEnabledStates As Collection
 Private mPresenter As AAPresenter
 Private mUpdatingQuantity As Boolean
+Private mUpdatingRotation As Boolean
 Private mQuantityIndex As Long
 Private mHintReady As Boolean
 Private mUpdatingHint As Boolean
@@ -22,6 +23,73 @@ Private mMediumGapH As String, mMediumGapV As String
 Private mDefaultPreferences As AADefaultPreferences
 Private mAreaModel As Long
 Private mCustomAreaWidth As String, mCustomAreaHeight As String
+
+Private Sub cmbRotation_Change()
+    Dim i As Long, mode As Long
+    If mProcessRunning Or mUpdatingRotation Or mUpdatingQuantity Then Exit Sub
+    If mPresenter Is Nothing Then Exit Sub
+    mode = cmbRotation.ListIndex
+    If mode < AA_ROTATION_AUTO Or mode > AA_ROTATION_QUARTER Then Exit Sub
+    On Error GoTo InvalidRotation
+    mUpdatingRotation = True
+    For i = 0 To lbxObjects.ListCount - 1
+        If lbxObjects.selected(i) Then
+            If mPresenter.ObjectRoleAt(i) = AA_ROLE_DESIGN Then
+                mPresenter.SetObjectRotationMode i, mode
+                lbxObjects.List(i) = mPresenter.ObjectListText(i)
+            End If
+        End If
+    Next i
+    mUpdatingRotation = False
+    AAUpdateRotationEditor
+    Exit Sub
+InvalidRotation:
+    mUpdatingRotation = False
+    MsgBox Err.description, vbExclamation, "Auto Align"
+    AAUpdateRotationEditor
+End Sub
+
+Private Sub AAInitializeRotationEditor()
+    Dim mode As Long
+    mUpdatingRotation = True
+    cmbRotation.Clear
+    cmbRotation.Style = fmStyleDropDownList
+    For mode = AA_ROTATION_AUTO To AA_ROTATION_QUARTER
+        cmbRotation.AddItem AARotationText(mode)
+    Next mode
+    cmbRotation.ListIndex = -1
+    cmbRotation.Enabled = False
+    lblRotation.Caption = "Rotasi Design"
+    cmbRotation.ControlTipText = "Sudut tambahan terhadap orientasi sumber saat Process; Minimum tetap 0 derajat."
+    mUpdatingRotation = False
+End Sub
+
+Private Sub AAUpdateRotationEditor()
+    Dim i As Long, commonMode As Long, hasDesign As Boolean, mixed As Boolean
+    If mProcessRunning Or mUpdatingQuantity Or mUpdatingRotation Then Exit Sub
+    If mPresenter Is Nothing Then Exit Sub
+    For i = 0 To lbxObjects.ListCount - 1
+        If lbxObjects.selected(i) Then
+            If mPresenter.ObjectRoleAt(i) = AA_ROLE_DESIGN Then
+                If Not hasDesign Then
+                    commonMode = mPresenter.ObjectRotationModeAt(i)
+                    hasDesign = True
+                ElseIf commonMode <> mPresenter.ObjectRotationModeAt(i) Then
+                    mixed = True
+                End If
+            End If
+        End If
+    Next i
+    mUpdatingRotation = True
+    cmbRotation.Enabled = hasDesign
+    If hasDesign And Not mixed Then
+        cmbRotation.ListIndex = commonMode
+    Else
+        cmbRotation.ListIndex = -1
+        If mixed Then lblRotation.Caption = "Rotasi Design (Campuran)"
+    End If
+    mUpdatingRotation = False
+End Sub
 
 Private Sub cmdDefaultSetting_Click()
     Dim settingsForm As DefaultSettings, owner As Object, message As String
@@ -115,7 +183,7 @@ End Sub
 Private Sub cmdOptimize_Click() ' Kontrol ini masih dalam tahap pengembangan.
     Dim modelMode As Long, feedback As String, feedbackStyle As VbMsgBoxStyle
     Dim layoutMode As Long
-    Dim completed As Boolean
+    Dim Completed As Boolean
     Dim errorNumber As Long, errorSource As String, errorDescription As String
 
     If mProcessRunning Or AAProgressRunning Then Exit Sub
@@ -137,9 +205,9 @@ Private Sub cmdOptimize_Click() ' Kontrol ini masih dalam tahap pengembangan.
     AALockInputs
     AAProgressBegin Me
     mPresenter.OptimizeLayout modelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
-        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), completed, feedback, feedbackStyle, layoutMode
+        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), Completed, feedback, feedbackStyle, layoutMode
     AARefreshObjects
-    AAProgressEnd completed
+    AAProgressEnd Completed
     AAUnlockInputs
     mProcessRunning = False
     AAUpdateQuantityEditor
@@ -248,6 +316,7 @@ End Sub
 
 Private Sub UserForm_Initialize()
     Set mPresenter = New AAPresenter
+    AAInitializeRotationEditor
     Set mDefaultPreferences = New AADefaultPreferences
     mDefaultPreferences.Load
     cmdClose.Caption = "Close"
@@ -387,7 +456,7 @@ Private Sub AAUpdateQuantityEditor()
     Dim mixedQuantity As Boolean
 
     If mProcessRunning Then Exit Sub
-    If mUpdatingQuantity Or mPresenter Is Nothing Then Exit Sub
+    If mUpdatingQuantity Or mUpdatingRotation Or mPresenter Is Nothing Then Exit Sub
     mQuantityIndex = -1
     For i = 0 To lbxObjects.ListCount - 1
         If lbxObjects.selected(i) Then
@@ -414,6 +483,7 @@ Private Sub AAUpdateQuantityEditor()
     End If
     mUpdatingQuantity = False
     AAShowHint txbQuantity
+    AAUpdateRotationEditor
 End Sub
 
 Private Sub AARunMode(ByVal modelMode As Long)
@@ -487,7 +557,7 @@ End Sub
 Private Sub AAUnlockInputs()
     Dim i As Long
     If mLockedControls Is Nothing Then Exit Sub
-    For i = 1 To mLockedControls.count
+    For i = 1 To mLockedControls.Count
         mLockedControls(i).enabled = mEnabledStates(i)
     Next i
     Set mLockedControls = Nothing

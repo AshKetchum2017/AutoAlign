@@ -4,6 +4,7 @@ Private Const AA_MAX_OBJECTS_PER_SOURCE As Long = 5000
 Private Const AA_QUANTITY_MAX_DIFFERENCE As Long = 2
 Private mSharedTemplate As AALayoutPlan
 Private mTemplateCutIndex As Long
+Private mTemplateRotationMask As Long
 Private mQuotaPlanner As AAMediumPlanner
 Private mLastCapacityCount As Long
 
@@ -29,7 +30,8 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
     If CanUseTemplate(models, designIndexes, designCount, cutCount) Then
         If cutCount = 1 Then
             If Not mSharedTemplate Is Nothing Then
-                If mTemplateCutIndex = cutIndexes(0) Then Set template = mSharedTemplate
+                If mTemplateCutIndex = cutIndexes(0) And _
+                   mTemplateRotationMask = models(oneDesign(0)).RotationMask Then Set template = mSharedTemplate
             End If
         End If
         If template Is Nothing Then
@@ -38,6 +40,7 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
             If cutCount = 1 Then
                 Set mSharedTemplate = template
                 mTemplateCutIndex = cutIndexes(0)
+                mTemplateRotationMask = models(oneDesign(0)).RotationMask
             End If
         End If
         Set result = DistributeTemplate(template, models, designIndexes, designCount, _
@@ -195,6 +198,9 @@ Private Function CanUseTemplate(ByRef models() As AAModel, ByRef designIndexes()
                                 ByVal designCount As Long, ByVal cutCount As Long) As Boolean
     Dim first As AAModel, other As AAModel, i As Long
     Set first = models(designIndexes(0))
+    For i = 1 To designCount - 1
+        If first.RotationMask <> models(designIndexes(i)).RotationMask Then Exit Function
+    Next i
     If cutCount <> 1 Then
         For i = 1 To designCount - 1
             Set other = models(designIndexes(i))

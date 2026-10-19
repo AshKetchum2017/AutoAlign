@@ -13,6 +13,43 @@ Public Const AA_MODEL_DIE_A As Long = 3
 Public Const AA_ROLE_DESIGN As String = "Design"
 Public Const AA_ROLE_CUT_LINE As String = "Cut Line"
 
+Public Const AA_ROTATION_AUTO As Long = 0
+Public Const AA_ROTATION_NONE As Long = 1
+Public Const AA_ROTATION_HALF As Long = 2
+Public Const AA_ROTATION_QUARTER As Long = 3
+
+' Bit ke-n menyatakan sudut n*45 derajat; semua preset mengizinkan 0.
+Public Function AARotationMask(ByVal mode As Long) As Long
+    Select Case mode
+        Case AA_ROTATION_AUTO: AARotationMask = 255
+        Case AA_ROTATION_NONE: AARotationMask = 1
+        Case AA_ROTATION_HALF: AARotationMask = 17
+        Case AA_ROTATION_QUARTER: AARotationMask = 85
+        Case Else: Err.Raise vbObjectError + 5420, "AutoAlign", "Pilihan rotasi tidak valid."
+    End Select
+End Function
+
+Public Function AARotationText(ByVal mode As Long) As String
+    Select Case mode
+        Case AA_ROTATION_AUTO: AARotationText = "Otomatis"
+        Case AA_ROTATION_NONE: AARotationText = "Tanpa rotasi"
+        Case AA_ROTATION_HALF: AARotationText = "0 / 180"
+        Case AA_ROTATION_QUARTER: AARotationText = "Kelipatan 90"
+        Case Else: Err.Raise vbObjectError + 5420, "AutoAlign", "Pilihan rotasi tidak valid."
+    End Select
+End Function
+
+Public Function AARotationAllowed(ByVal mask As Long, ByVal angle As Double) As Boolean
+    Dim normalized As Double, slot As Long
+    ' Otomatis tidak memperluas/mengubah sudut yang dihasilkan planner.
+    If mask = 255 Then AARotationAllowed = True: Exit Function
+    normalized = angle - 360# * Int(angle / 360#)
+    slot = CLng(normalized / 45#)
+    If Abs(normalized - CDbl(slot) * 45#) > 0.00000001 Then Exit Function
+    slot = slot Mod 8
+    AARotationAllowed = ((mask And CLng(2 ^ slot)) <> 0)
+End Function
+
 Public Sub AAOrderPlacementPair(ByVal designShape As Shape, ByVal cutShape As Shape)
     Dim designLayer As Layer
     Dim cutLayer As Layer

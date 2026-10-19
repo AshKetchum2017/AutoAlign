@@ -168,6 +168,11 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         Else
             models(entryIndex).Prepare sourceShapes(entryIndex), Nothing, settings
         End If
+        ' Minimum tetap 0 derajat; jangan ubah keputusan reuse template Minimum.
+        If layoutMode = AA_MODE_MEDIUM Then _
+            models(entryIndex).SetAllowedRotations AARotationMask(objects.RotationModeAt(entryIndex))
+        AADebugWrite "Rotation", "Design ID=" & CStr(objects.StaticIDAt(entryIndex)) & _
+            "; pilihan=" & AARotationText(objects.RotationModeAt(entryIndex))
         AADebugModel entryIndex, models(entryIndex), quantities(entryIndex)
         If cutCount = 1 And roleIndex > 0 Then
             If Not models(entryIndex).CanShareCutWith( _
@@ -177,6 +182,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         End If
     Next roleIndex
 
+    If cutCount = 1 Then RestrictSharedCutRotations models, designIndexes, designCount, quantities
     ReDim layoutDesignIndexes(0 To designCount - 1)
     AADebugStageEnd perfStage, perfStarted
     AADebugMemory "After prepare geometry"
@@ -236,6 +242,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         perfStage = vbNullString
     End If
 
+    ValidatePlanRotations plan, models
     AAProgressCheckCancelled
     ' Preset memakai ukuran sheet baku hanya selama Process. Semua koordinat
     ' hasil tetap mengacu pada pusat halaman asli yang disimpan di atas.
@@ -688,6 +695,31 @@ Private Function CopySharedCutPlacement(ByVal source As AAPlacement, _
             source.CutIndex, areaIndex, leftX, topY)
     End If
 End Function
+
+' Seluruh pemakai Cut Line bersama memakai irisan sudut yang sama pada run ini.
+' Pilihan asli di ObjectStore tetap; Quantity 0 tidak membatasi Design aktif.
+Private Sub RestrictSharedCutRotations(ByRef models() As AAModel, ByRef indexes() As Long, _
+                                       ByVal count As Long, ByRef quantities() As Long)
+    Dim i As Long, mask As Long
+    mask = 255
+    For i = 0 To count - 1
+        If quantities(indexes(i)) <> 0 Then mask = mask And models(indexes(i)).RotationMask
+    Next i
+    For i = 0 To count - 1
+        If quantities(indexes(i)) <> 0 Then models(indexes(i)).SetAllowedRotations mask
+    Next i
+    AADebugWrite "Rotation", "Cut Line bersama; effective mask=" & CStr(mask)
+End Sub
+
+Private Sub ValidatePlanRotations(ByVal plan As AALayoutPlan, ByRef models() As AAModel)
+    Dim placed As AAPlacement
+    For Each placed In plan.Placements
+        AAProgressPulse
+        If Not models(placed.DesignIndex).AllowsRotation(placed.RotationDelta) Then _
+            Err.Raise vbObjectError + 5422, "AAProcessEngine", _
+                "Rencana melanggar batas rotasi Design; susunan tidak diterapkan."
+    Next placed
+End Sub
 
 Private Function FindTopLevelShape(ByVal targetPage As Page, _
                                    ByVal staticID As Long) As Shape

@@ -15,7 +15,7 @@ Objek yang akan diproses didaftarkan ke `lbxObjects` sebagai:
 - **Design** melalui `cmdSetDesign`.
 - **Cut Line** melalui `cmdSetCutLine`.
 
-Daftar menyimpan peran, `StaticID`, dan Quantity setiap Design. Objek dengan ID yang sama tidak ditambahkan dua kali.
+Daftar menyimpan peran, `StaticID`, Quantity, dan pilihan rotasi setiap Design. Objek dengan ID yang sama tidak ditambahkan dua kali.
 
 Pendaftaran beberapa objek sekaligus mengikuti urutan baris dari atas ke bawah, lalu kiri ke kanan. Baris ditentukan dari pusat Y tertinggi dengan toleransi **1 mm** terhadap objek pertama pada baris tersebut.
 
@@ -39,6 +39,28 @@ Untuk pasangan selain rectangle bersudut runcing, Design boleh lebih kecil maksi
 
 Saat beberapa Design memakai satu Cut Line bersama tanpa Quantity `/n`, susunan Design pertama yang aktif menjadi template untuk Design lain pada container terpisah. Satu susunan Cut Line dibuat untuk dipakai bersama. Quantity Design pertama menjadi acuan template; Quantity `0` tetap melewati Design terkait.
 
+### Batas rotasi per Design
+
+Pilih Design pada `lbxObjects`, lalu atur `cmbRotation`. Ctrl/Shift dapat dipakai untuk menerapkan pilihan yang sama pada beberapa Design. Baris Cut Line diabaikan dan mengikuti rotasi Design pasangannya. Ringkasan `Rot:` pada daftar menunjukkan pilihan setiap Design.
+
+| Pilihan | Sudut tambahan yang diizinkan pada Process Medium |
+| --- | --- |
+| Otomatis | Mengikuti kandidat AA: langkah 45° untuk non-rectangle dan 90° untuk rectangle. |
+| Tanpa rotasi | 0°. |
+| 0 / 180 | 0° dan 180°. |
+| Kelipatan 90 | 0°, 90°, 180°, dan 270°. |
+
+Sudut relatif terhadap **orientasi sumber saat Process**, bukan sudut absolut terhadap halaman. Rotasi sumber 30° dengan pilihan 0 / 180 berarti orientasi hasil 30° atau 210°. Pembatasan berlaku pada pola utama, pola pasangan berlawanan, pencarian kuota, serta pengisian sisa ruang; jumlah hasil dapat berkurang karena pilihan orientasi lebih sedikit.
+
+- Default saat pendaftaran adalah **Otomatis**. Pilihan mengikuti baris Design selama daftar aktif; Remove/Clear atau penutupan form membuang pilihan terkait. Pengaturan ini tidak disimpan ke registry.
+- Jika beberapa Design terpilih memiliki pilihan berbeda, ComboBox kosong dan label menampilkan **Rotasi Design (Campuran)**. Tidak ada perubahan sampai pengguna memilih preset. Tanpa Design terpilih, kontrol dinonaktifkan.
+- Untuk **satu Cut Line bersama**, semua Design aktif memakai irisan sudut yang diizinkan. Contoh: Otomatis + 0 / 180 memakai 0°/180°; Tanpa rotasi + Kelipatan 90 memakai 0°. Design dengan Quantity 0 tidak membatasi irisan. Aturan ini berlaku juga bila pemakai Cut Line bersama berada pada kelompok `/n` berbeda. Pilihan asli setiap Design di daftar tetap tersimpan.
+- **Minimum** tetap memakai 0° dan mempertahankan jalur template Minimum. **Optimize** mempertahankan rotasi susunan yang sudah ada. **Periksa Susunan** tidak mengaudit preset rotasi terhadap riwayat sumber.
+
+Pada `AutoAlignMenu`, siapkan Label `(Name)` **`lblRotation`** dengan Caption `Rotasi Design` dan ComboBox `(Name)` **`cmbRotation`** dengan Style `fmStyleDropDownList`. Beri ruang label untuk teks `Rotasi Design (Campuran)`. Empat pilihan diisi oleh kode; tidak perlu mengisi RowSource atau menambah form/macro baru.
+
+Pemasangan fitur ini memerlukan pembaruan `AAAlgorithm.bas`, `AAObjectStore.cls`, `AAPresenter.cls`, `AAModel.cls`, `AAProcessEngine.cls`, `AAMediumPlanner.cls`, `AAQuantityPlanner.cls`, dan kode form `AutoAlignMenu.vba` pada module/class yang sudah ada. Debug `Rotation` mencatat pilihan sumber dan batas efektif Cut Line bersama.
+
 ### Minimum
 
 `optMinimum` membandingkan rencana **Straight** dan **ZigZag** secara keseluruhan, dengan prioritas:
@@ -58,7 +80,7 @@ Untuk Quantity berupa angka dengan beberapa Design berbeda dalam satu container,
 
 `optMedium` mencoba kandidat rotasi dan pergeseran untuk mencari susunan yang lebih baik. Rencana Minimum yang lolos validasi juga ikut menjadi kandidat.
 
-- Bentuk non-rectangle mencoba rotasi relatif terhadap sumber dengan langkah **45°**: `0°`, `45°`, `90°`, `135°`, `180°`, `225°`, `270°`, dan `315°`.
+- Pada pilihan rotasi Otomatis, bentuk non-rectangle mencoba rotasi relatif terhadap sumber dengan langkah **45°**: `0°`, `45°`, `90°`, `135°`, `180°`, `225°`, `270°`, dan `315°`.
 - Rectangle memakai rotasi dengan langkah **90°**.
 - Segitiga dan kurva custom yang memenuhi syarat dapat memakai pola pasangan dengan rotasi berlawanan, offset vertikal, dan perapatan menurut kontur.
 - Pemilihan mengutamakan jumlah area paling sedikit, jumlah Design paling banyak, lalu keteraturan pola. Setelah itu, luas bounding box acuan collision ikut dibandingkan.
@@ -221,7 +243,7 @@ Siapkan tiga **Class Module** bernama persis `AAInspectionEngine`, `AAInspection
 2. Pilih objek Design dan tekan `cmdSetDesign`.
 3. Jika memakai Cut Line, daftarkan satu Cut Line bersama atau pasangan sebanyak Design melalui `cmdSetCutLine`. Periksa urutan pasangan dalam daftar.
 4. Pilih KissA, DieA, atau Custom. Untuk Custom, isi ukuran area jika ingin mengganti default.
-5. Pilih Minimum atau Medium, lalu atur Gap H/V sesuai kebutuhan.
+5. Pilih Minimum atau Medium, lalu atur Gap H/V sesuai kebutuhan. Untuk Medium, pilih Design di daftar dan atur Rotasi Design bila orientasinya perlu dibatasi.
 6. Pilih Design di `lbxObjects` dan atur Quantity. Gunakan Ctrl/Shift untuk menerapkan jumlah atau `/n` ke beberapa Design sekaligus.
 7. Tekan `cmdProcess`, lalu periksa susunan, jumlah, gap, dan pasangan hasil.
 8. Untuk membandingkan mode lain, lakukan Undo sekali sebelum Process berikutnya. `cmdClose` menutup form.

@@ -137,6 +137,8 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                 pairCutIndex = -1
                 If cutCount = 1 Then pairCutIndex = cutIndexes(0)
                 For pairAngle = 0 To 315 Step 45
+                    If Not models(firstIndex).AllowsRotation(CDbl(pairAngle)) Or _
+                       Not models(firstIndex).AllowsRotation(CDbl(pairAngle + 180)) Then GoTo NextPairAngle
                     For rowMode = 0 To 1
                         For patternMode = 0 To 3
                             If patternMode = 1 And pairAngle <> 0 And pairAngle <> 90 Then GoTo NextPairPattern
@@ -173,6 +175,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
 NextPairPattern:
                         Next patternMode
                     Next rowMode
+NextPairAngle:
                 Next pairAngle
             ElseIf Not firstVariant Is Nothing Then
                 If AADebugEnabled Then AADebugWrite "Pair", "curved lane eligible=" & _
@@ -973,9 +976,11 @@ Private Function AnglesFor(ByVal model As AAModel, ByVal firstAngle As Double) A
     stepAngle = 45
     If model.IsRectangle Then stepAngle = 90
     If model.IsRectangle And firstAngle / 90# <> Int(firstAngle / 90#) Then firstAngle = 0#
-    result.Add firstAngle
+    If model.AllowsRotation(firstAngle) Then result.Add firstAngle
     For angle = 0 To 315 Step stepAngle
-        If CDbl(angle) <> firstAngle Then result.Add CDbl(angle)
+        If CDbl(angle) <> firstAngle Then
+            If model.AllowsRotation(CDbl(angle)) Then result.Add CDbl(angle)
+        End If
     Next angle
     Set AnglesFor = result
 End Function
@@ -1006,6 +1011,8 @@ Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Lon
     ' Dua keluarga: 0/180 dan 90/270. Sembilan fase termasuk kedua tanda,
     ' dua offset baris: maksimal 36 kandidat; tidak mengikuti trial quota.
     For angle = 0 To 90 Step 90
+        If Not model.AllowsRotation(CDbl(angle)) Or _
+           Not model.AllowsRotation(CDbl(angle + 180)) Then GoTo NextCurvedAngle
         Set orientation = model.RotationVariant(CDbl(angle))
         Set opposite = model.RotationVariant(CDbl(angle + 180))
         If Not CurvedPairEligible(orientation) Or Not CurvedPairEligible(opposite) Then GoTo NextCurvedAngle
@@ -1058,6 +1065,7 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
     Dim slotLimit As Long
     Dim startX As Double, spanX As Double, spanY As Double, rows As Long, columns As Long
 
+    If Not model.AllowsRotation(firstAngle) Or Not model.AllowsRotation(firstAngle + 180#) Then Exit Function
     model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
     If h < 0# Or v < 0# Then Exit Function
     Set forward = model.RotationVariant(firstAngle)

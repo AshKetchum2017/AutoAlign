@@ -19,6 +19,22 @@ Private mTriangle As Boolean
 Private mVariants As Object
 Private mMediumDesignGeometry As AAGeometry
 Private mMinimumSteps As Object
+Private mRotationMask As Long
+
+Public Property Get RotationMask() As Long
+    RotationMask = mRotationMask
+    If RotationMask = 0 Then RotationMask = 255
+End Property
+
+Public Sub SetAllowedRotations(ByVal mask As Long)
+    If mask <> 1 And mask <> 17 And mask <> 85 And mask <> 255 Then _
+        Err.Raise vbObjectError + 5420, "AAModel", "Batas rotasi tidak valid."
+    mRotationMask = mask
+End Sub
+
+Public Function AllowsRotation(ByVal angle As Double) As Boolean
+    AllowsRotation = AARotationAllowed(RotationMask, angle)
+End Function
 
 Public Sub Prepare(ByVal designShape As Shape, ByVal cutShape As Shape, _
                    ByVal settings As AASettings)
@@ -278,6 +294,8 @@ End Property
 Public Function RotationVariant(ByVal angle As Double) As AARotationVariant
     Dim result As AARotationVariant
     Dim design As AAGeometry, collision As AAGeometry
+    If Not AllowsRotation(angle) Then Err.Raise vbObjectError + 5422, "AAModel", _
+        "Kandidat sudut melanggar batas rotasi Design."
     If mVariants.Exists(CStr(angle)) Then
         Set RotationVariant = mVariants(CStr(angle))
         Exit Function

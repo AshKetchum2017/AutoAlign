@@ -7,6 +7,7 @@ Private Type AAObjectEntry
     StaticID As Long
     Quantity As Long  ' -1 berarti kosong: isi area aktif, lalu area baru jika tidak muat.
     QuantityGroup As Long  ' 0: perilaku lama; positif: /n; -1: prefix / belum lengkap.
+    RotationMode As Long
 End Type
 
 Private mEntries() As AAObjectEntry
@@ -40,6 +41,20 @@ Public Property Get QuantityAt(ByVal index As Long) As Long
     CheckIndex index
     QuantityAt = mEntries(index).Quantity
 End Property
+
+Public Property Get RotationModeAt(ByVal index As Long) As Long
+    CheckIndex index
+    RotationModeAt = mEntries(index).RotationMode
+End Property
+
+Public Sub SetRotationModeAt(ByVal index As Long, ByVal mode As Long)
+    Dim validatedMask As Long
+    CheckIndex index
+    If mEntries(index).RoleLabel <> AA_ROLE_DESIGN Then Err.Raise vbObjectError + 5421, _
+        "AAObjectStore", "Rotasi hanya dapat diatur pada Design."
+    validatedMask = AARotationMask(mode)
+    mEntries(index).RotationMode = mode
+End Sub
 
 Public Function QuantityTextAt(ByVal index As Long) As String
     CheckIndex index
@@ -255,6 +270,7 @@ Private Sub AppendEntry(ByVal roleLabel As String, ByVal staticID As Long)
     mEntries(mCount).StaticID = staticID
     mEntries(mCount).Quantity = -1
     mEntries(mCount).QuantityGroup = 0
+    mEntries(mCount).RotationMode = AA_ROTATION_AUTO
     mCount = mCount + 1
 End Sub
 

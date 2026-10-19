@@ -20,8 +20,17 @@ Public Function ObjectListText(ByVal index As Long) As String
     If mStore.RoleAt(index) = AA_ROLE_DESIGN Then
         If Len(mStore.QuantityTextAt(index)) > 0 Then _
             ObjectListText = ObjectListText & " | Qty: " & mStore.QuantityTextAt(index)
+        ObjectListText = ObjectListText & " | Rot: " & AARotationText(mStore.RotationModeAt(index))
     End If
 End Function
+
+Public Function ObjectRotationModeAt(ByVal index As Long) As Long
+    ObjectRotationModeAt = mStore.RotationModeAt(index)
+End Function
+
+Public Sub SetObjectRotationMode(ByVal index As Long, ByVal mode As Long)
+    mStore.SetRotationModeAt index, mode
+End Sub
 
 Public Function ObjectRoleAt(ByVal index As Long) As String
     ObjectRoleAt = mStore.RoleAt(index)
