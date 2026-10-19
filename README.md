@@ -4,7 +4,28 @@ AutoAlign adalah macro VBA untuk CorelDRAW yang dirancang untuk menyusun dan men
 
 Macro ini membantu mengurangi pekerjaan manual saat menentukan jumlah objek yang muat, mengatur jarak, mencoba pola susunan, dan menjaga hasil agar tetap berada di dalam area serta menghindari zona mark.
 
-AutoAlign menyediakan mode **Minimum** dan **Medium**, model area **KissA**, **DieA**, dan **Custom**, serta pengaturan **Quantity** untuk jumlah tertentu, pengisian sisa area, atau pembagian beberapa Design dalam satu container.
+AutoAlign menyediakan mode **Minimum** dan **Medium**, model area **KissA**, **DieA**, dan **Custom**, serta pengaturan **Quantity** untuk jumlah tertentu, pengisian sisa area, atau pembagian beberapa Design dalam satu container. Pasangan Cut Line dan batas rotasi diatur per Design; susunan yang sudah ada dapat dioptimasi atau diperiksa melalui operasi tersendiri.
+
+## Pilih Operasi yang Sesuai
+
+| Operasi | Input di `lbxObjects` | Perilaku |
+| --- | --- | --- |
+| **Process** (`cmdProcess`) | Design sumber dan Cut Line jika digunakan. | Membuat susunan dari sumber, menggandakan objek sesuai Quantity, dan mengelompokkan hasil. Memerlukan sedikitnya satu Design. |
+| **Optimize** (`cmdOptimize`) | Group container susunan yang sudah ada. | Menggeser anggota untuk menyesuaikan gap atau merapatkan susunan, dengan jumlah dan rotasi tetap. Mendukung container Cut Line saja. |
+| **Periksa Susunan** (`cmdCheckLayout`) | Container hasil atau objek individual yang ingin diperiksa. | Membaca gap, collision, batas area, zona mark, dan pasangan. Tidak memperbaiki atau mengubah geometri. Mendukung Cut Line saja. |
+
+**Daftar Objects menentukan target ketiga operasi.** Selection Corel dipakai saat pendaftaran; berpindah selection setelah itu tidak mengganti isi daftar. Setelah Process, daftar sumber tidak otomatis menjadi daftar seluruh hasil. Untuk Optimize atau Periksa Susunan, kosongkan daftar dan daftarkan container hasil yang ingin ditangani, lalu tetapkan pasangan container-nya.
+
+## Alur Singkat
+
+1. Aktifkan dokumen dan halaman sumber, lalu buka `AutoAlignMenu`.
+2. Daftarkan objek melalui `cmdSetDesign` dan, jika digunakan, `cmdSetCutLine`.
+3. Pilih Design pada daftar, lalu tentukan **Pasangan Cut Line**, **Quantity**, dan **Rotasi Design** sesuai kebutuhan.
+4. Pilih **KissA**, **DieA**, atau **Custom**, kemudian **Minimum** atau **Medium**. Atur Area dan Gap H/V.
+5. Jalankan `cmdProcess`, tunggu sampai selesai, lalu periksa susunan pada dokumen.
+6. Untuk pemeriksaan hasil, daftarkan container hasil dan jalankan **Periksa Susunan**. Untuk mencoba Process lain dengan daftar sumber yang sama, lakukan **Undo sekali** sebelum memproses kembali.
+
+Nilai awal form adalah **KissA** dan **Minimum**. **Maximum** (`optMaximum`) dinonaktifkan. Optimize masih dalam tahap pengembangan; periksa hasilnya sebelum digunakan untuk produksi.
 
 ## Main Features
 
@@ -42,16 +63,6 @@ Setelah mendaftarkan objek, pilih baris Design lalu tentukan **Pasangan Cut Line
 - Process, Optimize, dan Periksa Susunan memvalidasi hubungan yang sama. Pasangan belum dipilih, hilang, atau di luar tiga susunan ditolak sebelum pemrosesan. Untuk Optimize/Periksa Susunan, daftarkan container hasil dan pilih ulang hubungan container tersebut. Keduanya juga mendukung daftar yang hanya berisi Cut Line.
 - Hubungan berlaku selama daftar aktif; Clear, penghapusan Design, atau penutupan form membuang hubungan terkait. Hubungan tidak disimpan ke registry atau dokumen.
 
-Pada `AutoAlignMenu`, siapkan kontrol berikut; tidak diperlukan form atau macro publik tambahan:
-
-| Tipe | `(Name)` | Pengaturan |
-| --- | --- | --- |
-| Label | `lblCutPartner` | Caption `Pasangan Cut Line`. |
-| ComboBox | `cmbCutPartner` | Style `fmStyleDropDownList`; RowSource dan ControlSource kosong. Pilihan dan kolom ID tersembunyi diatur kode. |
-| CommandButton | `cmdSelectPair` | Caption `Pilih Pasangan`. |
-
-Perbarui lima Class Module yang sudah ada: `AAObjectStore`, `AAPresenter`, `AAProcessEngine`, `AAOptimizeEngine`, `AAInspectionEngine`, serta kode form `AutoAlignMenu.vba`. Pertahankan nama Class Module di VBE dan resource form yang sudah digunakan.
-
 Untuk pasangan, **Cut Line menjadi acuan pola, gap, dan collision antarunit**. Bounds Design tetap diperiksa agar muat di dalam area. Artwork Design berpasangan dapat bertumpuk selama acuan Cut Line memenuhi aturan susunan.
 
 Untuk pasangan selain rectangle bersudut runcing, Design boleh lebih kecil maksimal **0,2 mm** atau lebih besar maksimal **2 mm** dari Cut Line pada setiap sumbu.
@@ -76,10 +87,6 @@ Sudut relatif terhadap **orientasi sumber saat Process**, bukan sudut absolut te
 - Untuk **satu Cut Line bersama**, semua Design aktif memakai irisan sudut yang diizinkan. Contoh: Otomatis + 0 / 180 memakai 0°/180°; Tanpa rotasi + Kelipatan 90 memakai 0°. Design dengan Quantity 0 tidak membatasi irisan. Aturan ini berlaku juga bila pemakai Cut Line bersama berada pada kelompok `/n` berbeda. Pilihan asli setiap Design di daftar tetap tersimpan.
 - **Minimum** tetap memakai 0° dan mempertahankan jalur template Minimum. **Optimize** mempertahankan rotasi susunan yang sudah ada. **Periksa Susunan** tidak mengaudit preset rotasi terhadap riwayat sumber.
 
-Pada `AutoAlignMenu`, siapkan Label `(Name)` **`lblRotation`** dengan Caption `Rotasi Design` dan ComboBox `(Name)` **`cmbRotation`** dengan Style `fmStyleDropDownList`. Beri ruang label untuk teks `Rotasi Design (Campuran)`. Empat pilihan diisi oleh kode; tidak perlu mengisi RowSource atau menambah form/macro baru.
-
-Pemasangan fitur ini memerlukan pembaruan `AAAlgorithm.bas`, `AAObjectStore.cls`, `AAPresenter.cls`, `AAModel.cls`, `AAProcessEngine.cls`, `AAMediumPlanner.cls`, `AAQuantityPlanner.cls`, dan kode form `AutoAlignMenu.vba` pada module/class yang sudah ada. Debug `Rotation` mencatat pilihan sumber dan batas efektif Cut Line bersama.
-
 ### Minimum
 
 `optMinimum` membandingkan rencana **Straight** dan **ZigZag** secara keseluruhan, dengan prioritas:
@@ -91,7 +98,7 @@ Pemasangan fitur ini memerlukan pembaruan `AAAlgorithm.bas`, `AAObjectStore.cls`
 
 Rectangle, termasuk rectangle dengan sudut lengkung, disusun dengan pola Straight.
 
-Perencanaan memeriksa batas area, zona mark, gap kontur, dan collision. Langkah Straight dan ZigZag mengikuti kontur acuan serta gap yang diminta. Saat susunan perlu menyesuaikan posisi terhadap mark, Minimum mencoba pergeseran bersama sebelum mengurangi isi susunan.
+Perencanaan memeriksa batas area, zona mark, gap kontur, dan collision, tanpa rotasi tambahan terhadap orientasi sumber. Langkah Straight dan ZigZag mengikuti kontur acuan serta gap yang diminta. Saat susunan perlu menyesuaikan posisi terhadap mark, Minimum mencoba pergeseran bersama sebelum mengurangi isi susunan.
 
 Untuk Quantity berupa angka dengan beberapa Design berbeda dalam satu container, Minimum juga mencoba posisi tambahan berdasarkan tepi dan alignment tetangga pada **rotasi 0°** sebelum membuka container baru. Pencarian tambahan ini tetap dibatasi dan harus memenuhi gap, batas area, serta zona mark.
 
@@ -106,6 +113,8 @@ Untuk Quantity berupa angka dengan beberapa Design berbeda dalam satu container,
 - Perapatan dan perataan tetangga tetap diperiksa terhadap gap, collision, batas area, dan mark.
 
 Jika lebar dan tinggi susunan acuan collision pada **setiap area** setara dalam toleransi **0,001 mm**, Medium memilih total rotasi tambahan paling sedikit terhadap orientasi sumber. Toleransi ini hanya untuk membandingkan kandidat, bukan kelonggaran gap atau batas area. Jika total rotasi juga sama, isi area awal diprioritaskan.
+
+Pada satu Design rectangle dengan Quantity kosong dan satu area, Medium juga mencoba mengisi celah yang aman setelah pemusatan. Penambahan ini mempertahankan posisi objek yang sudah tersusun dan tidak memperbesar susunan.
 
 Medium memakai pencarian heuristik dengan batas kandidat. Hasilnya bukan jaminan nesting paling optimal untuk setiap bentuk. Waktu Process dapat bertambah pada kurva kompleks, banyak sumber, atau pencarian Quantity kelompok.
 
@@ -127,13 +136,15 @@ Zona mark preset menjadi area yang dihindari saat menyusun objek:
 | KissA | Satu persegi **12 × 12 mm** | `(162,5; 11,5)` |
 | DieA | Empat ellipse **11 × 11 mm** | `(11; 11)`, `(11; 474)`, `(314; 11)`, `(314; 474)` |
 
-Pemeriksaan zona mark memakai toleransi penetrasi **0,2 mm** dari tepi mark. Zona ini adalah acuan perencanaan; Process tidak membuat objek sensor atau mark fisik.
+Koordinat pusat zona diukur dari **kiri bawah sheet preset**. Pemeriksaan zona mark memakai toleransi penetrasi **0,2 mm** dari tepi mark; toleransi ini tidak menambah kelonggaran batas area atau mengurangi gap antarobjek. Zona ini adalah acuan perencanaan; Process tidak membuat objek sensor atau mark fisik.
 
 Ukuran sheet preset dipakai sementara saat Process, lalu **ukuran halaman asli dipulihkan**. Hasil tetap mengacu pada pusat halaman asli.
 
 ### Gap Horizontal dan Vertical
 
 Gap diatur melalui `txbGapHorizontal` dan `txbGapVertical`. Isi jarak kontur dalam **mm**, dengan nilai minimal **0 mm**. Pengaturan ini berlaku pada Minimum dan Medium.
+
+Gunakan angka desimal biasa tanpa satuan atau pemisah ribuan. Titik dan koma diterima sebagai pemisah desimal; notasi eksponen tidak digunakan pada input form.
 
 Kolom kosong memakai preferensi default model. Nilai bawaan:
 
@@ -145,7 +156,7 @@ Kolom kosong memakai preferensi default model. Nilai bawaan:
 
 Pada KissA/DieA, rectangle bersudut runcing memakai gap default **0 mm**. Input manual diutamakan. Angka desimal dapat menggunakan titik atau koma, misalnya `1.5` atau `1,5`.
 
-Tombol `cmdDefaultSetting` membuka **DefaultSettings** untuk mengatur Area W/H dan Gap H/V per model. Berpindah KissA/DieA mempertahankan draft masing-masing; **Save** menyimpan keduanya, sedangkan **Cancel** atau tombol X membuang perubahan. Area harus positif, gap minimal 0 mm, dan seluruh kolom harus terisi. Hint form utama mengikuti preferensi setelah Save; input gap manual dan input area Custom dipertahankan.
+Tombol `cmdDefaultSetting` membuka **DefaultSettings** untuk mengatur Area W/H dan Gap H/V pada **KissA dan DieA**. Custom memakai input manual pada form utama dengan nilai bawaan pada tabel. Berpindah KissA/DieA mempertahankan draft masing-masing; **Save** menyimpan keduanya, sedangkan **Cancel** atau tombol X membuang perubahan. Area harus positif, gap minimal 0 mm, dan seluruh kolom harus terisi. Hint form utama mengikuti preferensi setelah Save; input gap manual dan input area Custom dipertahankan.
 
 Preferensi disimpan di registry Windows dan dimuat saat AutoAlign digunakan kembali. Ukuran halaman preset dan koordinat mark terpisah dari pengaturan area susun.
 
@@ -172,6 +183,8 @@ Input gap Minimum dan Medium disimpan terpisah saat berpindah mode. Pada kunjung
 | Bilangan bulat positif, misalnya `100` | Menyusun jumlah yang diminta; kebutuhan yang belum tertampung dilanjutkan ke area berikutnya. |
 | `/n`, misalnya `/1` | Mengelompokkan Design dengan nomor yang sama untuk dibagi dalam satu container. |
 
+Contoh: `100` meminta 100 salinan Design; `/1` pada dua Design meminta pembagian satu container kelompok, bukan satu salinan per Design.
+
 Tanda `-` yang tampil saat Quantity kosong adalah placeholder; gunakan kolom kosong untuk pengisian otomatis. Token `/` harus disertai nomor kelompok positif; `/` saja dan `/0` tidak valid.
 
 **Quantity kelompok `/n`** tersedia pada Minimum dan Medium, untuk Design standalone, Cut Line bersama, maupun Cut Line masing-masing. Contohnya, beri `/1` pada dua Design agar keduanya mengisi satu container kelompok yang sama. `/2` membuat kelompok lain.
@@ -180,7 +193,7 @@ Kelompok diproses menurut nomor, lalu Design dengan Quantity biasa diproses terp
 
 Susunan Cut Line bersama yang identik dapat memakai satu template Cut Line. Kelompok `/n` tetap harus muat dalam satu container.
 
-### Indikator Progres Process
+### Progres dan Cancel
 
 Indikator progres tampil tanpa perlu mengaktifkan Debug:
 
@@ -195,14 +208,14 @@ Saat pencarian susunan, bar bergerak sebagai indikator aktivitas; bar ini **buka
 
 Pembaruan panel dan pemrosesan event memakai interval 200 ms pada checkpoint. Operasi CorelDRAW yang sedang berjalan dapat membuat jeda aktual lebih panjang.
 
-Selama Process, input form dan interaksi dengan jendela dokumen dinonaktifkan sementara. Tombol **Close** berubah menjadi **Cancel** untuk meminta pembatalan. Permintaan diproses pada checkpoint berikutnya; operasi CorelDRAW yang sedang berjalan perlu selesai terlebih dahulu. Selama pemulihan, tombol menampilkan **Membatalkan...**. Setelah pembatalan, perubahan Process dipulihkan, form tetap terbuka, dan tombol kembali menjadi **Close**. Saat tidak ada proses berjalan, **Close** menutup form.
+Process, Optimize, dan Periksa Susunan memakai panel progres serta mekanisme Cancel yang sama. Selama operasi, input form dan interaksi dengan jendela dokumen dinonaktifkan sementara. Tombol **Close** berubah menjadi **Cancel** untuk meminta pembatalan. Permintaan diproses pada checkpoint berikutnya; operasi CorelDRAW yang sedang berjalan perlu selesai terlebih dahulu. Selama pemulihan, tombol menampilkan **Membatalkan...**. Saat pembatalan, Process mencoba membatalkan perubahan melalui Undo dan Optimize mencoba memulihkan posisi. Form tetap terbuka dan tombol kembali menjadi **Close** setelah cleanup. Jika pemulihan tidak lengkap, ikuti pesan yang meminta pemeriksaan dokumen atau Undo. Periksa Susunan menghasilkan laporan berstatus belum selesai. Saat tidak ada proses berjalan, **Close** menutup form.
 
 ### Hasil, Layer, dan Undo
 
 - Area pertama mengacu pada pusat halaman asli. Area tambahan ditempatkan ke kanan pada **halaman yang sama**, dengan jarak antartepi area **50 mm**.
 - Objek sumber digunakan sebagai hasil pertama, lalu diduplikasi untuk slot berikutnya.
 - Hasil digroup menurut area, sumber, peran, dan layer; Design dan Cut Line tetap terpisah.
-- Layer sumber dipertahankan dengan koreksi urutan pasangan bila diperlukan. Pada layer bernama `Layer n`, pasangan yang terbalik dapat ditukar layernya; Cut Line pada layer yang sama ditempatkan di depan Design.
+- Layer sumber dipertahankan dengan koreksi urutan pasangan bila diperlukan. Jika keduanya bernama `Layer n` dan nomor layer Cut Line lebih kecil, Design/Cut Line ditukar layernya. Pada penamaan lain, layer Cut Line dapat dipindahkan ke atas layer Design. Cut Line pada layer yang sama ditempatkan di depan Design.
 - Urutan anggota group mengikuti urutan penempatan.
 - Group hasil menjadi selection aktif. Process mengaktifkan **Pick Tool**, termasuk jika dijalankan saat **Shape Tool** aktif.
 - Gunakan **Undo sekali** untuk membatalkan hasil Process sebelum mencoba mode lain dengan daftar sumber yang sama.
@@ -222,7 +235,13 @@ Pencarian memakai pemeriksaan gap kontur dan collision yang sama dengan planner,
 
 **Optimize Medium** merapatkan kelompok baris, kolom, dan objek individual, kemudian mencoba memusatkan hasil jika valid. Susunan awal harus memenuhi area, gap, dan mark. Mode ini dapat dicoba untuk susunan dengan bentuk/ukuran campuran; hasilnya tetap perlu diperiksa. `optMaximum` dinonaktifkan.
 
-Satu Optimize memakai satu CommandGroup dan memulihkan unit dokumen/ruler serta seleksi. Seluruh rencana divalidasi sebelum perubahan diterapkan; hasil aktual diperiksa lagi dan posisi dipulihkan bila gagal. Cancel tersedia melalui lifecycle progres yang sama dengan Process. Pengguna mengonfirmasi compile VBE aman dan melaporkan pengujian awal susunan Straight standar. Rincian hasil gap/anchor, variasi bentuk, serta satu Undo belum dikonfirmasi untuk perubahan ini; simulasi dengan geometri/host mock tetap dibedakan dari hasil runtime tersebut.
+Optimize membaca struktur `container → subgroup sumber → instance`; group pada tingkat instance tetap utuh. Pasangan anggota dikenali dari pusat bounds relatif terhadap container dengan toleransi **1 mm**. Untuk Cut Line bersama, container Design harus mempunyai template posisi yang identik dalam toleransi tersebut serta orientasi instance yang sesuai.
+
+**Acuan area Optimize berpusat pada bounding box masing-masing container saat dibaca.** Periksa Susunan memakai grid halaman Process. Karena itu, lolos Optimize tidak berarti susunan pasti lolos pemeriksaan terhadap grid halaman yang dipakai Process.
+
+Satu Optimize memakai satu CommandGroup, lalu memulihkan unit dokumen/ruler serta selection. Seluruh rencana divalidasi sebelum perubahan diterapkan; hasil aktual diperiksa lagi. Jika gagal setelah objek digeser, aplikasi mencoba memulihkan posisi semula. Jika pemulihan tidak lengkap, pesan meminta **Undo sekali**. Cancel tersedia pada checkpoint operasi.
+
+Optimize bersifat eksperimental. Pencarian posisi yang aman dapat berhenti karena batas pencarian; mode ini tidak menjamin susunan paling rapat untuk setiap bentuk.
 
 ### Pemeriksaan Susunan
 
@@ -242,34 +261,77 @@ Ringkasan status, jumlah objek terbaca, pasangan Design/Cut Line yang dikenali, 
 
 Cancel, geometri gagal dibaca, ID hilang, daftar tumpang tindih, pasangan ambigu, atau tidak ada objek terbaca menghasilkan status **Pemeriksaan belum selesai**. Daftar dibatasi **1000 temuan pertama**, tetapi hitungan dan pemeriksaan tetap dilanjutkan. Jika debug aktif, label `Inspect`/`Inspect root` mencatat jumlah container, tipe/ID dan jumlah anggotanya, temuan, serta ringkasan hasil.
 
-#### Kontrol dan pemasangan pemeriksaan
+## Menyiapkan Hasil untuk Optimize atau Pemeriksaan
 
-Tambahkan CommandButton `cmdCheckLayout` dengan Caption `Periksa Susunan` pada `AutoAlignMenu`. Buat UserForm `(Name)` **`InspectionResults`**, lalu pasang kode dari `src/forms/InspectionResults.vba` dan kontrol berikut:
+1. Selesaikan Process dan pertahankan struktur group hasilnya.
+2. Tekan `cmdClear` untuk mengosongkan daftar sumber. Tindakan ini tidak menghapus objek di dokumen.
+3. Daftarkan container Design hasil melalui `cmdSetDesign`, lalu container Cut Line melalui `cmdSetCutLine` jika digunakan. Untuk Cut Line saja, cukup daftarkan container Cut Line.
+4. Pilih setiap Design pada daftar dan tetapkan pasangan **container Cut Line** yang sesuai. Hubungan sumber tidak diteruskan otomatis ke ID container hasil.
+5. Pilih model dan Area/Gap yang ingin digunakan. Gunakan **Minimum/Medium + Optimize** untuk menggeser susunan, atau **Periksa Susunan** untuk membaca temuan.
+6. Pada dialog hasil pemeriksaan, pilih temuan dan tekan **Pilih Objek**. Tutup dialog sebelum mengedit, lalu jalankan pemeriksaan ulang.
 
-| Tipe | `(Name)` | Pengaturan/kegunaan |
+Jangan mendaftarkan container bersamaan dengan anggotanya. Untuk memeriksa banyak area atau seluruh hasil, daftarkan semua container yang diperlukan. Objek yang tidak didaftarkan tidak termasuk cakupan laporan.
+
+## Pemasangan dari Source
+
+Target penggunaan project adalah **CorelDRAW 2024 64-bit dengan VBA**. Kompatibilitas dengan versi lain perlu diperiksa tersendiri.
+
+Repository menyediakan code-behind UserForm, Class Module, dan Standard Module. Paket GMS siap pakai serta layout UserForm `.frm/.frx` tidak disertakan, sehingga pemasangan memerlukan project VBA dan kontrol form yang disiapkan secara manual.
+
+1. Buat atau gunakan project GMS AutoAlign di editor VBA CorelDRAW.
+2. Siapkan Class Module untuk setiap file pada `src/classes/`, dengan properti `(Name)` sama persis seperti nama file tanpa ekstensi. File `.cls` berisi source headerless; masukkan isinya ke Class Module bernama sesuai, bukan mengandalkan metadata import class.
+3. Masukkan seluruh Standard Module pada `src/modules/` dengan nama sesuai file. `AADebug` tetap dibutuhkan walaupun keluaran debug dinonaktifkan.
+4. Buat UserForm **AutoAlignMenu**, **DefaultSettings**, dan **InspectionResults**. Pasang code-behind dari `src/forms/` pada form yang namanya cocok, lalu siapkan kontrol berikut.
+5. Lakukan **Debug → Compile** pada project VBA dan selesaikan referensi atau kontrol yang belum cocok sebelum menjalankan form.
+
+### AutoAlignMenu
+
+| Tipe kontrol | `(Name)` | Kegunaan/pengaturan |
 | --- | --- | --- |
-| Label | `lblSummary` | Ringkasan; beri tinggi untuk beberapa baris. |
-| ListBox | `lbxIssues` | Daftar temuan; kode mengatur lima kolom: kategori, area, ID pertama, ID kedua, detail. |
-| TextBox | `txbDetail` | `MultiLine=True`, `Locked=True`; detail dan acuan pemeriksaan. |
-| CommandButton | `cmdSelectIssue` | Caption `Pilih Objek`. |
-| CommandButton | `cmdClose` | Caption `Tutup`. |
+| ListBox | `lbxObjects` | Daftar sumber/container. Kode mengatur pilihan Ctrl/Shift. |
+| CommandButton | `cmdSetDesign`, `cmdSetCutLine` | Mendaftarkan selection sebagai Design atau Cut Line. |
+| CommandButton | `cmdRemove`, `cmdClear` | Menghapus baris terpilih atau mengosongkan daftar. |
+| Label | `lblCutPartner` | Caption **Pasangan Cut Line**. |
+| ComboBox | `cmbCutPartner` | Style `fmStyleDropDownList`; RowSource/ControlSource kosong. Pilihan dan kolom ID diisi kode. |
+| CommandButton | `cmdSelectPair` | Caption **Pilih Pasangan**. |
+| Label | `lblRotation` | Caption **Rotasi Design**; beri ruang untuk teks **Rotasi Design (Campuran)**. |
+| ComboBox | `cmbRotation` | Style `fmStyleDropDownList`; pilihan diisi kode. RowSource/ControlSource kosong. |
+| TextBox | `txbQuantity` | Quantity per Design. |
+| OptionButton | `optKissA`, `optDieA`, `optCustom` | Model area. |
+| OptionButton | `optMinimum`, `optMedium`, `optMaximum` | Mode algoritma; Maximum dinonaktifkan kode. |
+| TextBox | `txbAreaWidth`, `txbAreaHeight` | Ukuran area Custom. |
+| TextBox | `txbGapHorizontal`, `txbGapVertical` | Gap H/V dalam mm. |
+| CommandButton | `cmdDefaultSetting` | Membuka DefaultSettings. |
+| CommandButton | `cmdProcess`, `cmdOptimize`, `cmdCheckLayout` | Process, Optimize, dan **Periksa Susunan**. |
+| CommandButton | `cmdClose` | Close/Cancel sesuai status operasi. |
+| Frame | `frmProgress` | Area bar progres. |
+| Label | `lblProgressFill` | Isi bar; letakkan di dalam `frmProgress`. |
+| Label | `lblProgressStage`, `lblProgressDetail`, `lblProgressTime` | Tahap, detail, dan durasi. |
 
-Siapkan tiga **Class Module** bernama persis `AAInspectionEngine`, `AAInspectionReport`, dan `AAInspectionIssue`, lalu masukkan isi file `.cls` masing-masing. Perbarui pula kode `AAPresenter` dan `AutoAlignMenu`. File class bersifat headerless; pastikan properti VBE `(Name)` cocok, bukan hanya nama file di folder. Tidak diperlukan macro publik terpisah. Resource layout `.frm/.frx` form hasil tidak disediakan; atur ukuran kontrol agar ringkasan dan detail terbaca.
+Kode mengatur GroupName model/mode, daftar ComboBox, multi-selection, dan placeholder. Gunakan tipe serta nama kontrol persis seperti source; ukuran dan tata letak visual dapat disesuaikan.
 
-## Cara menggunakan
+### DefaultSettings
 
-1. Buka dokumen dan halaman sumber di CorelDRAW, lalu buka `AutoAlignMenu`.
-2. Pilih objek Design dan tekan `cmdSetDesign`.
-3. Jika memakai Cut Line, daftarkan satu Cut Line bersama atau pasangan sebanyak Design melalui `cmdSetCutLine`. Pilih Design di daftar lalu tetapkan ID melalui Pasangan Cut Line. Gunakan Pilih Pasangan untuk memeriksa pilihan pada dokumen.
-4. Pilih KissA, DieA, atau Custom. Untuk Custom, isi ukuran area jika ingin mengganti default.
-5. Pilih Minimum atau Medium, lalu atur Gap H/V sesuai kebutuhan. Untuk Medium, pilih Design di daftar dan atur Rotasi Design bila orientasinya perlu dibatasi.
-6. Pilih Design di `lbxObjects` dan atur Quantity. Gunakan Ctrl/Shift untuk menerapkan jumlah atau `/n` ke beberapa Design sekaligus.
-7. Tekan `cmdProcess`, lalu periksa susunan, jumlah, gap, dan pasangan hasil.
-8. Untuk membandingkan mode lain, lakukan Undo sekali sebelum Process berikutnya. `cmdClose` menutup form.
+| Tipe kontrol | `(Name)` | Kegunaan |
+| --- | --- | --- |
+| OptionButton | `optKissASet`, `optDieASet` | Memilih profil default yang diedit. |
+| TextBox | `txbDefaultAreaWidth`, `txbDefaultAreaHeight` | Area W/H dalam mm. |
+| TextBox | `txbDefaultGapHorizontal`, `txbDefaultGapVertical` | Gap H/V dalam mm. |
+| CommandButton | `cmdSave`, `cmdCancel` | Save kedua draft profil / Cancel tanpa menyimpan. |
+
+### InspectionResults
+
+| Tipe kontrol | `(Name)` | Kegunaan/pengaturan |
+| --- | --- | --- |
+| Label | `lblSummary` | Ringkasan; sediakan ruang untuk beberapa baris. |
+| ListBox | `lbxIssues` | Lima kolom yang diatur kode: kategori, area, ID pertama, ID kedua, dan detail. |
+| TextBox | `txbDetail` | `MultiLine=True`, `Locked=True`; ringkasan, detail temuan, dan acuan pemeriksaan. |
+| CommandButton | `cmdSelectIssue` | Caption **Pilih Objek**. |
+| CommandButton | `cmdClose` | Caption **Tutup**. |
+
+Form ini dibuka oleh `cmdCheckLayout`; tidak memerlukan macro publik tersendiri. Pastikan `AAInspectionEngine`, `AAInspectionReport`, dan `AAInspectionIssue` tersedia sebagai Class Module.
 
 ## Integrasi dan Source
-
-Repository menyediakan source VBA berupa code-behind UserForm, class module, dan standard module. Layout visual UserForm lengkap serta paket GMS siap pakai tidak disertakan. Siapkan UserForm `AutoAlignMenu` dan kontrol sesuai nama dalam kode saat memasangnya di project VBA CorelDRAW.
 
 | Lokasi | Peran |
 | --- | --- |
@@ -280,15 +342,16 @@ Repository menyediakan source VBA berupa code-behind UserForm, class module, dan
 | `src/classes/AAInspectionEngine.cls`, `AAInspectionReport.cls`, `AAInspectionIssue.cls`, `src/forms/InspectionResults.vba` | Pemeriksaan susunan terdaftar, laporan temuan, dan pemilihan objek terkait. |
 | `src/classes/AAOptimizeEngine.cls`, `AAOptimizeMinimum.cls`, `AAOptimizeLayout.cls` | Optimize Minimum/Medium, snapshot kelompok, validasi, dan penerapan translasi. Import sebagai Class Module dengan nama yang sesuai. |
 | `src/classes/AAPlanner.cls`, `AAMediumPlanner.cls`, `AAQuantityPlanner.cls` | Perencanaan Minimum, Medium, dan kuota kelompok. |
+| `src/classes/AALayoutPlan.cls`, `AAPlacement.cls`, `AARotationVariant.cls`, `AAGroupBucket.cls` | Data rencana, posisi dan orientasi kandidat, serta pengelompokan hasil. |
 | `src/classes/AAModel.cls`, `AAGeometry.cls`, `AAContour.cls`, `AAOccupiedIndex.cls` | Acuan bentuk, kontur, rotasi, gap, dan pemeriksaan tetangga. |
 | `src/modules/AAAlgorithm.bas` | Konstanta serta aturan layer dan Z-Order. |
 | `src/modules/AADebug.bas` | Debug, profiling, dan diagnostik memori. |
-| `src/modules/AAGapBenchmark.bas` | Benchmark diagnostik fungsi jarak lama/baru melalui Immediate Window. Import sebagai Standard Module bernama `AAGapBenchmark`. |
+| `src/modules/AAGapBenchmark.bas` | Benchmark diagnostik dua rumus jarak segmen melalui Immediate Window. Import sebagai Standard Module bernama `AAGapBenchmark`. |
 | `src/modules/AAProgress.bas` | Indikator tahap/detail/durasi, pembaruan bar, serta penguncian sementara jendela dokumen saat Process. |
 | `src/modules/MRTargetBridge.bas` | Membuka form melalui `OpenMacro` dan menghubungkan callback MacroRunner. |
-| `Changelog.log` | Riwayat perubahan. |
+| [Changelog.log](Changelog.log) | Riwayat perubahan. |
 
-Integrasi MacroRunner mendukung pembukaan/penutupan form dan pencatatan durasi Process. Pengaturan serta penyusunan dijalankan melalui form AutoAlign.
+Integrasi MacroRunner mendukung pembukaan/penutupan form dan pencatatan durasi Process melalui `MRTargetBridge.OpenMacro`, `MRBindRunner`, dan `MRDetachRunner`. Tidak diperlukan reference langsung ke project VBA MacroRunner. Form dengan nama yang sama harus ditutup sebelum dibuka melalui antrean. Pengaturan serta penyusunan dijalankan melalui form AutoAlign.
 
 Preferensi pengguna tersimpan pada `HKCU\Software\VB and VBA Program Settings\RinCorelMacros\AutoAlignDefaults`, nilai `ProfilesV1`.
 
@@ -310,7 +373,7 @@ Pada pencarian kuota Medium, `Quota reject cache` mencatat pemeriksaan posisi ga
 
 `edge batches` mencatat pemakaian query indeks untuk kelompok segmen: `queries` adalah query gabungan, `prechecks` pemeriksaan awal per kelompok, dan `rechecks` verifikasi penolakan melalui query per segmen. `fallback cells/spread/dense` membedakan batas luas sel, pelebaran query, dan kepadatan kandidat; `fallback` juga mencakup kelompok yang terlalu pendek. `source edges` menghitung segmen sumber pada jalur tanpa fallback, termasuk pemeriksaan awal. `offered` adalah jumlah kandidat yang disediakan untuk pemeriksaan batch, bukan jumlah pasangan yang benar-benar dihitung jaraknya.
 
-Untuk membandingkan biaya fungsi jarak, import `AAGapBenchmark.bas`, lalu jalankan `AADebugBenchmarkGap` saat Process tidak berjalan. Helper memakai 4096 pasangan segmen sintetis yang tetap, memeriksa kesamaan hasil, melakukan pemanasan, lalu menjalankan delapan putaran dengan urutan A/B bergantian. A memakai rumus empat akar, B rumus satu akar. `median paired ratio B/A` di bawah 1 berarti B lebih cepat pada corpus tersebut; angka ini tidak mewakili percepatan Process atau pengujian kurva native.
+Untuk membandingkan biaya fungsi jarak, import `AAGapBenchmark.bas`, lalu jalankan `AADebugBenchmarkGap` saat Process tidak berjalan. Helper memakai 4096 pasangan segmen sintetis yang tetap, memeriksa kesamaan hasil, melakukan pemanasan, lalu menjalankan delapan putaran secara default dengan urutan A/B bergantian. A memakai rumus empat akar, B rumus satu akar. `median paired ratio B/A` di bawah 1 berarti B lebih cepat pada corpus tersebut; angka ini tidak mewakili percepatan Process atau pengujian kurva native.
 
 Benchmark tidak memerlukan dokumen atau seleksi. Hasil tampil di Immediate Window dan mengikuti file debug jika aktif. Contoh penyimpanan log:
 
@@ -321,13 +384,32 @@ AADebugBenchmarkGap
 AADebugOff
 ```
 
+## Troubleshooting
+
+| Kondisi | Yang perlu diperiksa |
+| --- | --- |
+| Design belum dipasangkan atau tampil **Pasangan hilang /ID** | Pilih Design, lalu tetapkan ulang `cmbCutPartner`. Untuk standalone, pilih **Tanpa Cut Line** dan hapus semua baris Cut Line. Remove tidak mengalihkan pasangan otomatis. |
+| Ingin berbagi beberapa Cut Line ke beberapa kelompok Design | Gunakan satu Cut Line bersama untuk seluruh Design, atau satu Cut Line berbeda per Design. Campuran kelompok berbagi Cut Line belum didukung. |
+| Nilai Quantity/rotasi tampak kosong saat memilih banyak Design | Pilihan dapat berbeda antarbaris. Memilih nilai baru menerapkannya ke semua Design terpilih; Cut Line diabaikan. |
+| Jumlah hasil Medium berkurang setelah rotasi dibatasi | Kandidat orientasi yang boleh dipakai lebih sedikit. Pada Cut Line bersama, periksa irisan preset seluruh Design aktif. |
+| Hasil tidak sesuai gap yang diinginkan | Isi Gap H/V manual dalam mm. Kolom kosong memakai default; pada rectangle bersudut runcing preset, default gap tetap 0 mm. Posisi diagonal memakai nilai H/V terbesar. |
+| ID sumber tidak ditemukan setelah Process | Undo hasil Process sekali sebelum mencoba Process lain dengan sumber yang sama, atau kosongkan daftar dan daftarkan sumber/container yang memang ingin dipakai. |
+| Optimize menolak susunan | Pastikan input berupa container, struktur anggota sesuai, pasangan unik, dan layer dapat diedit. Medium memerlukan susunan awal valid terhadap Area/Gap/mark. |
+| Optimize lolos, tetapi Periksa Susunan menemukan batas area/mark | Optimize berpusat pada bounding box container; pemeriksaan memakai grid halaman Process. Periksa posisi container, ukuran area, model, dan halaman sumber. |
+| Laporan **Pemeriksaan belum selesai** | Periksa detail: pembatalan, geometri/ID gagal dibaca, daftar duplikat, atau pasangan ambigu. Status ini tidak menyatakan susunan bebas masalah. |
+| Cancel belum langsung berhenti | Permintaan ditangani pada checkpoint. Tunggu operasi Corel yang sedang berjalan dan proses pemulihan selesai. |
+| Compile gagal atau hasil pemeriksaan tidak bisa dibuka | Cocokkan `(Name)` Class Module, UserForm, dan seluruh kontrol; pastikan `InspectionResults` serta class pemeriksaan tersedia. |
+
 ## Status dan Batasan
 
 - Process menyediakan mode **Minimum** dan **Medium**. `optMaximum` dinonaktifkan. Optimize bersifat eksperimental; periksa hasil pemadatannya sebelum digunakan.
 - Perencanaan dibatasi hingga **5000 objek per sumber**; satu Cut Line bersama juga mempunyai batas jumlah terkait.
 - Sumber harus mempunyai ukuran yang valid dan kurva yang dapat dibaca. Pada group yang perlu dibaca geometrinya, anggota tanpa kurva dapat menyebabkan validasi gagal.
 - Daftar mempertahankan ID sumber. Jika sumber dihapus, dipindah, atau berubah struktur, pulihkan sumber atau daftarkan ulang sebelum Process.
-- Hasil bergantung pada bentuk, jumlah sumber, model area, gap, Quantity, dan batas pencarian.
+- Preset Quantity, batas rotasi, pasangan Cut Line, dan daftar Objects berlaku selama instance form aktif. Hanya default Area/Gap KissA dan DieA yang disimpan ke registry.
+- Pemeriksaan hanya mencakup objek terdaftar dan memakai validator kontur AA. Laporan tanpa temuan tidak membuktikan semua objek halaman aman atau memberi pengukuran gap eksak yang independen.
+- Optimize dan Periksa Susunan membaca struktur container tertentu; keduanya tidak menelusuri group manual dengan kedalaman sembarang.
+- Hasil bergantung pada bentuk, jumlah sumber, model area, gap, Quantity, dan batas pencarian. Pencarian heuristik tidak menjamin nesting optimum.
 
 ## Lisensi dan Masukan
 
