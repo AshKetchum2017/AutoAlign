@@ -38,10 +38,12 @@ Private Sub RefreshDetail()
     Dim item As AAInspectionIssue
     cmdSelectIssue.Enabled = False
     If mReport Is Nothing Then Exit Sub
-    txbDetail.Text = mReport.Context
+    ' Ringkasan harus tetap terbaca walau label pada layout form terpotong.
+    txbDetail.Text = mReport.Summary & vbCrLf & vbCrLf & mReport.Context
     If lbxIssues.ListIndex < 0 Then Exit Sub
     Set item = mReport.Issue(lbxIssues.ListIndex + 1)
-    txbDetail.Text = item.Category & vbCrLf & item.Detail & vbCrLf & vbCrLf & mReport.Context
+    txbDetail.Text = mReport.Summary & vbCrLf & vbCrLf & item.Category & vbCrLf & _
+        item.Detail & vbCrLf & vbCrLf & mReport.Context
     cmdSelectIssue.Enabled = (item.FirstID > 0 Or item.SecondID > 0)
 End Sub
 

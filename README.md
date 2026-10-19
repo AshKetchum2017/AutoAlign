@@ -197,11 +197,13 @@ Pemeriksaan menampilkan temuan **Collision**, **Gap**, **Batas area**, **Zona ma
 
 Hasil tampil pada dialog **Hasil Pemeriksaan Susunan**. Pilih temuan lalu tekan **Pilih Objek** untuk menyeleksi objek terkait; tutup dialog sebelum mengedit, kemudian periksa ulang. Pemeriksaan tidak memindahkan, memutar, mewarnai, atau memperbaiki objek dan tidak membuat CommandGroup. Seleksi awal dan unit dipulihkan sebelum hasil tampil; tombol Pilih Objek sengaja mengganti seleksi.
 
-Cancel, geometri gagal dibaca, ID hilang, daftar tumpang tindih, atau pasangan ambigu menghasilkan status **Pemeriksaan belum selesai**. Daftar dibatasi **1000 temuan pertama**, tetapi hitungan dan pemeriksaan tetap dilanjutkan. Jika debug aktif, temuan dicatat dengan label `Inspect`.
+Ringkasan status, jumlah objek terbaca, pasangan Design/Cut Line yang dikenali, serta pasangan kontur yang diperiksa tampil juga di kotak detail. Jumlah pasangan kontur adalah jumlah pemeriksaan kandidat, bukan seluruh kombinasi objek; filter tetangga dapat melewati pasangan yang jauh.
+
+Cancel, geometri gagal dibaca, ID hilang, daftar tumpang tindih, pasangan ambigu, atau tidak ada objek terbaca menghasilkan status **Pemeriksaan belum selesai**. Daftar dibatasi **1000 temuan pertama**, tetapi hitungan dan pemeriksaan tetap dilanjutkan. Jika debug aktif, label `Inspect`/`Inspect root` mencatat jumlah container, tipe/ID dan jumlah anggotanya, temuan, serta ringkasan hasil.
 
 #### Kontrol dan pemasangan pemeriksaan
 
-Tambahkan CommandButton `cmdCheckLayout` dengan Caption `Periksa Susunan` pada `AutoAlignMenu`. Buat UserForm `(Name)` **`AAInspectionResults`**, lalu pasang kode dari `src/forms/AAInspectionResults.vba` dan kontrol berikut:
+Tambahkan CommandButton `cmdCheckLayout` dengan Caption `Periksa Susunan` pada `AutoAlignMenu`. Buat UserForm `(Name)` **`InspectionResults`**, lalu pasang kode dari `src/forms/InspectionResults.vba` dan kontrol berikut:
 
 | Tipe | `(Name)` | Pengaturan/kegunaan |
 | --- | --- | --- |
@@ -234,7 +236,7 @@ Repository menyediakan source VBA berupa code-behind UserForm, class module, dan
 | `src/classes/AAPresenter.cls`, `AAObjectStore.cls`, `AASettings.cls` | Penghubung form, daftar objek, dan validasi pengaturan. |
 | `src/classes/AADefaultPreferences.cls`, `src/forms/DefaultSettings.vba` | Preferensi Area/Gap per model, draft editor dan penyimpanan registry. |
 | `src/classes/AAProcessEngine.cls`, `AAResultBuilder.cls` | Menjalankan proses, menangani pasangan/kelompok, dan membangun hasil. |
-| `src/classes/AAInspectionEngine.cls`, `AAInspectionReport.cls`, `AAInspectionIssue.cls`, `src/forms/AAInspectionResults.vba` | Pemeriksaan susunan terdaftar, laporan temuan, dan pemilihan objek terkait. |
+| `src/classes/AAInspectionEngine.cls`, `AAInspectionReport.cls`, `AAInspectionIssue.cls`, `src/forms/InspectionResults.vba` | Pemeriksaan susunan terdaftar, laporan temuan, dan pemilihan objek terkait. |
 | `src/classes/AAOptimizeEngine.cls`, `AAOptimizeMinimum.cls`, `AAOptimizeLayout.cls` | Optimize Minimum/Medium, snapshot kelompok, validasi, dan penerapan translasi. Import sebagai Class Module dengan nama yang sesuai. |
 | `src/classes/AAPlanner.cls`, `AAMediumPlanner.cls`, `AAQuantityPlanner.cls` | Perencanaan Minimum, Medium, dan kuota kelompok. |
 | `src/classes/AAModel.cls`, `AAGeometry.cls`, `AAContour.cls`, `AAOccupiedIndex.cls` | Acuan bentuk, kontur, rotasi, gap, dan pemeriksaan tetangga. |

@@ -61,6 +61,7 @@ Public Function Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Next i
     ' Design berpasangan hanya dibaca bounds-nya. Cut Line diperiksa sebagai
     ' acuan fisik gap/collision; satu template Cut Line bersama dibaca sekali.
+    AADebugWrite "Inspect", "containers Design=" & CStr(designs.Count) & "; Cut Line=" & CStr(cuts.Count)
     For i = 1 To designs.Count
         InspectRoot designs(i), (cuts.Count = 0), True
     Next i
@@ -114,6 +115,7 @@ Cleanup:
         mReport.AddIssue "Pemulihan", 0, 0, 0, "State belum pulih:" & cleanupError & "."
     End If
     AADebugWrite "Inspect", "complete=" & CStr(mReport.Completed) & "; issues=" & CStr(mReport.TotalIssues)
+    AADebugWrite "Inspect", mReport.Summary
     AADebugStageEnd "Inspection total", started
     Set mOccupied = Nothing: Set mShapeIDs = Nothing: Set mIndex = Nothing
     Set mSeenIDs = Nothing
@@ -174,6 +176,9 @@ Private Sub InspectRoot(ByVal root As Shape, ByVal checkGeometry As Boolean, ByV
     On Error GoTo Failed
     areaIndex = RootArea(root)
     Set membersList = Members(root)
+    AADebugWrite "Inspect root", "ID=" & CStr(root.StaticID) & "; type=" & CStr(root.Type) & _
+        "; members=" & CStr(membersList.Count) & "; geometry=" & CStr(checkGeometry) & _
+        "; design=" & CStr(designRole) & "; area=" & CStr(areaIndex + 1)
     AAProgressStage "Memeriksa susunan", "Container ID " & CStr(root.StaticID) & _
         "; area " & CStr(areaIndex + 1), 0, membersList.Count
     For i = 1 To membersList.Count
@@ -238,6 +243,7 @@ Private Sub InspectShape(ByVal target As Shape, ByVal areaIndex As Long, _
     For Each other In nearby
         AAProgressPulse
         If other.AreaIndex = areaIndex Then
+            mReport.CountComparison
             otherID = CLng(mShapeIDs(other.DesignIndex))
             If geometry.Overlaps(other.CollisionFootprint) Then
                 mReport.AddIssue "Collision", areaIndex + 1, id, otherID, "Kontur acuan kedua objek bertumpuk."

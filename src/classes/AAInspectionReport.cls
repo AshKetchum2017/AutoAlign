@@ -6,6 +6,7 @@ Private mDocument As Document
 Private mPageIndex As Long
 Private mComplete As Boolean, mIncomplete As Boolean
 Private mTotalIssues As Long, mReadCount As Long, mPairCount As Long
+Private mComparisonCount As Double
 Private mStatus As String, mContext As String, mCreated As String
 
 Private Sub Class_Initialize()
@@ -45,7 +46,12 @@ Friend Sub CountPair()
     mPairCount = mPairCount + 1
 End Sub
 
+Friend Sub CountComparison()
+    mComparisonCount = mComparisonCount + 1#
+End Sub
+
 Friend Sub Finish()
+    If mReadCount = 0 And mTotalIssues = 0 Then MarkIncomplete "Tidak ada objek yang berhasil dibaca."
     mComplete = Not mIncomplete
 End Sub
 
@@ -74,7 +80,8 @@ Public Property Get Summary() As String
         Summary = "Pemeriksaan selesai. Tidak ditemukan masalah pada objek yang diperiksa."
     End If
     Summary = Summary & vbCrLf & CStr(mReadCount) & " objek dibaca; " & _
-        CStr(mPairCount) & " pasangan dikenali."
+        CStr(mPairCount) & " pasangan Design/Cut Line dikenali." & vbCrLf & _
+        Format$(mComparisonCount, "0") & " pasangan kontur diperiksa untuk collision/gap."
     If mTotalIssues > mIssues.Count Then Summary = Summary & vbCrLf & _
         "Daftar menampilkan " & CStr(mIssues.Count) & " temuan pertama dari " & CStr(mTotalIssues) & "."
 End Property

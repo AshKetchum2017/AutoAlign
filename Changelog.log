@@ -216,3 +216,4 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 [Pemeriksaan Susunan]
 + Periksa Susunan membaca Objects AA dengan Area/Gap dari form dan acuan grid Process, lalu menampilkan temuan gap, collision, batas area, zona mark, serta pasangan ambigu tanpa mengubah susunan.
 + Dialog hasil menyediakan Pilih Objek; Cancel atau kegagalan pembacaan ditandai sebagai pemeriksaan belum selesai. Memerlukan tombol dan UserForm hasil sesuai petunjuk pemasangan.
+~ Ringkasan pemeriksaan tampil juga pada kotak detail, termasuk jumlah objek terbaca dan pasangan kontur yang diperiksa. Debug merinci pembacaan container; pemeriksaan tanpa objek terbaca tidak dinyatakan selesai bersih.
