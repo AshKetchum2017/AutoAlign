@@ -210,3 +210,9 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 [Kontur: query indeks per kelompok]
 + Debug menampilkan pemakaian batch, fallback, pemeriksaan awal, dan verifikasi ulang penolakan gap.
 ~ Segmen berdekatan dapat memakai satu kumpulan kandidat indeks dengan batas luas/kepadatan; penolakan diverifikasi melalui jalur per segmen untuk menjaga keputusan dan penghalang pertama.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-19
+[Pemeriksaan Susunan]
++ Periksa Susunan membaca Objects AA dengan Area/Gap dari form dan acuan grid Process, lalu menampilkan temuan gap, collision, batas area, zona mark, serta pasangan ambigu tanpa mengubah susunan.
++ Dialog hasil menyediakan Pilih Objek; Cancel atau kegagalan pembacaan ditandai sebagai pemeriksaan belum selesai. Memerlukan tombol dan UserForm hasil sesuai petunjuk pemasangan.

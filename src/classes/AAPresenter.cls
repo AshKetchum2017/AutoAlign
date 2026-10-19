@@ -97,3 +97,12 @@ Public Sub OptimizeLayout(ByVal modelMode As Long, ByVal areaWidthText As String
     engine.Run mStore, modelMode, areaWidthText, areaHeightText, horizontalGapText, _
         verticalGapText, completed, feedback, feedbackStyle, layoutMode
 End Sub
+
+Public Function CheckLayout(ByVal modelMode As Long, ByVal areaWidthText As String, _
+                            ByVal areaHeightText As String, ByVal horizontalGapText As String, _
+                            ByVal verticalGapText As String) As AAInspectionReport
+    Dim engine As AAInspectionEngine
+    Set engine = New AAInspectionEngine
+    Set CheckLayout = engine.Run(mStore, modelMode, areaWidthText, areaHeightText, _
+        horizontalGapText, verticalGapText)
+End Function

@@ -183,6 +183,36 @@ Pencarian memakai pemeriksaan gap kontur dan collision yang sama dengan planner,
 
 Satu Optimize memakai satu CommandGroup dan memulihkan unit dokumen/ruler serta seleksi. Seluruh rencana divalidasi sebelum perubahan diterapkan; hasil aktual diperiksa lagi dan posisi dipulihkan bila gagal. Cancel tersedia melalui lifecycle progres yang sama dengan Process. Pengguna mengonfirmasi compile VBE aman dan melaporkan pengujian awal susunan Straight standar. Rincian hasil gap/anchor, variasi bentuk, serta satu Undo belum dikonfirmasi untuk perubahan ini; simulasi dengan geometri/host mock tetap dibedakan dari hasil runtime tersebut.
 
+### Pemeriksaan Susunan
+
+`cmdCheckLayout` (**Periksa Susunan**) membaca susunan yang terdaftar di **Objects AA**, memakai model, Area, dan Gap dari form utama. Quantity serta pilihan Minimum/Medium tidak memengaruhi pemeriksaan. Daftarkan **container hasil susunan** yang ingin diperiksa; daftar sumber sebelum Process tidak otomatis menjadi daftar seluruh hasil.
+
+Pemeriksaan menampilkan temuan **Collision**, **Gap**, **Batas area**, **Zona mark**, serta pasangan yang tidak dapat dikenali. Cut Line menjadi acuan gap/collision ketika tersedia; Design berpasangan diperiksa bounds-nya. Tanpa Cut Line, acuan memakai siluet luar Design. Container yang hanya berisi Cut Line juga dapat diperiksa. Pengecualian default gap rectangle bersudut runcing pada preset tetap mengikuti aturan AA; input gap manual diutamakan.
+
+- Acuan area mengikuti grid Process: area pertama berpusat pada halaman sumber, berikutnya ke kanan dengan jarak antararea **50 mm**. Kolom dipilih dari pusat bounding box container terdekat; origin area tidak dipusatkan ulang mengikuti susunan. Pemeriksa tidak menyimpan nomor area historis: container yang dipindahkan satu kolom penuh akan dianggap berada pada kolom tersebut. Gunakan ukuran area dan posisi halaman yang sama dengan saat Process.
+- Struktur yang dibaca adalah `container -> subgroup sumber -> instance`; group pada tingkat instance tetap satu unit. Objek individual non-group juga dapat didaftarkan. Group manual atau struktur yang telah diubah perlu disesuaikan dahulu; pemeriksa tidak menebak kedalaman group sembarang.
+- Satu container Cut Line dapat menjadi template bersama. Selain itu, jumlah container Cut Line harus sama dengan Design, dipasangkan menurut urutan masing-masing peran dalam daftar. Anggota dicocokkan secara unik melalui pusat bounds relatif terhadap area, dengan toleransi **1 mm**. Ini pencocokan posisi, bukan pembuktian kesamaan bentuk/rotasi atau toleransi gap.
+- Pemeriksa hanya membaca objek terdaftar. Gap/collision antarkontur acuan diperiksa di dalam area yang sama, termasuk antarcontainer; objek lain di halaman tidak ikut diperiksa. Template Cut Line bersama diperiksa sekali pada posisi fisiknya.
+- Gap memakai validator kontur AA yang sama dengan penyusunan. Temuan menunjukkan kegagalan aturan H/V, bukan angka jarak aktual atau verifikasi independen terhadap algoritma AA.
+
+Hasil tampil pada dialog **Hasil Pemeriksaan Susunan**. Pilih temuan lalu tekan **Pilih Objek** untuk menyeleksi objek terkait; tutup dialog sebelum mengedit, kemudian periksa ulang. Pemeriksaan tidak memindahkan, memutar, mewarnai, atau memperbaiki objek dan tidak membuat CommandGroup. Seleksi awal dan unit dipulihkan sebelum hasil tampil; tombol Pilih Objek sengaja mengganti seleksi.
+
+Cancel, geometri gagal dibaca, ID hilang, daftar tumpang tindih, atau pasangan ambigu menghasilkan status **Pemeriksaan belum selesai**. Daftar dibatasi **1000 temuan pertama**, tetapi hitungan dan pemeriksaan tetap dilanjutkan. Jika debug aktif, temuan dicatat dengan label `Inspect`.
+
+#### Kontrol dan pemasangan pemeriksaan
+
+Tambahkan CommandButton `cmdCheckLayout` dengan Caption `Periksa Susunan` pada `AutoAlignMenu`. Buat UserForm `(Name)` **`AAInspectionResults`**, lalu pasang kode dari `src/forms/AAInspectionResults.vba` dan kontrol berikut:
+
+| Tipe | `(Name)` | Pengaturan/kegunaan |
+| --- | --- | --- |
+| Label | `lblSummary` | Ringkasan; beri tinggi untuk beberapa baris. |
+| ListBox | `lbxIssues` | Daftar temuan; kode mengatur lima kolom: kategori, area, ID pertama, ID kedua, detail. |
+| TextBox | `txbDetail` | `MultiLine=True`, `Locked=True`; detail dan acuan pemeriksaan. |
+| CommandButton | `cmdSelectIssue` | Caption `Pilih Objek`. |
+| CommandButton | `cmdClose` | Caption `Tutup`. |
+
+Siapkan tiga **Class Module** bernama persis `AAInspectionEngine`, `AAInspectionReport`, dan `AAInspectionIssue`, lalu masukkan isi file `.cls` masing-masing. Perbarui pula kode `AAPresenter` dan `AutoAlignMenu`. File class bersifat headerless; pastikan properti VBE `(Name)` cocok, bukan hanya nama file di folder. Tidak diperlukan macro publik terpisah. Resource layout `.frm/.frx` form hasil tidak disediakan; atur ukuran kontrol agar ringkasan dan detail terbaca.
+
 ## Cara menggunakan
 
 1. Buka dokumen dan halaman sumber di CorelDRAW, lalu buka `AutoAlignMenu`.
@@ -204,6 +234,7 @@ Repository menyediakan source VBA berupa code-behind UserForm, class module, dan
 | `src/classes/AAPresenter.cls`, `AAObjectStore.cls`, `AASettings.cls` | Penghubung form, daftar objek, dan validasi pengaturan. |
 | `src/classes/AADefaultPreferences.cls`, `src/forms/DefaultSettings.vba` | Preferensi Area/Gap per model, draft editor dan penyimpanan registry. |
 | `src/classes/AAProcessEngine.cls`, `AAResultBuilder.cls` | Menjalankan proses, menangani pasangan/kelompok, dan membangun hasil. |
+| `src/classes/AAInspectionEngine.cls`, `AAInspectionReport.cls`, `AAInspectionIssue.cls`, `src/forms/AAInspectionResults.vba` | Pemeriksaan susunan terdaftar, laporan temuan, dan pemilihan objek terkait. |
 | `src/classes/AAOptimizeEngine.cls`, `AAOptimizeMinimum.cls`, `AAOptimizeLayout.cls` | Optimize Minimum/Medium, snapshot kelompok, validasi, dan penerapan translasi. Import sebagai Class Module dengan nama yang sesuai. |
 | `src/classes/AAPlanner.cls`, `AAMediumPlanner.cls`, `AAQuantityPlanner.cls` | Perencanaan Minimum, Medium, dan kuota kelompok. |
 | `src/classes/AAModel.cls`, `AAGeometry.cls`, `AAContour.cls`, `AAOccupiedIndex.cls` | Acuan bentuk, kontur, rotasi, gap, dan pemeriksaan tetangga. |

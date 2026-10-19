@@ -35,7 +35,7 @@ Private Sub cmdDefaultSetting_Click()
     settingsForm.SelectModel AACurrentModel()
     AADebugWrite "Defaults", "open; owner visible=" & CStr(owner.Visible)
     settingsForm.Show vbModal
-    saved = settingsForm.Saved
+    saved = settingsForm.saved
     AADebugWrite "Defaults", "dialog returned; saved=" & CStr(saved) & _
         "; owner visible=" & CStr(owner.Visible)
     Unload settingsForm
@@ -48,7 +48,7 @@ Private Sub cmdDefaultSetting_Click()
     Set owner = Nothing
     Exit Sub
 OpenFailed:
-    message = Err.Description
+    message = Err.description
     On Error Resume Next
     If Not settingsForm Is Nothing Then Unload settingsForm
     Set settingsForm = Nothing
@@ -113,18 +113,18 @@ Private Sub optKissA_Click()
 End Sub
 
 Private Sub cmdOptimize_Click() ' Kontrol ini masih dalam tahap pengembangan.
-    Dim ModelMode As Long, feedback As String, feedbackStyle As VbMsgBoxStyle
+    Dim modelMode As Long, feedback As String, feedbackStyle As VbMsgBoxStyle
     Dim layoutMode As Long
     Dim completed As Boolean
     Dim errorNumber As Long, errorSource As String, errorDescription As String
 
     If mProcessRunning Or AAProgressRunning Then Exit Sub
     If optCustom.value Then
-        ModelMode = AA_MODEL_CUSTOM
+        modelMode = AA_MODEL_CUSTOM
     ElseIf optKissA.value Then
-        ModelMode = AA_MODEL_KISS_A
+        modelMode = AA_MODEL_KISS_A
     ElseIf optDieA.value Then
-        ModelMode = AA_MODEL_DIE_A
+        modelMode = AA_MODEL_DIE_A
     Else
         MsgBox "Pilih model area terlebih dahulu.", vbExclamation, "Auto Align"
         Exit Sub
@@ -136,7 +136,7 @@ Private Sub cmdOptimize_Click() ' Kontrol ini masih dalam tahap pengembangan.
     On Error GoTo OptimizeFailed
     AALockInputs
     AAProgressBegin Me
-    mPresenter.OptimizeLayout ModelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
+    mPresenter.OptimizeLayout modelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
         AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), completed, feedback, feedbackStyle, layoutMode
     AARefreshObjects
     AAProgressEnd completed
@@ -161,6 +161,58 @@ End Sub
 
 Private Sub optMaximum_Click()
 ' Pending: Implementasikan fungsionalitas mode maksimum. Saat ini, fitur tersebut dinonaktifkan di UI.
+End Sub
+
+Private Sub cmdCheckLayout_Click()
+    Dim modelMode As Long, report As AAInspectionReport, resultView As Object
+    Dim description As String, owner As Object, ownerWasVisible As Boolean
+    If mProcessRunning Or AAProgressRunning Then Exit Sub
+    If optCustom.value Then
+        modelMode = AA_MODEL_CUSTOM
+    ElseIf optKissA.value Then
+        modelMode = AA_MODEL_KISS_A
+    ElseIf optDieA.value Then
+        modelMode = AA_MODEL_DIE_A
+    Else
+        MsgBox "Pilih model area terlebih dahulu.", vbExclamation, "Pemeriksaan Susunan"
+        Exit Sub
+    End If
+    On Error GoTo InspectionFailed
+    If mPresenter Is Nothing Then Set mPresenter = New AAPresenter
+    mProcessRunning = True
+    AALockInputs
+    AAProgressBegin Me
+    Set report = mPresenter.CheckLayout(modelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
+        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical))
+    AAProgressEnd report.Completed
+    AAUnlockInputs
+    mProcessRunning = False
+    ' Hasil modal menjaga daftar/setting tetap selama hasil diperiksa.
+    ' Pilih Objek tetap dapat membuat selection di dokumen; edit setelah Tutup.
+    Set owner = Me
+    ownerWasVisible = owner.Visible
+    Set resultView = VBA.UserForms.Add("InspectionResults")
+    resultView.LoadReport report
+    resultView.Show vbModal
+    Set resultView = Nothing
+    If ownerWasVisible And Not owner.Visible Then owner.Show vbModeless
+    Set owner = Nothing
+    Exit Sub
+InspectionFailed:
+    description = Err.description
+    On Error Resume Next
+    AAProgressBeginCleanup
+    AAProgressEnd False
+    AAUnlockInputs
+    mProcessRunning = False
+    If Not resultView Is Nothing Then Unload resultView
+    Set resultView = Nothing
+    If Not owner Is Nothing Then
+        If ownerWasVisible And Not owner.Visible Then owner.Show vbModeless
+    End If
+    Set owner = Nothing
+    On Error GoTo 0
+    MsgBox "Pemeriksaan belum selesai: " & description, vbExclamation, "Pemeriksaan Susunan"
 End Sub
 
 Private Sub optMedium_Click()
@@ -247,24 +299,24 @@ Private Sub cmdClose_Click()
 End Sub
 
 Private Sub cmdProcess_Click()
-    Dim ModelMode As Long
+    Dim modelMode As Long
 
     If Not optMinimum.value And Not optMedium.value Then
         MsgBox "Pilih mode Minimum atau Medium terlebih dahulu.", vbExclamation, "Auto Align"
         Exit Sub
     End If
     If optCustom.value Then
-        ModelMode = AA_MODEL_CUSTOM
+        modelMode = AA_MODEL_CUSTOM
     ElseIf optKissA.value Then
-        ModelMode = AA_MODEL_KISS_A
+        modelMode = AA_MODEL_KISS_A
     ElseIf optDieA.value Then
-        ModelMode = AA_MODEL_DIE_A
+        modelMode = AA_MODEL_DIE_A
     Else
         MsgBox "Pilih model area terlebih dahulu.", vbExclamation, "Auto Align"
         Exit Sub
     End If
 
-    AARunMode ModelMode
+    AARunMode modelMode
 End Sub
 
 Private Sub cmdRemove_Click()
@@ -324,8 +376,8 @@ Private Sub AASetModeGapText(ByVal horizontalText As String, ByVal verticalText 
     mHintActive(1) = False: mHintActive(2) = False
     txbGapHorizontal.ForeColor = mInputColor(1)
     txbGapVertical.ForeColor = mInputColor(2)
-    txbGapHorizontal.Text = horizontalText
-    txbGapVertical.Text = verticalText
+    txbGapHorizontal.text = horizontalText
+    txbGapVertical.text = verticalText
     mUpdatingHint = False
 End Sub
 
@@ -356,15 +408,15 @@ Private Sub AAUpdateQuantityEditor()
     End If
     txbQuantity.enabled = (mQuantityIndex >= 0)
     If mQuantityIndex >= 0 And Not mixedQuantity Then
-        txbQuantity.Text = commonText
+        txbQuantity.text = commonText
     Else
-        txbQuantity.Text = vbNullString
+        txbQuantity.text = vbNullString
     End If
     mUpdatingQuantity = False
     AAShowHint txbQuantity
 End Sub
 
-Private Sub AARunMode(ByVal ModelMode As Long)
+Private Sub AARunMode(ByVal modelMode As Long)
     Dim feedback As String
     Dim feedbackStyle As VbMsgBoxStyle
     Dim layoutMode As Long
@@ -379,11 +431,11 @@ Private Sub AARunMode(ByVal ModelMode As Long)
     On Error GoTo ProcessFailed
     AALockInputs
     AAProgressBegin Me
-    mPresenter.RunLayout ModelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
+    mPresenter.RunLayout modelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
         AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), _
         feedback, feedbackStyle, layoutMode
     AARefreshObjects
-    AAProgressEnd (Len(feedback) = 0 And mPresenter.lastProcessCompleted)
+    AAProgressEnd (Len(feedback) = 0 And mPresenter.LastProcessCompleted)
     AAUnlockInputs
     mProcessRunning = False
     AAUpdateQuantityEditor
@@ -435,7 +487,7 @@ End Sub
 Private Sub AAUnlockInputs()
     Dim i As Long
     If mLockedControls Is Nothing Then Exit Sub
-    For i = 1 To mLockedControls.Count
+    For i = 1 To mLockedControls.count
         mLockedControls(i).enabled = mEnabledStates(i)
     Next i
     Set mLockedControls = Nothing
@@ -479,7 +531,7 @@ Public Sub AAProgressRender(ByVal stage As String, ByVal detail As String, _
         position = elapsed / 2# - Fix(elapsed / 2#)
         lblProgressFill.Left = 3! + (available - fillWidth) * position
     End If
-    lblProgressFill.Width = fillWidth
+    lblProgressFill.width = fillWidth
     lblProgressFill.Visible = (fillWidth > 0!)
     Me.Repaint
 End Sub
@@ -513,7 +565,7 @@ Private Function AAInputText(ByVal box As MSForms.TextBox) As String
     If mHintReady Then
         If mHintActive(AAInputIndex(box)) Then Exit Function
     End If
-    AAInputText = box.Text
+    AAInputText = box.text
 End Function
 
 Private Function AAHintText(ByVal box As MSForms.TextBox) As String
@@ -546,7 +598,7 @@ Private Sub AAUpdateAreaDisplay()
             mUpdatingHint = True
             mHintActive(3) = False: mHintActive(4) = False
             txbAreaWidth.ForeColor = mInputColor(3): txbAreaHeight.ForeColor = mInputColor(4)
-            txbAreaWidth.Text = mCustomAreaWidth: txbAreaHeight.Text = mCustomAreaHeight
+            txbAreaWidth.text = mCustomAreaWidth: txbAreaHeight.text = mCustomAreaHeight
             mUpdatingHint = False
         End If
         mAreaModel = modelMode
@@ -556,7 +608,7 @@ Private Sub AAUpdateAreaDisplay()
         mUpdatingHint = True
         mHintActive(3) = True: mHintActive(4) = True
         txbAreaWidth.ForeColor = RGB(128, 128, 128): txbAreaHeight.ForeColor = RGB(128, 128, 128)
-        txbAreaWidth.Text = AAHintText(txbAreaWidth): txbAreaHeight.Text = AAHintText(txbAreaHeight)
+        txbAreaWidth.text = AAHintText(txbAreaWidth): txbAreaHeight.text = AAHintText(txbAreaHeight)
         mUpdatingHint = False
     End If
 End Sub
@@ -566,11 +618,11 @@ Private Sub AAShowHint(ByVal box As MSForms.TextBox)
     If Not mHintReady Then Exit Sub
     If mFocusedInput = box.Name Then Exit Sub
     index = AAInputIndex(box)
-    If Not mHintActive(index) And Len(box.Text) > 0 Then Exit Sub
+    If Not mHintActive(index) And Len(box.text) > 0 Then Exit Sub
     mUpdatingHint = True
     mHintActive(index) = True
     box.ForeColor = RGB(128, 128, 128)
-    box.Text = AAHintText(box)
+    box.text = AAHintText(box)
     mUpdatingHint = False
 End Sub
 
@@ -594,7 +646,7 @@ Private Sub AAEnterInput(ByVal box As MSForms.TextBox)
     mFocusedInput = box.Name
     index = AAInputIndex(box)
     mUpdatingHint = True
-    If mHintActive(index) Then box.Text = vbNullString
+    If mHintActive(index) Then box.text = vbNullString
     mHintActive(index) = False
     box.ForeColor = mInputColor(index)
     mUpdatingHint = False
@@ -670,7 +722,7 @@ Private Sub AARefreshObjects()
     Dim i As Long
 
     mUpdatingQuantity = True
-    lbxObjects.Clear
+    lbxObjects.clear
     For i = 0 To mPresenter.ObjectCount - 1
         lbxObjects.AddItem mPresenter.ObjectListText(i)
     Next i
