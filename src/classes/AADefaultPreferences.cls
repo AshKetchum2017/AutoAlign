@@ -50,7 +50,7 @@ InvalidSnapshot:
     AADebugWrite "Defaults", "registry unavailable/invalid; using factory defaults"
 End Sub
 
-Private Function ReadStoredNumber(ByVal text As String, ByVal parser As AASettings) As Double
+Friend Function ReadStoredNumber(ByVal text As String, ByVal parser As AASettings) As Double
     Dim parts As Variant, exponent As Double, mantissa As Double
     ' Str$ dapat memakai notasi E untuk Double kecil/besar. Ini hanya format
     ' penyimpanan; editor tetap memakai parser desimal biasa tanpa notasi E.

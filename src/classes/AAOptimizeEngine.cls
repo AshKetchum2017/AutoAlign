@@ -11,7 +11,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
                ByVal horizontalGapText As String, ByVal verticalGapText As String, _
                ByRef completed As Boolean, ByRef feedback As String, ByRef feedbackStyle As VbMsgBoxStyle, _
                Optional ByVal layoutMode As Long = AA_MODE_MINIMUM, _
-               Optional ByVal customArea As AACustomArea = Nothing)
+               Optional ByVal customArea As AACustomArea = Nothing, _
+               Optional ByVal jobPreset As AAJobPreset = Nothing)
     Dim settings As AASettings, planner As AAPlanner, forbidden As Collection
     Dim doc As Document, page As Page, selection As ShapeRange, root As Shape, cut As Shape
     Dim designs As New Collection, cuts As New Collection, batches As New Collection
@@ -36,6 +37,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         "Daftarkan group susunan ke ListBox terlebih dahulu."
     Set settings = New AASettings
     settings.Configure modelMode, areaWidthText, areaHeightText, horizontalGapText, verticalGapText
+    settings.ApplyJobDefaults jobPreset, areaWidthText, areaHeightText
     If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5362, "AAOptimizeEngine", _
         "Tidak ada dokumen aktif."
     Set doc = ActiveDocument: Set page = doc.ActivePage

@@ -58,6 +58,17 @@ Public Property Get ModelMode() As Long
     ModelMode = mModelMode
 End Property
 
+' Default pekerjaan dibekukan, tetapi status input manual tetap dari Configure.
+Public Sub ApplyJobDefaults(ByVal preset As AAJobPreset, ByVal widthText As String, ByVal heightText As String)
+    If preset Is Nothing Then Exit Sub
+    If preset.ModelMode <> mModelMode Then Exit Sub
+    preset.Validate
+    mDefaultHorizontalGapMM = preset.DefaultHorizontalGapMM
+    mDefaultVerticalGapMM = preset.DefaultVerticalGapMM
+    If mModelMode <> AA_MODEL_CUSTOM Or Len(Trim$(widthText)) = 0 Then mAreaWidthMM = preset.FullAreaWidthMM
+    If mModelMode <> AA_MODEL_CUSTOM Or Len(Trim$(heightText)) = 0 Then mAreaHeightMM = preset.FullAreaHeightMM
+End Sub
+
 Public Property Get PresetPageWidthMM() As Double
     PresetPageWidthMM = AA_PRESET_PAGE_WIDTH_MM
 End Property

@@ -235,3 +235,7 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 [Ringkasan hasil produksi]
 + Ringkasan Hasil menampilkan catatan Process terakhir yang berhasil: jumlah Design per sumber/area, total Cut Line fisik, area hasil, pengaturan dan durasi. Cut Line bersama dihitung sesuai objek yang dibuat.
 + Salin Ringkasan menyalin tabel beserta detail. Catatan berlaku selama sesi AA; perubahan manual, Undo atau Optimize tidak memperbaruinya dan percobaan gagal tidak mengganti hasil sukses sebelumnya.
+
+[Preset pekerjaan bernama]
++ JobPresets menyimpan, menerapkan dan menghapus konfigurasi bernama: model/mode, area, gap manual/default serta margin Custom. Preset tersimpan lintas sesi secara terpisah dari DefaultSettings; timpa/hapus meminta konfirmasi.
++ Default tersimpan dipakai bersama oleh Process, Optimize dan Periksa Susunan; pilihan Tanpa preset mengembalikan acuan default global. Zona pekerjaan aktif dipertahankan dan penerapan Custom ditolak bila area baru tidak memuatnya; geometri zona tidak disimpan ke preset.

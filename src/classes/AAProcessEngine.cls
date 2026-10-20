@@ -12,7 +12,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
                ByRef lastProcessCompleted As Boolean, ByRef feedback As String, _
                ByRef feedbackStyle As VbMsgBoxStyle, _
                Optional ByVal layoutMode As Long = AA_MODE_MINIMUM, _
-               Optional ByVal customArea As AACustomArea = Nothing)
+               Optional ByVal customArea As AACustomArea = Nothing, _
+               Optional ByVal jobPreset As AAJobPreset = Nothing)
     Dim settings As AASettings
     Dim doc As Document
     Dim targetPage As Page
@@ -82,6 +83,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Set settings = New AASettings
     settings.Configure modelMode, areaWidthText, areaHeightText, _
         horizontalGapText, verticalGapText
+    settings.ApplyJobDefaults jobPreset, areaWidthText, areaHeightText
 
     operation = "memeriksa dokumen dan halaman sumber"
     If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5310, _

@@ -299,6 +299,25 @@ Detail mencatat nama dokumen, halaman, waktu selesai, durasi Process hingga pemu
 
 Laporan adalah catatan Process terakhir yang berhasil **selama sesi form AA masih terbuka**. Clear Objects, perubahan input, berpindah dokumen, Optimize, Undo, dan edit manual tidak memperbarui catatan tersebut; periksa nama dokumen dan waktu pencatatannya. Process gagal, dibatalkan, atau tanpa hasil tidak mengganti catatan sukses sebelumnya. Menutup form utama mengakhiri sesi; ringkasan tidak disimpan ke registry atau CDR. Ringkasan bukan hasil Check Layout dan tidak menyatakan susunan sudah bebas collision.
 
+## Preset Pekerjaan Bernama
+
+Tombol **Preset Pekerjaan** (`cmdJobPresets`) membuka `JobPresets`. Preset menyimpan model KissA/DieA/Custom, mode Minimum/Medium, ukuran area penuh, Gap H/V beserta status manual/default, nilai default saat disimpan, dan empat margin Custom. Daftar Objects, pasangan Cut Line, Quantity, rotasi per Design, hasil susunan dan laporan produksi tidak disimpan atau diubah oleh preset.
+
+1. Atur pekerjaan pada form AA; untuk Custom, buka dokumen dan terapkan margin melalui CustomMarginSettings.
+2. Buka **Preset Pekerjaan**, isi `txbPresetName`, lalu tekan **Simpan Pengaturan Saat Ini**. Sumber penyimpanan selalu pengaturan form AA, bukan isi preset yang dipilih di daftar.
+3. Pilih nama dalam daftar untuk melihat rinciannya. **Terapkan** mengisi pengaturan AA dan menutup dialog; Process tetap dijalankan secara terpisah.
+4. **Hapus** menghapus preset terpilih setelah konfirmasi. **Tutup** atau X menutup dialog tanpa menerapkan pilihan. Save/Hapus yang sudah dilakukan tetap tersimpan.
+
+Nama berisi 1–80 karakter setelah spasi tepi dihapus; slash dan karakter kontrol tidak diterima. Nama yang berbeda hanya dalam huruf besar/kecil dianggap sama. Simpan dengan nama yang sama meminta konfirmasi penggantian; gunakan nama baru untuk membuat salinan pengaturan. Preset yang datanya rusak tetap terlihat dan dapat dihapus atau ditimpa, tetapi tidak dapat diterapkan.
+
+**Default yang disimpan tetap berlaku pada model preset tersebut selama sesi AA**, termasuk setelah nilai global DefaultSettings berubah. Status gap default tetap dipertahankan, sehingga aturan default gap 0 untuk rectangle tajam KissA/DieA tidak berubah menjadi gap manual. Process, Optimize, Periksa Susunan, tampilan area dan hint gap memakai nilai yang sama. Input manual tetap diutamakan; gap mode lain yang sudah ada tidak ikut diganti. Saat berpindah ke model lain, default global model itu berlaku; kembali ke model preset memakai default tersimpannya lagi.
+
+Pilih **(Tanpa preset - DefaultSettings)** lalu **Terapkan** untuk melepaskan default pekerjaan yang tersimpan. Model/mode, input manual, margin, zona dan Objects tetap; kolom yang mengikuti default kembali membaca DefaultSettings. Menghapus atau menimpa preset di daftar tidak mengubah salinan yang sudah diterapkan. Preset tidak diterapkan otomatis ketika form AA dibuka kembali.
+
+**Zona terlarang tidak disimpan ke preset.** Save memberi informasi jumlah zona yang tidak disertakan bila pekerjaan Custom aktif memiliki zona. Saat menerapkan preset Custom, zona dan checkbox Design milik dokumen/halaman aktif dipertahankan; empat margin diganti dari preset. Jika ukuran area baru membuat zona keluar batas atau margin tidak menyisakan ruang, penerapan ditolak sebelum pengaturan aktif diganti. Zona dari dokumen/halaman lain tidak dipindahkan ke pekerjaan baru. KissA/DieA mempertahankan profil Custom untuk digunakan kembali ketika model Custom dipilih.
+
+Preset tersimpan per pengguna Windows di `HKCU\Software\VB and VBA Program Settings\RinCorelMacros\AutoAlignJobPresets`. Setiap nama adalah satu nilai dengan format berversi; penyimpanannya terpisah dari `AutoAlignDefaults/ProfilesV1`. Export/import preset dan penyimpanan geometri zona belum termasuk fitur ini.
+
 ## Pemasangan dari Source
 
 Target penggunaan project adalah **CorelDRAW 2024 64-bit dengan VBA**. Kompatibilitas dengan versi lain perlu diperiksa tersendiri.
@@ -308,7 +327,7 @@ Repository menyediakan code-behind UserForm, Class Module, dan Standard Module. 
 1. Buat atau gunakan project GMS AutoAlign di editor VBA CorelDRAW.
 2. Siapkan Class Module untuk setiap file pada `src/classes/`, dengan properti `(Name)` sama persis seperti nama file tanpa ekstensi. File `.cls` berisi source headerless; masukkan isinya ke Class Module bernama sesuai, bukan mengandalkan metadata import class.
 3. Masukkan seluruh Standard Module pada `src/modules/` dengan nama sesuai file. `AADebug` tetap dibutuhkan walaupun keluaran debug dinonaktifkan.
-4. Buat UserForm **AutoAlignMenu**, **DefaultSettings**, **CustomMarginSettings**, **InspectionResults**, dan **ProductionSummary**. Pasang code-behind dari `src/forms/` pada form yang namanya cocok, lalu siapkan kontrol berikut.
+4. Buat UserForm **AutoAlignMenu**, **DefaultSettings**, **CustomMarginSettings**, **InspectionResults**, **ProductionSummary**, dan **JobPresets**. Pasang code-behind dari `src/forms/` pada form yang namanya cocok, lalu siapkan kontrol berikut.
 5. Lakukan **Debug → Compile** pada project VBA dan selesaikan referensi atau kontrol yang belum cocok sebelum menjalankan form.
 
 ### AutoAlignMenu
@@ -332,6 +351,7 @@ Repository menyediakan code-behind UserForm, Class Module, dan Standard Module. 
 | CommandButton | `cmdCustomMarginSettings` | Membuka editor margin dan zona Custom. |
 | CommandButton | `cmdProcess`, `cmdOptimize`, `cmdCheckLayout` | Process, Optimize, dan **Periksa Susunan**. |
 | CommandButton | `cmdProductionSummary` | Caption **Ringkasan Hasil**; membuka catatan Process terakhir yang berhasil. |
+| CommandButton | `cmdJobPresets` | Caption **Preset Pekerjaan**; menyimpan/menerapkan konfigurasi bernama. |
 | CommandButton | `cmdClose` | Close/Cancel sesuai status operasi. |
 | Frame | `frmProgress` | Area bar progres. |
 | Label | `lblProgressFill` | Isi bar; letakkan di dalam `frmProgress`. |
@@ -388,6 +408,18 @@ Tambahkan empat Label judul kolom di atas ListBox; nama Label bebas. Lebar kolom
 
 Tambahkan Class Module headerless **AAProductionReport** dengan `(Name)` yang sama. Perbarui `AAProcessEngine`, `AAResultBuilder`, `AAPresenter`, serta kode form `AutoAlignMenu` dan `ProductionSummary`. Nama TextBox yang dipakai adalah **txbDetails**. Clipboard memakai `MSForms.DataObject` dari Microsoft Forms yang digunakan UserForm. Tidak diperlukan macro publik tambahan.
 
+### JobPresets
+
+| Tipe kontrol | `(Name)` | Kegunaan/pengaturan |
+| --- | --- | --- |
+| ListBox | `lbxPresets` | Pilihan tunggal; RowSource kosong. Baris pertama adalah pilihan Tanpa preset. |
+| TextBox | `txbPresetName` | Nama preset; panjang maksimal 80 karakter. Tambahkan Label **Nama preset**. |
+| TextBox | `txbDetails` | `MultiLine=True`, `Locked=True`, scrollbar vertikal. |
+| CommandButton | `cmdSave` | Caption **Simpan Pengaturan Saat Ini**. |
+| CommandButton | `cmdApply`, `cmdDelete`, `cmdClose` | Caption **Terapkan**, **Hapus**, **Tutup**. |
+
+Tambahkan dua Class Module headerless **AAJobPreset** dan **AAJobPresetStore** dengan `(Name)` yang sama. Perbarui `AADefaultPreferences`, `AASettings`, `AAPresenter`, `AAProcessEngine`, `AAOptimizeEngine`, `AAInspectionEngine`, serta kode form `AutoAlignMenu` dan `JobPresets`. `AADefaultPreferences.ReadStoredNumber` dipakai bersama untuk membaca nilai numerik tersimpan. Tidak diperlukan macro publik baru atau perubahan resource form lain.
+
 ## Integrasi dan Source
 
 | Lokasi | Peran |
@@ -397,6 +429,7 @@ Tambahkan Class Module headerless **AAProductionReport** dengan `(Name)` yang sa
 | `src/classes/AADefaultPreferences.cls`, `src/forms/DefaultSettings.vba` | Preferensi Area/Gap per model, draft editor dan penyimpanan registry. |
 | `src/classes/AAProcessEngine.cls`, `AAResultBuilder.cls` | Menjalankan proses, menangani pasangan/kelompok, dan membangun hasil. |
 | `src/classes/AAProductionReport.cls`, `src/forms/ProductionSummary.vba` | Catatan hasil Process, hitungan Design/Cut Line fisik, dan salinan teks ringkasan. |
+| `src/classes/AAJobPreset.cls`, `AAJobPresetStore.cls`, `src/forms/JobPresets.vba` | Snapshot pengaturan pekerjaan, penyimpanan bernama di registry dan dialog pengelolaan preset. |
 | `src/classes/AAInspectionEngine.cls`, `AAInspectionReport.cls`, `AAInspectionIssue.cls`, `src/forms/InspectionResults.vba` | Pemeriksaan susunan terdaftar, laporan temuan, dan pemilihan objek terkait. |
 | `src/classes/AAOptimizeEngine.cls`, `AAOptimizeMinimum.cls`, `AAOptimizeLayout.cls` | Optimize Minimum/Medium, snapshot kelompok, validasi, dan penerapan translasi. Import sebagai Class Module dengan nama yang sesuai. |
 | `src/classes/AAPlanner.cls`, `AAMediumPlanner.cls`, `AAQuantityPlanner.cls` | Perencanaan Minimum, Medium, dan kuota kelompok. |

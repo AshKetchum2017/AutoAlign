@@ -9,7 +9,6 @@ Public Sub Configure(ByVal owner As Object, ByVal draft As AACustomArea, _
                      ByVal widthMM As Double, ByVal heightMM As Double)
     Set mOwner = owner: Set mDraft = draft.copy: Set mDocument = doc
     mPageIndex = pageIndex: mWidth = widthMM: mHeight = heightMM
-    Me.Caption = "Area Custom " & CStr(widthMM) & " x " & CStr(heightMM) & " mm"
     txbMarginLeft.text = CStr(mDraft.MarginLeft)
     txbMarginRight.text = CStr(mDraft.MarginRight)
     txbMarginTop.text = CStr(mDraft.MarginTop)
@@ -141,7 +140,7 @@ Private Sub cmdApply_Click()
     CloseEditor True
     Exit Sub
 Failed:
-    MsgBox Err.description, vbExclamation, "Area Custom"
+    MsgBox Err.description, vbExclamation, "Custom Margin Settings"
 End Sub
 
 Private Sub cmdCancel_Click()
@@ -177,7 +176,7 @@ Failed:
     message = Err.description
     mClosing = False
     Me.Show vbModeless
-    MsgBox message, vbExclamation, "Area Custom"
+    MsgBox message, vbExclamation, "Custom Margin Settings"
 End Sub
 
 Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)

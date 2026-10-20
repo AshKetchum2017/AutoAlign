@@ -5,7 +5,6 @@ Private mReport As AAInspectionReport
 Public Sub LoadReport(ByVal report As AAInspectionReport)
     Dim i As Long, item As AAInspectionIssue, areaText As String
     Set mReport = report
-    Me.Caption = "Hasil Pemeriksaan Susunan"
     lblSummary.Caption = report.Summary
     txbDetail.MultiLine = True
     txbDetail.Locked = True
@@ -53,7 +52,7 @@ Private Sub cmdSelectIssue_Click()
     mReport.SelectIssue lbxIssues.ListIndex + 1
     Exit Sub
 Failed:
-    MsgBox "Objek tidak dapat dipilih: " & Err.Description, vbExclamation, "Pemeriksaan Susunan"
+    MsgBox "Objek tidak dapat dipilih: " & Err.Description, vbExclamation, "Inspection Results"
 End Sub
 
 Private Sub cmdClose_Click()

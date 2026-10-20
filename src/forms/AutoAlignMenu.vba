@@ -25,6 +25,8 @@ Private mDefaultPreferences As AADefaultPreferences
 Private mAreaModel As Long
 Private mCustomAreaWidth As String, mCustomAreaHeight As String
 Private mAreaEditing As Boolean
+Private mApplyingJobPreset As Boolean
+Private mJobPresetName As String
 
 Private Sub cmbCutPartner_Change()
     Dim i As Long, cutID As Long
@@ -70,7 +72,7 @@ Private Sub AAUpdatePairEditor()
         End If
     Next i
     mUpdatingPair = True
-    cmbCutPartner.Clear
+    cmbCutPartner.clear
     cmbCutPartner.Style = fmStyleDropDownList
     cmbCutPartner.ColumnCount = 2
     cmbCutPartner.ColumnWidths = "170 pt;0 pt"
@@ -135,7 +137,7 @@ End Sub
 Private Sub AAInitializeRotationEditor()
     Dim mode As Long
     mUpdatingRotation = True
-    cmbRotation.Clear
+    cmbRotation.clear
     cmbRotation.Style = fmStyleDropDownList
     For mode = AA_ROTATION_AUTO To AA_ROTATION_QUARTER
         cmbRotation.AddItem AARotationText(mode)
@@ -178,13 +180,14 @@ Private Sub cmdCustomMarginSettings_Click()
     Dim editor As CustomMarginSettings, settings As AASettings, doc As Document, message As String
     If mProcessRunning Or AAProgressRunning Or mAreaEditing Then Exit Sub
     On Error GoTo Failed
-    If Not optCustom.Value Then Err.Raise vbObjectError + 5458, "AutoAlignMenu", "Pilih model Custom terlebih dahulu."
-    If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5459, "AutoAlignMenu", "Tidak ada dokumen aktif."
+    If Not optCustom.value Then Err.Raise vbObjectError + 5458, "AutoAlignMenu", "Pilih model Custom terlebih dahulu."
+    If Application.Documents.count = 0 Then Err.Raise vbObjectError + 5459, "AutoAlignMenu", "Tidak ada dokumen aktif."
     Set doc = ActiveDocument
     Set settings = New AASettings
     settings.Configure AA_MODEL_CUSTOM, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), "", ""
+    settings.ApplyJobDefaults mPresenter.JobPreset, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight)
     Set editor = VBA.UserForms.Add("CustomMarginSettings")
-    editor.Configure Me, mPresenter.CustomAreaDraft(doc, doc.ActivePage.Index), doc, doc.ActivePage.Index, _
+    editor.Configure Me, mPresenter.CustomAreaDraft(doc, doc.ActivePage.index), doc, doc.ActivePage.index, _
         settings.FullAreaWidthMM, settings.FullAreaHeightMM
     mAreaEditing = True
     Me.Hide
@@ -192,14 +195,14 @@ Private Sub cmdCustomMarginSettings_Click()
     Set editor = Nothing
     Exit Sub
 Failed:
-    message = Err.Description
+    message = Err.description
     On Error Resume Next
     If Not editor Is Nothing Then Unload editor
     Set editor = Nothing
     mAreaEditing = False
     If Not Me.Visible Then Me.Show vbModeless
     On Error GoTo 0
-    MsgBox message, vbExclamation, "Area Custom"
+    MsgBox message, vbExclamation, "Custom Margin Settings"
 End Sub
 
 Public Sub AACloseAreaEditor(ByVal draft As AACustomArea, ByVal apply As Boolean)
@@ -243,6 +246,112 @@ OpenFailed:
     Set owner = Nothing
     On Error GoTo 0
     MsgBox message, vbExclamation, "Default Settings"
+End Sub
+
+Private Sub cmdJobPresets_Click()
+    Dim editor As Object, owner As Object, ownerWasVisible As Boolean, description As String
+    If mProcessRunning Or AAProgressRunning Or mAreaEditing Then Exit Sub
+    On Error GoTo Failed
+    Set owner = Me: ownerWasVisible = owner.Visible
+    Set editor = VBA.UserForms.Add("JobPresets")
+    editor.Configure Me
+    editor.Show vbModal
+    Set editor = Nothing
+    If ownerWasVisible And Not owner.Visible Then owner.Show vbModeless
+    Set owner = Nothing
+    Exit Sub
+Failed:
+    description = Err.Description
+    On Error Resume Next
+    If Not editor Is Nothing Then Unload editor
+    Set editor = Nothing
+    If Not owner Is Nothing Then
+        If ownerWasVisible And Not owner.Visible Then owner.Show vbModeless
+    End If
+    Set owner = Nothing
+    On Error GoTo 0
+    MsgBox "Preset pekerjaan tidak dapat dibuka: " & description, vbExclamation, "Job Presets"
+End Sub
+
+Public Function AACaptureJobPreset(ByRef excludedZones As Long) As AAJobPreset
+    Dim settings As New AASettings, area As AACustomArea, result As New AAJobPreset
+    Dim modelMode As Long, layoutMode As Long, doc As Document
+    excludedZones = 0
+    modelMode = AACurrentModel()
+    layoutMode = AA_MODE_MINIMUM
+    If optMedium.Value Then layoutMode = AA_MODE_MEDIUM
+    settings.Configure modelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
+        AAInputText(txbGapHorizontal), AAInputText(txbGapVertical)
+    settings.ApplyJobDefaults mPresenter.JobPreset, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight)
+    If modelMode = AA_MODEL_CUSTOM Then
+        If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5484, _
+            "AutoAlignMenu", "Buka dokumen untuk menyimpan pengaturan Custom."
+        Set doc = ActiveDocument
+        Set area = mPresenter.CustomAreaDraft(doc, doc.ActivePage.Index)
+        settings.ApplyCustomArea area, doc, doc.ActivePage.Index
+        excludedZones = area.ZoneCount
+    End If
+    result.Capture settings, layoutMode, area
+    Set AACaptureJobPreset = result
+End Function
+
+Public Sub AAApplyJobPreset(ByVal preset As AAJobPreset, ByVal presetName As String)
+    Dim area As AACustomArea, doc As Document, snapshot As AAJobPreset
+    Dim widthText As String, heightText As String, gapH As String, gapV As String
+    Dim number As Long, description As String
+    If mProcessRunning Or AAProgressRunning Or mAreaEditing Then Err.Raise vbObjectError + 5485, _
+        "AutoAlignMenu", "Tunggu operasi AA selesai."
+    If preset Is Nothing Then
+        mPresenter.SetJobPreset Nothing
+        mJobPresetName = vbNullString
+        AARefreshHints
+        Exit Sub
+    End If
+    ' Selesaikan seluruh validasi dan konversi sebelum mengubah form/presenter.
+    Set snapshot = preset.Copy
+    If Application.Documents.Count > 0 Then Set doc = ActiveDocument
+    Set area = mPresenter.JobAreaDraft(snapshot, doc)
+    widthText = snapshot.WidthText: heightText = snapshot.HeightText
+    gapH = snapshot.HorizontalText: gapV = snapshot.VerticalText
+    If AACurrentModel() = AA_MODEL_CUSTOM Then
+        mCustomAreaWidth = AAInputText(txbAreaWidth): mCustomAreaHeight = AAInputText(txbAreaHeight)
+    End If
+    On Error GoTo Failed
+    mApplyingJobPreset = True
+    mChangingMode = True
+    mPresenter.SetJobPreset snapshot
+    If Not area Is Nothing Then mPresenter.SetCustomArea area
+    mJobPresetName = presetName
+    optCustom.Value = (snapshot.ModelMode = AA_MODEL_CUSTOM)
+    optKissA.Value = (snapshot.ModelMode = AA_MODEL_KISS_A)
+    optDieA.Value = (snapshot.ModelMode = AA_MODEL_DIE_A)
+    optMinimum.Value = (snapshot.LayoutMode = AA_MODE_MINIMUM)
+    optMedium.Value = (snapshot.LayoutMode = AA_MODE_MEDIUM)
+    mAreaModel = snapshot.ModelMode
+    If snapshot.ModelMode = AA_MODEL_CUSTOM Then
+        mCustomAreaWidth = widthText: mCustomAreaHeight = heightText
+        mUpdatingHint = True
+        mHintActive(3) = False: mHintActive(4) = False
+        txbAreaWidth.ForeColor = mInputColor(3): txbAreaHeight.ForeColor = mInputColor(4)
+        txbAreaWidth.Text = widthText: txbAreaHeight.Text = heightText
+        mUpdatingHint = False
+    End If
+    AASetModeGapText gapH, gapV
+    mMediumActive = optMedium.Value
+    If mMediumActive Then
+        mMediumVisited = True
+        mMediumGapH = gapH: mMediumGapV = gapV
+    Else
+        mMinimumGapH = gapH: mMinimumGapV = gapV
+    End If
+    mChangingMode = False
+    mApplyingJobPreset = False
+    AAUpdateModelControls
+    Exit Sub
+Failed:
+    number = Err.Number: description = Err.Description
+    mUpdatingHint = False: mChangingMode = False: mApplyingJobPreset = False
+    Err.Raise number, "AutoAlignMenu.AAApplyJobPreset", description
 End Sub
 
 Private Sub cmdSelectPair_Click()
@@ -292,6 +401,7 @@ Private Sub lbxObjects_Change()
 End Sub
 
 Private Sub optCustom_Click()
+    If mApplyingJobPreset Then Exit Sub
     If optCustom.value Then
         optKissA.value = False
         optDieA.value = False
@@ -300,6 +410,7 @@ Private Sub optCustom_Click()
 End Sub
 
 Private Sub optDieA_Click()
+    If mApplyingJobPreset Then Exit Sub
     If optDieA.value Then
         optCustom.value = False
         optKissA.value = False
@@ -308,6 +419,7 @@ Private Sub optDieA_Click()
 End Sub
 
 Private Sub optKissA_Click()
+    If mApplyingJobPreset Then Exit Sub
     If optKissA.value Then
         optCustom.value = False
         optDieA.value = False
@@ -371,10 +483,10 @@ Private Sub cmdProductionSummary_Click()
     Dim owner As Object, ownerWasVisible As Boolean, description As String
     If mProcessRunning Or AAProgressRunning Or mAreaEditing Then Exit Sub
     If mPresenter Is Nothing Then Set mPresenter = New AAPresenter
-    Set report = mPresenter.ProductionReport
+    Set report = mPresenter.productionReport
     If report Is Nothing Then
         MsgBox "Belum ada ringkasan. Jalankan Process hingga berhasil dalam sesi AA ini.", _
-            vbInformation, "Ringkasan Hasil Produksi"
+            vbInformation, "Production Summary"
         Exit Sub
     End If
     On Error GoTo SummaryFailed
@@ -397,7 +509,7 @@ SummaryFailed:
     End If
     Set owner = Nothing
     On Error GoTo 0
-    MsgBox "Ringkasan tidak dapat dibuka: " & description, vbExclamation, "Ringkasan Hasil Produksi"
+    MsgBox "Ringkasan tidak dapat dibuka: " & description, vbExclamation, "Production Summary"
 End Sub
 
 Private Sub cmdCheckLayout_Click()
@@ -411,7 +523,7 @@ Private Sub cmdCheckLayout_Click()
     ElseIf optDieA.value Then
         modelMode = AA_MODEL_DIE_A
     Else
-        MsgBox "Pilih model area terlebih dahulu.", vbExclamation, "Pemeriksaan Susunan"
+        MsgBox "Pilih model area terlebih dahulu.", vbExclamation, "Inspection Results"
         Exit Sub
     End If
     On Error GoTo InspectionFailed
@@ -449,7 +561,7 @@ InspectionFailed:
     End If
     Set owner = Nothing
     On Error GoTo 0
-    MsgBox "Pemeriksaan belum selesai: " & description, vbExclamation, "Pemeriksaan Susunan"
+    MsgBox "Pemeriksaan belum selesai: " & description, vbExclamation, "Inspection Results"
 End Sub
 
 Private Sub optMedium_Click()
@@ -578,6 +690,7 @@ Private Sub cmdSetDesign_Click()
 End Sub
 
 Private Sub AAUpdateModelControls()
+    If mApplyingJobPreset Then Exit Sub
     txbAreaWidth.enabled = optCustom.value
     txbAreaHeight.enabled = optCustom.value
     cmdProcess.enabled = True
@@ -675,7 +788,7 @@ Private Sub AARunMode(ByVal modelMode As Long)
         AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), _
         feedback, feedbackStyle, layoutMode
     AARefreshObjects
-    AAProgressEnd (Len(feedback) = 0 And mPresenter.LastProcessCompleted)
+    AAProgressEnd (Len(feedback) = 0 And mPresenter.lastProcessCompleted)
     AAUnlockInputs
     mProcessRunning = False
     AAUpdateQuantityEditor
@@ -727,7 +840,7 @@ End Sub
 Private Sub AAUnlockInputs()
     Dim i As Long
     If mLockedControls Is Nothing Then Exit Sub
-    For i = 1 To mLockedControls.Count
+    For i = 1 To mLockedControls.count
         mLockedControls(i).enabled = mEnabledStates(i)
     Next i
     Set mLockedControls = Nothing
@@ -771,7 +884,7 @@ Public Sub AAProgressRender(ByVal stage As String, ByVal detail As String, _
         position = elapsed / 2# - Fix(elapsed / 2#)
         lblProgressFill.Left = 3! + (available - fillWidth) * position
     End If
-    lblProgressFill.width = fillWidth
+    lblProgressFill.Width = fillWidth
     lblProgressFill.Visible = (fillWidth > 0!)
     Me.Repaint
 End Sub
@@ -809,8 +922,21 @@ Private Function AAInputText(ByVal box As MSForms.TextBox) As String
 End Function
 
 Private Function AAHintText(ByVal box As MSForms.TextBox) As String
-    Dim modelMode As Long
+    Dim modelMode As Long, preset As AAJobPreset
     modelMode = AACurrentModel()
+    If Not mPresenter Is Nothing Then Set preset = mPresenter.JobPreset
+    If Not preset Is Nothing Then
+        If preset.ModelMode = modelMode Then
+            Select Case AAInputIndex(box)
+                Case 1: AAHintText = CStr(preset.DefaultHorizontalGapMM)
+                Case 2: AAHintText = CStr(preset.DefaultVerticalGapMM)
+                Case 3: AAHintText = preset.WidthText
+                Case 4: AAHintText = preset.HeightText
+                Case 5: AAHintText = "-"
+            End Select
+            Exit Function
+        End If
+    End If
     Select Case AAInputIndex(box)
         Case 1: AAHintText = CStr(mDefaultPreferences.GapHorizontalMM(modelMode))
         Case 2: AAHintText = CStr(mDefaultPreferences.GapVerticalMM(modelMode))
@@ -878,6 +1004,16 @@ Private Sub AARefreshHints()
     txbGapHorizontal.ControlTipText = "Gap kontur mm, minimal 0. Default KissA/DieA mengikuti Default Settings; Custom 0 mm. Rectangle bersudut runcing pada preset memakai 0 mm. Input manual diutamakan."
     txbGapVertical.ControlTipText = "Gap kontur mm, minimal 0. Sebaris memakai H, sekolom V, diagonal terbesar H/V. Default KissA/DieA mengikuti Default Settings; Custom 0 mm. Rectangle bersudut runcing pada preset memakai 0 mm. Input manual diutamakan."
     txbQuantity.ControlTipText = "Kosong (-): isi sisa area. 0: lewati Design. /n: bagi rata dalam satu container kelompok n. Berlaku untuk semua Design terpilih (Ctrl/Shift)."
+    If Len(mJobPresetName) > 0 Then
+        cmdJobPresets.ControlTipText = "Default pekerjaan tersimpan: " & mJobPresetName & _
+            ". Berlaku pada model preset tersebut. Pilih Tanpa preset untuk kembali ke DefaultSettings."
+        txbGapHorizontal.ControlTipText = txbGapHorizontal.ControlTipText & _
+            " Jika model cocok, nilai default mengikuti preset pekerjaan tersimpan."
+        txbGapVertical.ControlTipText = txbGapVertical.ControlTipText & _
+            " Jika model cocok, nilai default mengikuti preset pekerjaan tersimpan."
+    Else
+        cmdJobPresets.ControlTipText = "Simpan atau terapkan preset pekerjaan bernama."
+    End If
 End Sub
 
 Private Sub AAEnterInput(ByVal box As MSForms.TextBox)
@@ -962,7 +1098,7 @@ Private Sub AARefreshObjects()
     Dim i As Long
 
     mUpdatingQuantity = True
-    lbxObjects.Clear
+    lbxObjects.clear
     For i = 0 To mPresenter.ObjectCount - 1
         lbxObjects.AddItem mPresenter.ObjectListText(i)
     Next i

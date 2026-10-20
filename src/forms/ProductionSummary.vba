@@ -5,7 +5,6 @@ Private mReport As AAProductionReport
 Public Sub LoadReport(ByVal report As AAProductionReport)
     Dim i As Long, column As Long
     Set mReport = report
-    Me.Caption = "Ringkasan Hasil Produksi"
     lblSummary.Caption = report.Summary
     txbDetails.MultiLine = True
     txbDetails.Locked = True
@@ -32,7 +31,7 @@ Private Sub cmdCopy_Click()
     clipboard.PutInClipboard
     Exit Sub
 CopyFailed:
-    MsgBox "Ringkasan tidak dapat disalin: " & Err.description, vbExclamation, "Ringkasan Hasil Produksi"
+    MsgBox "Ringkasan tidak dapat disalin: " & Err.description, vbExclamation, "Production Summary"
 End Sub
 
 Private Sub cmdClose_Click()

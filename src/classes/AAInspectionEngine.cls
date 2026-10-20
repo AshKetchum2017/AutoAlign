@@ -12,7 +12,8 @@ Private mPageX As Double, mPageY As Double
 Public Function Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
                     ByVal areaWidthText As String, ByVal areaHeightText As String, _
                     ByVal horizontalGapText As String, ByVal verticalGapText As String, _
-                    Optional ByVal customArea As AACustomArea = Nothing) As AAInspectionReport
+                    Optional ByVal customArea As AACustomArea = Nothing, _
+                    Optional ByVal jobPreset As AAJobPreset = Nothing) As AAInspectionReport
     Dim doc As Document, page As Page, originalSelection As ShapeRange, root As Shape
     Dim designs As New Collection, cuts As New Collection, cut As Shape
     Dim planner As AAPlanner, i As Long, unitSaved As Boolean
@@ -36,6 +37,7 @@ Public Function Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Set originalSelection = ActiveSelectionRange
     Set mSettings = New AASettings
     mSettings.Configure modelMode, areaWidthText, areaHeightText, horizontalGapText, verticalGapText
+    mSettings.ApplyJobDefaults jobPreset, areaWidthText, areaHeightText
     mSettings.ApplyCustomArea customArea, doc, page.Index
     modelName = "Custom"
     If modelMode = AA_MODEL_KISS_A Then modelName = "KissA"

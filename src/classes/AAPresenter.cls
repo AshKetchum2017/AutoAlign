@@ -4,6 +4,30 @@ Private mStore As AAObjectStore
 Private mLastProcessCompleted As Boolean
 Private mCustomArea As AACustomArea
 Private mProductionReport As AAProductionReport
+Private mJobPreset As AAJobPreset
+
+Public Property Get JobPreset() As AAJobPreset
+    Set JobPreset = mJobPreset
+End Property
+
+Public Sub SetJobPreset(ByVal preset As AAJobPreset)
+    If preset Is Nothing Then
+        Set mJobPreset = Nothing
+    Else
+        Set mJobPreset = preset.Copy
+    End If
+End Sub
+
+' Preflight pada draft; area aktif belum berubah jika margin/zona ditolak.
+Public Function JobAreaDraft(ByVal preset As AAJobPreset, ByVal doc As Document) As AACustomArea
+    Dim draft As AACustomArea
+    preset.Validate
+    If preset.ModelMode <> AA_MODEL_CUSTOM Then Exit Function
+    If doc Is Nothing Then Err.Raise vbObjectError + 5483, "AAPresenter", "Buka dokumen untuk menerapkan preset Custom."
+    Set draft = CustomAreaDraft(doc, doc.ActivePage.Index)
+    preset.ApplyMargins draft
+    Set JobAreaDraft = draft
+End Function
 
 Public Property Get ProductionReport() As AAProductionReport
     Set ProductionReport = mProductionReport
@@ -171,7 +195,7 @@ Public Sub RunLayout(ByVal modelMode As Long, ByVal areaWidthText As String, _
     Set engine = New AAProcessEngine
     engine.Run mStore, modelMode, areaWidthText, areaHeightText, _
         horizontalGapText, verticalGapText, _
-        mLastProcessCompleted, feedback, feedbackStyle, layoutMode, mCustomArea
+        mLastProcessCompleted, feedback, feedbackStyle, layoutMode, mCustomArea, mJobPreset
     ' Gagal/Cancel tidak mengganti catatan sukses sebelumnya.
     If Not engine.ProductionReport Is Nothing Then Set mProductionReport = engine.ProductionReport
 End Sub
@@ -184,7 +208,7 @@ Public Sub OptimizeLayout(ByVal modelMode As Long, ByVal areaWidthText As String
     Dim engine As AAOptimizeEngine
     Set engine = New AAOptimizeEngine
     engine.Run mStore, modelMode, areaWidthText, areaHeightText, horizontalGapText, _
-        verticalGapText, completed, feedback, feedbackStyle, layoutMode, mCustomArea
+        verticalGapText, completed, feedback, feedbackStyle, layoutMode, mCustomArea, mJobPreset
 End Sub
 
 Public Function CheckLayout(ByVal modelMode As Long, ByVal areaWidthText As String, _
@@ -193,5 +217,5 @@ Public Function CheckLayout(ByVal modelMode As Long, ByVal areaWidthText As Stri
     Dim engine As AAInspectionEngine
     Set engine = New AAInspectionEngine
     Set CheckLayout = engine.Run(mStore, modelMode, areaWidthText, areaHeightText, _
-        horizontalGapText, verticalGapText, mCustomArea)
+        horizontalGapText, verticalGapText, mCustomArea, mJobPreset)
 End Function
