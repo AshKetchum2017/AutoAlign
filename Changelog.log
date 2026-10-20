@@ -225,3 +225,9 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 [Pengelolaan pasangan]
 + Pasangan Cut Line dipilih berdasarkan ID per Design, dengan dukungan pilihan banyak Design, status Campuran/pasangan hilang dan tombol Pilih Pasangan.
 + Process, Optimize dan Periksa Susunan memakai hubungan yang sama untuk tiga susunan: tanpa Cut Line, satu Cut Line bersama, atau satu Cut Line berbeda per Design. Pasangan wajib dipilih setelah pendaftaran; penghapusan baris tidak mengalihkan pasangan secara otomatis.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-20
+[Margin dan area terlarang Custom]
++ CustomMarginSettings mengatur empat margin serta zona rectangle manual atau salinan geometri seleksi; zona diulang pada setiap area hasil. Terapkan menerima draft, Batal/X membuang perubahan.
++ Checkbox menentukan apakah Design berpasangan ikut menghindari zona atau cukup Cut Line. Process, Optimize dan Periksa Susunan memakai pembatas yang sama; ukuran area penuh dan jarak antararea dipertahankan.

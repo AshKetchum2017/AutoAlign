@@ -5,7 +5,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
                ByVal horizontalGapText As String, ByVal verticalGapText As String, _
                ByRef lastProcessCompleted As Boolean, ByRef feedback As String, _
                ByRef feedbackStyle As VbMsgBoxStyle, _
-               Optional ByVal layoutMode As Long = AA_MODE_MINIMUM)
+               Optional ByVal layoutMode As Long = AA_MODE_MINIMUM, _
+               Optional ByVal customArea As AACustomArea = Nothing)
     Dim settings As AASettings
     Dim doc As Document
     Dim targetPage As Page
@@ -72,7 +73,6 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Set settings = New AASettings
     settings.Configure modelMode, areaWidthText, areaHeightText, _
         horizontalGapText, verticalGapText
-    AADebugSettings settings
 
     operation = "memeriksa dokumen dan halaman sumber"
     If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5310, _
@@ -83,6 +83,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         "AAProcessEngine", "Aktifkan dokumen tempat object didaftarkan."
     If targetPage.Index <> objects.SourcePageIndex Then Err.Raise vbObjectError + 5312, _
         "AAProcessEngine", "Aktifkan halaman tempat object didaftarkan."
+    settings.ApplyCustomArea customArea, doc, targetPage.Index
+    AADebugSettings settings
     Set originalSelection = ActiveSelectionRange
     selectionCount = originalSelection.Count
     If selectionCount > 0 Then

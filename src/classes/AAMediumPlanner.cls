@@ -2021,7 +2021,7 @@ Private Function Fits(ByVal candidate As AAPlacement, ByVal occupied As Collecti
     End If
     Set collision = candidate.CollisionFootprint
     For Each obstacle In forbidden
-        If collision.Overlaps(obstacle) Then
+        If candidate.ForbiddenFootprint.Overlaps(obstacle) Then
             AADebugRejectSlot "mark"
             If Len(validationLabel) > 0 Then AADebugValidationRejected _
                 validationLabel, "mark", candidate, Nothing

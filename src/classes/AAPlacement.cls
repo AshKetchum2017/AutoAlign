@@ -9,6 +9,7 @@ Private mCutLeft As Double
 Private mCutTop As Double
 Private mFootprint As AAGeometry
 Private mCollisionFootprint As AAGeometry
+Private mForbiddenFootprint As AAGeometry
 Private mRotationDelta As Double
 Private mCenterX As Double, mCenterY As Double
 Private mUsesCenter As Boolean
@@ -48,6 +49,18 @@ End Sub
 Public Sub SetCollisionFootprint(ByVal geometry As AAGeometry)
     Set mCollisionFootprint = geometry
 End Sub
+
+Public Sub SetForbiddenFootprint(ByVal geometry As AAGeometry)
+    Set mForbiddenFootprint = geometry
+End Sub
+
+Public Property Get ForbiddenFootprint() As AAGeometry
+    If mForbiddenFootprint Is Nothing Then
+        Set ForbiddenFootprint = mCollisionFootprint
+    Else
+        Set ForbiddenFootprint = mForbiddenFootprint
+    End If
+End Property
 
 Public Sub SetMediumData(ByVal angle As Double, ByVal centerX As Double, _
                          ByVal centerY As Double, ByVal contour As AAContour, _
@@ -128,6 +141,8 @@ End Property
 Public Sub Translate(ByVal deltaX As Double, ByVal deltaY As Double)
     Dim sharedFootprint As Boolean
     sharedFootprint = (mCollisionFootprint Is mFootprint)
+    If Not mForbiddenFootprint Is Nothing Then Set mForbiddenFootprint = mForbiddenFootprint.Placed( _
+        mForbiddenFootprint.LeftX + deltaX, mForbiddenFootprint.TopY + deltaY)
     If Not sharedFootprint Then
         Set mCollisionFootprint = mCollisionFootprint.Placed( _
             mCollisionFootprint.LeftX + deltaX, mCollisionFootprint.TopY + deltaY)
@@ -153,6 +168,7 @@ Friend Function CopyForPlan() As AAPlacement
     result.Configure mDesignIndex, mCutIndex, mAreaIndex, mDesignLeft, mDesignTop, _
         mCutLeft, mCutTop, mFootprint
     result.SetCollisionFootprint mCollisionFootprint
+    result.SetForbiddenFootprint mForbiddenFootprint
     If mUsesCenter Then result.SetMediumData mRotationDelta, mCenterX, mCenterY, _
         mContour, mGapH, mGapV
     result.SetContourData mContour, mGapH, mGapV, mUsesContourGap

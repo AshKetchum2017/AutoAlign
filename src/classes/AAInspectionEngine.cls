@@ -11,7 +11,8 @@ Private mPageX As Double, mPageY As Double
 
 Public Function Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
                     ByVal areaWidthText As String, ByVal areaHeightText As String, _
-                    ByVal horizontalGapText As String, ByVal verticalGapText As String) As AAInspectionReport
+                    ByVal horizontalGapText As String, ByVal verticalGapText As String, _
+                    Optional ByVal customArea As AACustomArea = Nothing) As AAInspectionReport
     Dim doc As Document, page As Page, originalSelection As ShapeRange, root As Shape
     Dim designs As New Collection, cuts As New Collection, cut As Shape
     Dim planner As AAPlanner, i As Long, unitSaved As Boolean
@@ -35,6 +36,7 @@ Public Function Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Set originalSelection = ActiveSelectionRange
     Set mSettings = New AASettings
     mSettings.Configure modelMode, areaWidthText, areaHeightText, horizontalGapText, verticalGapText
+    mSettings.ApplyCustomArea customArea, doc, page.Index
     modelName = "Custom"
     If modelMode = AA_MODEL_KISS_A Then modelName = "KissA"
     If modelMode = AA_MODEL_DIE_A Then modelName = "DieA"
@@ -44,7 +46,8 @@ Public Function Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     mReport.Bind doc, page.Index, modelName & "; area " & Format$(mSettings.AreaWidthMM, "0.###") & " x " & _
         Format$(mSettings.AreaHeightMM, "0.###") & " mm; Gap H/V " & Format$(h, "0.###") & "/" & _
         Format$(v, "0.###") & " mm (pengecualian default rectangle preset tetap berlaku)." & vbCrLf & _
-        "Grid Process AA, jarak antararea 50 mm. Kolom area dipilih dari pusat container terdekat."
+        "Grid Process AA, jarak antararea 50 mm. Kolom area dipilih dari pusat container terdekat." & vbCrLf & _
+        mSettings.CustomSummary
     objects.BuildPairing designIndexes, designCount, cutIndexes, cutCount
     ReDim roots(0 To objects.Count - 1)
     previousUnit = doc.Unit: previousH = doc.Rulers.HUnits: previousV = doc.Rulers.VUnits
@@ -152,19 +155,15 @@ End Function
 Private Function RootArea(ByVal root As Shape) As Long
     Dim x As Double, y As Double, w As Double, h As Double, column As Double
     root.GetBoundingBox x, y, w, h, False
-    column = Int((x + w / 2# - mPageX) / (mSettings.AreaWidthMM + AA_INSPECTION_GROUP_GAP_MM) + 0.5)
-    If column < 0# Then column = 0#
-    If column > 2147483646# Then Err.Raise vbObjectError + 5417, "AAInspectionEngine", "Posisi area terlalu jauh."
-    RootArea = CLng(column)
+    RootArea = mSettings.AreaColumn(x + w / 2#, mPageX)
 End Function
 
 Private Function AreaLeft(ByVal areaIndex As Long) As Double
-    AreaLeft = mPageX - mSettings.AreaWidthMM / 2# + _
-        CDbl(areaIndex) * (mSettings.AreaWidthMM + AA_INSPECTION_GROUP_GAP_MM)
+    AreaLeft = mSettings.AreaLeft(mPageX, areaIndex)
 End Function
 
 Private Function AreaBottom() As Double
-    AreaBottom = mPageY - mSettings.AreaHeightMM / 2#
+    AreaBottom = mSettings.AreaBottom(mPageY)
 End Function
 
 Private Function InsideArea(ByVal box As AAGeometry, ByVal areaIndex As Long) As Boolean
@@ -203,7 +202,7 @@ Private Sub InspectShape(ByVal target As Shape, ByVal areaIndex As Long, _
     Dim geometry As AAGeometry, localGeometry As AAGeometry, obstacle As AAGeometry
     Dim contour As AAContour, placed As AAPlacement, other As AAPlacement, nearby As Collection
     Dim h As Double, v As Double, gap As Double, id As Long, otherID As Long, mark As Long
-    Dim number As Long, description As String
+    Dim number As Long, description As String, zoneCategory As String, zoneDetail As String
     On Error GoTo Failed
     id = CLng(target.StaticID)
     If mSeenIDs.Exists(CStr(id)) Then
@@ -214,7 +213,7 @@ Private Sub InspectShape(ByVal target As Shape, ByVal areaIndex As Long, _
     End If
     mSeenIDs.Add CStr(id), True
     Set geometry = New AAGeometry
-    If checkGeometry Then
+    If checkGeometry Or mSettings.IncludeDesignZones Then
         geometry.Capture target
         If designRole Then Set geometry = geometry.OuterBoundary
     Else
@@ -225,14 +224,20 @@ Private Sub InspectShape(ByVal target As Shape, ByVal areaIndex As Long, _
         "Bounds objek keluar area. Acuan kiri/bawah = " & Format$(AreaLeft(areaIndex), "0.###") & _
         "/" & Format$(AreaBottom(), "0.###") & " mm; ukuran " & _
         Format$(mSettings.AreaWidthMM, "0.###") & " x " & Format$(mSettings.AreaHeightMM, "0.###") & " mm."
+    If checkGeometry Or mSettings.IncludeDesignZones Then
+        Set localGeometry = geometry.Placed(geometry.LeftX - AreaLeft(areaIndex), geometry.TopY - AreaBottom())
+        zoneCategory = "Zona mark": zoneDetail = "Acuan objek mengenai zona mark ke-"
+        If mSettings.ModelMode = AA_MODEL_CUSTOM Then
+            zoneCategory = "Area terlarang": zoneDetail = "Objek mengenai zona Custom ke-"
+        End If
+        For Each obstacle In mForbidden
+            AAProgressPulse
+            mark = mark + 1
+            If localGeometry.Overlaps(obstacle) Then mReport.AddIssue zoneCategory, areaIndex + 1, id, 0, _
+                zoneDetail & CStr(mark) & "."
+        Next obstacle
+    End If
     If Not checkGeometry Then Exit Sub
-    Set localGeometry = geometry.Placed(geometry.LeftX - AreaLeft(areaIndex), geometry.TopY - AreaBottom())
-    For Each obstacle In mForbidden
-        AAProgressPulse
-        mark = mark + 1
-        If localGeometry.Overlaps(obstacle) Then mReport.AddIssue "Zona mark", areaIndex + 1, id, 0, _
-            "Acuan objek mengenai zona mark ke-" & CStr(mark) & " menurut model area yang dipilih."
-    Next obstacle
     h = mSettings.DefaultHorizontalGapMM: v = mSettings.DefaultVerticalGapMM
     If mSettings.ModelMode <> AA_MODEL_CUSTOM And geometry.IsSharpRectangle Then h = 0#: v = 0#
     If mSettings.HasHorizontalGap Then h = mSettings.HorizontalGap

@@ -122,9 +122,8 @@ Private Sub PlaceShape(ByVal targetShape As Shape, ByVal localLeft As Double, _
                        ByVal localTop As Double, ByVal areaIndex As Long, _
                        ByVal settings As AASettings, ByVal pageCenterX As Double, _
                        ByVal pageCenterY As Double)
-    targetShape.LeftX = pageCenterX - settings.AreaWidthMM / 2# + _
-        areaIndex * (settings.AreaWidthMM + AA_GROUP_GAP_MM) + localLeft
-    targetShape.TopY = pageCenterY - settings.AreaHeightMM / 2# + localTop
+    targetShape.LeftX = settings.AreaLeft(pageCenterX, areaIndex) + localLeft
+    targetShape.TopY = settings.AreaBottom(pageCenterY) + localTop
 End Sub
 
 Private Sub OrientAndPlace(ByVal targetShape As Shape, ByVal placement As AAPlacement, _

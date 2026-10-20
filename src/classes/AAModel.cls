@@ -48,8 +48,13 @@ Public Sub Prepare(ByVal designShape As Shape, ByVal cutShape As Shape, _
     Set mDesignGeometry = New AAGeometry
     Set mCutGeometry = Nothing
     If Not cutShape Is Nothing Then
-        ' Minimum memakai Cut Line sebagai acuan; Design hanya membutuhkan ukuran.
-        mDesignGeometry.CaptureBounds designShape
+        ' Acuan gap tetap Cut Line; zona Custom dapat memerlukan siluet Design.
+        If settings.IncludeDesignZones Then
+            mDesignGeometry.Capture designShape
+            Set mDesignGeometry = mDesignGeometry.OuterBoundary
+        Else
+            mDesignGeometry.CaptureBounds designShape
+        End If
         Set mDesignBoundary = mDesignGeometry
         Set mCutGeometry = New AAGeometry
         mCutGeometry.Capture cutShape
@@ -241,6 +246,12 @@ Public Function MakePlacement(ByVal designIndex As Long, ByVal cutIndex As Long,
         cutLeft, cutTop, footprint
     If Not mCutGeometry Is Nothing Then _
         result.SetCollisionFootprint mCutGeometry.Placed(cutLeft, cutTop)
+    If mSettings.IncludeDesignZones Then
+        Set footprint = New AAGeometry
+        footprint.AddPlaced mDesignGeometry, leftX, topY
+        If Not mCutGeometry Is Nothing Then footprint.AddPlaced mCutGeometry, cutLeft, cutTop
+        result.SetForbiddenFootprint footprint
+    End If
     GetBoundaryGaps AA_MODE_STRAIGHT, h, v
     Set orientation = RotationVariant(0#)
     result.SetContourData orientation.Contour, h, v, True
@@ -319,7 +330,7 @@ Public Function RotationVariant(ByVal angle As Double) As AARotationVariant
         Set collision = collision.Rotated(angle, 0#, 0#)
     End If
     Set result = New AARotationVariant
-    result.Configure angle, design, collision
+    result.Configure angle, design, collision, mSettings.IncludeDesignZones
     mVariants.Add CStr(angle), result
     Set RotationVariant = result
 End Function

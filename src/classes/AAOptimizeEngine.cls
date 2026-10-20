@@ -10,7 +10,8 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
                ByVal areaWidthText As String, ByVal areaHeightText As String, _
                ByVal horizontalGapText As String, ByVal verticalGapText As String, _
                ByRef completed As Boolean, ByRef feedback As String, ByRef feedbackStyle As VbMsgBoxStyle, _
-               Optional ByVal layoutMode As Long = AA_MODE_MINIMUM)
+               Optional ByVal layoutMode As Long = AA_MODE_MINIMUM, _
+               Optional ByVal customArea As AACustomArea = Nothing)
     Dim settings As AASettings, planner As AAPlanner, forbidden As Collection
     Dim doc As Document, page As Page, selection As ShapeRange, root As Shape, cut As Shape
     Dim designs As New Collection, cuts As New Collection, batches As New Collection
@@ -35,12 +36,13 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         "Daftarkan group susunan ke ListBox terlebih dahulu."
     Set settings = New AASettings
     settings.Configure modelMode, areaWidthText, areaHeightText, horizontalGapText, verticalGapText
-    AADebugSettings settings
     If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5362, "AAOptimizeEngine", _
         "Tidak ada dokumen aktif."
     Set doc = ActiveDocument: Set page = doc.ActivePage
     If Not (doc Is objects.SourceDocument) Or page.Index <> objects.SourcePageIndex Then _
         Err.Raise vbObjectError + 5363, "AAOptimizeEngine", "Aktifkan dokumen dan halaman sumber."
+    settings.ApplyCustomArea customArea, doc, page.Index
+    AADebugSettings settings
     Set selection = ActiveSelectionRange
     objects.BuildPairing designIndexes, designCount, cutIndexes, cutCount
     ReDim roots(0 To objects.Count - 1)
@@ -81,7 +83,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
             Set cut = cuts(i)
         End If
         Set layout = New AAOptimizeLayout
-        layout.Prepare designs(i), cut, settings, forbidden
+        layout.Prepare designs(i), cut, settings, forbidden, page.CenterX, page.CenterY
         For Each previous In batch
             If Not layout.MatchesTemplate(previous) Then Err.Raise vbObjectError + 5370, _
                 "AAOptimizeEngine", "Susunan container Design tidak identik dalam toleransi template 1 mm."

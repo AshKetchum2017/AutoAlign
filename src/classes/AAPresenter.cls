@@ -2,6 +2,22 @@ Option Explicit
 
 Private mStore As AAObjectStore
 Private mLastProcessCompleted As Boolean
+Private mCustomArea As AACustomArea
+
+Public Function CustomAreaDraft(ByVal doc As Document, ByVal pageIndex As Long) As AACustomArea
+    If Not mCustomArea Is Nothing Then
+        If mCustomArea.IsSource(doc, pageIndex) Then
+            Set CustomAreaDraft = mCustomArea.Copy
+            Exit Function
+        End If
+    End If
+    Set CustomAreaDraft = New AACustomArea
+    CustomAreaDraft.Bind doc, pageIndex
+End Function
+
+Public Sub SetCustomArea(ByVal profile As AACustomArea)
+    Set mCustomArea = profile.Copy
+End Sub
 
 Private Sub Class_Initialize()
     Set mStore = New AAObjectStore
@@ -150,7 +166,7 @@ Public Sub RunLayout(ByVal modelMode As Long, ByVal areaWidthText As String, _
     Set engine = New AAProcessEngine
     engine.Run mStore, modelMode, areaWidthText, areaHeightText, _
         horizontalGapText, verticalGapText, _
-        mLastProcessCompleted, feedback, feedbackStyle, layoutMode
+        mLastProcessCompleted, feedback, feedbackStyle, layoutMode, mCustomArea
 End Sub
 
 Public Sub OptimizeLayout(ByVal modelMode As Long, ByVal areaWidthText As String, _
@@ -161,7 +177,7 @@ Public Sub OptimizeLayout(ByVal modelMode As Long, ByVal areaWidthText As String
     Dim engine As AAOptimizeEngine
     Set engine = New AAOptimizeEngine
     engine.Run mStore, modelMode, areaWidthText, areaHeightText, horizontalGapText, _
-        verticalGapText, completed, feedback, feedbackStyle, layoutMode
+        verticalGapText, completed, feedback, feedbackStyle, layoutMode, mCustomArea
 End Sub
 
 Public Function CheckLayout(ByVal modelMode As Long, ByVal areaWidthText As String, _
@@ -170,5 +186,5 @@ Public Function CheckLayout(ByVal modelMode As Long, ByVal areaWidthText As Stri
     Dim engine As AAInspectionEngine
     Set engine = New AAInspectionEngine
     Set CheckLayout = engine.Run(mStore, modelMode, areaWidthText, areaHeightText, _
-        horizontalGapText, verticalGapText)
+        horizontalGapText, verticalGapText, mCustomArea)
 End Function

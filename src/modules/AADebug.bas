@@ -638,6 +638,7 @@ Public Sub AADebugSettings(ByVal settings As AASettings)
     If settings.HasVerticalGap Then v = v & " mm"
     AADebugWrite "Input", "area=" & CStr(settings.AreaWidthMM) & "x" & _
         CStr(settings.AreaHeightMM) & " mm; gap H=" & h & "; V=" & v
+    If settings.HasCustomRestrictions Then AADebugWrite "Custom Area", settings.CustomSummary
 TraceFailed:
     Err.Clear
 End Sub

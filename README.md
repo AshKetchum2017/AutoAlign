@@ -128,6 +128,21 @@ Medium memakai pencarian heuristik dengan batas kandidat. Hasilnya bukan jaminan
 
 Kolom ukuran area hanya aktif pada Custom. Lebar dan tinggi harus lebih besar dari nol.
 
+### Margin dan area terlarang Custom
+
+Pilih model **Custom**, isi W/H pada form utama, lalu tekan `cmdCustomMarginSettings` untuk membuka **CustomMarginSettings**. Form utama disembunyikan sementara; editor modeless memungkinkan pengguna memilih objek langsung di CorelDRAW. **Terapkan** menerima seluruh draft, sedangkan **Batal** atau X membuang perubahan dan kembali ke form utama.
+
+- **Margin kiri, kanan, atas, bawah** dalam mm membatasi bounds Design dan Cut Line. W/H tetap ukuran area keseluruhan; jumlah margin horizontal/vertikal harus lebih kecil daripada lebar/tinggi. Semua margin awal bernilai 0.
+- **Tambah Rectangle** menerima X, Y, W, H dalam mm. X/Y adalah sudut kiri bawah zona, relatif terhadap kiri bawah area pertama sebelum margin. Area pertama berpusat pada halaman aktif. Lebar/tinggi zona harus positif dan seluruh zona harus berada di dalam area keseluruhan.
+- **Ambil Seleksi** mengambil setiap objek terpilih sebagai salinan geometri zona, dengan posisi relatif terhadap area pertama dan orientasi saat diambil. Pilih objek pada dokumen/halaman sumber, lalu tekan tombol tersebut. Kurva harus tertutup dan dapat dibaca oleh AA; satu anggota yang tidak valid membatalkan seluruh penambahan seleksi tersebut. Objek sumber tidak dipindahkan, dihapus, atau diubah menjadi kurva. Perubahan/penghapusan objek sumber setelah pengambilan tidak mengubah zona; hapus zona lalu ambil ulang untuk memperbaruinya.
+- Rectangle dan zona dari seleksi masuk ke satu daftar. **Hapus Zona** menghapus baris terpilih; **Kosongkan Zona** menghapus semua zona pada draft tanpa mengubah margin atau objek dokumen. Zona berulang pada setiap area hasil, dengan jarak antararea tetap 50 mm berdasarkan ukuran area penuh.
+- CheckBox **Design juga menghindari zona** (`chkIncludeDesign`) awalnya dicentang. Saat aktif, siluet Design dan Cut Line diperiksa terhadap zona. Saat dilepas, pasangan memakai Cut Line saja; Design standalone tetap diperiksa. Checkbox tidak mengubah acuan gap antaritem atau batas margin. Zona memakai batas geometri yang diambil, tanpa penyusutan toleransi mark preset 0,2 mm dan tanpa tambahan Gap H/V; sediakan ruang aman dalam ukuran zona bila diperlukan.
+- **Process Minimum/Medium, Optimize, dan Periksa Susunan** memakai pengaturan yang sama. Optimize dengan pembatas Custom aktif memakai grid Process tetap agar margin/zona tidak bergeser mengikuti pusat bbox susunan. Pemeriksaan melaporkan **Area terlarang** untuk zona Custom dan **Batas area** untuk pelanggaran ruang efektif di dalam margin.
+
+Pengaturan terikat dokumen/halaman selama sesi AutoAlign, tetap tersedia saat daftar Objects dikosongkan untuk mendaftarkan container hasil, dan tidak disimpan ke registry atau CDR. Pada dokumen/halaman lain, buka editor lalu Terapkan profil untuk sumber tersebut. Mengubah W/H tidak menskalakan zona; pengaturan diperiksa ulang dan zona di luar area harus dihapus/dibuat ulang. KissA/DieA menggunakan aturan presetnya sendiri.
+
+Pembatas dapat mengurangi jumlah hasil. Pencarian tetap heuristik; banyak zona atau siluet Design kompleks dapat menambah waktu proses. Jika satu template Cut Line bersama tidak aman untuk seluruh Design, proses menolak hasil sebelum pembuatan objek.
+
 Zona mark preset menjadi area yang dihindari saat menyusun objek:
 
 | Model | Bentuk dan ukuran zona | Pusat zona pada sheet preset, dalam mm |
@@ -281,7 +296,7 @@ Repository menyediakan code-behind UserForm, Class Module, dan Standard Module. 
 1. Buat atau gunakan project GMS AutoAlign di editor VBA CorelDRAW.
 2. Siapkan Class Module untuk setiap file pada `src/classes/`, dengan properti `(Name)` sama persis seperti nama file tanpa ekstensi. File `.cls` berisi source headerless; masukkan isinya ke Class Module bernama sesuai, bukan mengandalkan metadata import class.
 3. Masukkan seluruh Standard Module pada `src/modules/` dengan nama sesuai file. `AADebug` tetap dibutuhkan walaupun keluaran debug dinonaktifkan.
-4. Buat UserForm **AutoAlignMenu**, **DefaultSettings**, dan **InspectionResults**. Pasang code-behind dari `src/forms/` pada form yang namanya cocok, lalu siapkan kontrol berikut.
+4. Buat UserForm **AutoAlignMenu**, **DefaultSettings**, **CustomMarginSettings**, dan **InspectionResults**. Pasang code-behind dari `src/forms/` pada form yang namanya cocok, lalu siapkan kontrol berikut.
 5. Lakukan **Debug → Compile** pada project VBA dan selesaikan referensi atau kontrol yang belum cocok sebelum menjalankan form.
 
 ### AutoAlignMenu
@@ -302,6 +317,7 @@ Repository menyediakan code-behind UserForm, Class Module, dan Standard Module. 
 | TextBox | `txbAreaWidth`, `txbAreaHeight` | Ukuran area Custom. |
 | TextBox | `txbGapHorizontal`, `txbGapVertical` | Gap H/V dalam mm. |
 | CommandButton | `cmdDefaultSetting` | Membuka DefaultSettings. |
+| CommandButton | `cmdCustomMarginSettings` | Membuka editor margin dan zona Custom. |
 | CommandButton | `cmdProcess`, `cmdOptimize`, `cmdCheckLayout` | Process, Optimize, dan **Periksa Susunan**. |
 | CommandButton | `cmdClose` | Close/Cancel sesuai status operasi. |
 | Frame | `frmProgress` | Area bar progres. |
@@ -318,6 +334,20 @@ Kode mengatur GroupName model/mode, daftar ComboBox, multi-selection, dan placeh
 | TextBox | `txbDefaultAreaWidth`, `txbDefaultAreaHeight` | Area W/H dalam mm. |
 | TextBox | `txbDefaultGapHorizontal`, `txbDefaultGapVertical` | Gap H/V dalam mm. |
 | CommandButton | `cmdSave`, `cmdCancel` | Save kedua draft profil / Cancel tanpa menyimpan. |
+
+### CustomMarginSettings
+
+| Tipe kontrol | `(Name)` | Kegunaan |
+| --- | --- | --- |
+| TextBox | `txbMarginLeft`, `txbMarginRight`, `txbMarginTop`, `txbMarginBottom` | Empat margin dalam mm; tambahkan Label penjelas. |
+| ListBox | `lbxForbiddenAreas` | Daftar zona, sumber, X/Y dan W/H; RowSource kosong. Beri lebar untuk ringkasan. |
+| TextBox | `txbZoneX`, `txbZoneY`, `txbZoneWidth`, `txbZoneHeight` | Rectangle manual dalam mm; tambahkan Label penjelas. |
+| CommandButton | `cmdAddRectangle`, `cmdAddFromSelection` | Tambah Rectangle / Ambil Seleksi. |
+| CommandButton | `cmdRemoveZone`, `cmdClearZones` | Hapus Zona / Kosongkan Zona. |
+| CheckBox | `chkIncludeDesign` | Caption **Design juga menghindari zona**; dua keadaan, awal dicentang oleh kode. |
+| CommandButton | `cmdApply`, `cmdCancel` | Terapkan / Batal. |
+
+Tambahkan Class Module headerless **AACustomArea**. Pembaruan fitur area mencakup class `AASettings`, `AAPresenter`, `AAProcessEngine`, `AAPlanner`, `AAMediumPlanner`, `AAModel`, `AAPlacement`, `AARotationVariant`, `AAResultBuilder`, `AAOptimizeEngine`, `AAOptimizeLayout`, `AAInspectionEngine`; module `AADebug`; serta kode form `AutoAlignMenu` dan `CustomMarginSettings`. Pertahankan class/form lain yang sudah dipasang. Tidak diperlukan macro publik tambahan atau resource `.frm/.frx` pengganti.
 
 ### InspectionResults
 

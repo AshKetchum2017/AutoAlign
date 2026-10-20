@@ -865,9 +865,9 @@ Private Function FindSafeOffsets(ByVal plan As AALayoutPlan, ByVal offsets As Ob
                 Set footprint = ShiftedFootprint(placement, offsets)
                 footprints.Add footprint
                 shift = offsets(key)
-                Set footprint = placement.CollisionFootprint.Placed( _
-                    placement.CollisionFootprint.LeftX + CDbl(shift(0)), _
-                    placement.CollisionFootprint.TopY + CDbl(shift(1)))
+                Set footprint = placement.ForbiddenFootprint.Placed( _
+                    placement.ForbiddenFootprint.LeftX + CDbl(shift(0)), _
+                    placement.ForbiddenFootprint.TopY + CDbl(shift(1)))
                 markFootprints.Add footprint
             End If
         Next placement
@@ -1037,7 +1037,7 @@ Private Function PlacementMarksFit(ByVal placement As AAPlacement, _
     Else
         traceLabel = vbNullString
     End If
-    PlacementMarksFit = MarksFit(placement.CollisionFootprint, _
+    PlacementMarksFit = MarksFit(placement.ForbiddenFootprint, _
         CDbl(shift(0)), CDbl(shift(1)), forbidden, traceLabel)
 End Function
 
@@ -1070,6 +1070,8 @@ Private Function BuildForbidden(ByVal settings As AASettings, _
                                 ByVal sourceDocument As Document) As Collection
     Dim result As New Collection
     Select Case settings.ModelMode
+        Case AA_MODEL_CUSTOM
+            Set result = settings.CustomForbidden
         Case AA_MODEL_KISS_A
             AddMark result, 6#, 10#, 10#, settings, sourceDocument
             AddMark result, 6#, 475#, 10#, settings, sourceDocument

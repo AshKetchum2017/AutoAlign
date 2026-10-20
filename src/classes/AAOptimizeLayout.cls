@@ -18,9 +18,11 @@ Private mDesignOriginX As Double, mDesignOriginY As Double
 Private mCutOriginX As Double, mCutOriginY As Double
 Private mSettings As AASettings, mForbidden As Collection
 Private mOccupied As Collection, mIndex As AAOccupiedIndex
+Private mPageCenterX As Double, mPageCenterY As Double
 
 Public Sub Prepare(ByVal designRoot As Shape, ByVal cutRoot As Shape, _
-                   ByVal settings As AASettings, ByVal forbidden As Collection)
+                   ByVal settings As AASettings, ByVal forbidden As Collection, _
+                   Optional ByVal pageCenterX As Double = 0#, Optional ByVal pageCenterY As Double = 0#)
     Dim designs As Collection, cuts As Collection, used() As Boolean
     Dim design As Shape, cut As Shape
     Dim dOriginX As Double, dOriginY As Double, cOriginX As Double, cOriginY As Double
@@ -30,6 +32,7 @@ Public Sub Prepare(ByVal designRoot As Shape, ByVal cutRoot As Shape, _
     Dim h As Double, v As Double
 
     Set mSettings = settings: Set mForbidden = forbidden
+    mPageCenterX = pageCenterX: mPageCenterY = pageCenterY
     Set mIndex = New AAOccupiedIndex
     Set designs = Members(designRoot)
     AreaOrigin designRoot, dOriginX, dOriginY
@@ -87,7 +90,12 @@ Public Sub Prepare(ByVal designRoot As Shape, ByVal cutRoot As Shape, _
             mCuts.Add cut
             mCutX(i) = cut.LeftX: mCutY(i) = cut.TopY
             mCutAngle(i) = cut.RotationAngle
-            designGeometry.CaptureBounds design
+            If settings.IncludeDesignZones Then
+                designGeometry.Capture design
+                Set designGeometry = designGeometry.OuterBoundary
+            Else
+                designGeometry.CaptureBounds design
+            End If
             Set designGeometry = designGeometry.Placed(designGeometry.LeftX - dOriginX, _
                 designGeometry.TopY - dOriginY)
             Set collision = New AAGeometry
@@ -105,7 +113,7 @@ Public Sub Prepare(ByVal designRoot As Shape, ByVal cutRoot As Shape, _
         box.AddBounds collision.LeftX, collision.BottomY, collision.RightX, collision.TopY
         Set orientation = New AARotationVariant
         ' Geometri sudah dalam orientasi aktual. Tidak ada pencarian rotasi.
-        orientation.Configure 0#, designGeometry, collision
+        orientation.Configure 0#, designGeometry, collision, settings.IncludeDesignZones
         Set mCurrent(i) = orientation.MakePlacement(i, -1, 0, box.LeftX, box.TopY, h, v)
         Set mOriginal(i) = mCurrent(i).CopyForPlan
     Next i
@@ -131,6 +139,12 @@ End Function
 Private Sub AreaOrigin(ByVal root As Shape, ByRef x As Double, ByRef y As Double)
     Dim w As Double, h As Double
     root.GetBoundingBox x, y, w, h, False
+    If mSettings.HasCustomRestrictions Then
+        ' Zona/margin Custom memakai grid Process tetap, bukan pusat bbox susunan.
+        x = mSettings.AreaLeft(mPageCenterX, mSettings.AreaColumn(x + w / 2#, mPageCenterX))
+        y = mSettings.AreaBottom(mPageCenterY)
+        Exit Sub
+    End If
     x = x + w / 2# - mSettings.AreaWidthMM / 2#
     y = y + h / 2# - mSettings.AreaHeightMM / 2#
 End Sub
@@ -240,7 +254,7 @@ Public Function CanMove(ByVal index As Long, ByVal dx As Double, ByVal dy As Dou
        box.BottomY < mEnvelopeBottom - AA_EDGE_TOLERANCE_MM Or _
        box.TopY > mEnvelopeTop + AA_EDGE_TOLERANCE_MM Then Exit Function
     For Each obstacle In mForbidden
-        If candidate.CollisionFootprint.Overlaps(obstacle) Then Exit Function
+        If candidate.ForbiddenFootprint.Overlaps(obstacle) Then Exit Function
     Next obstacle
     ' Jangan melewati urutan relatif objek semula ketika merapatkan pola.
     For i = 1 To mCount
@@ -301,7 +315,7 @@ Friend Function MinimumCanMove(ByVal index As Long, ByVal dx As Double, _
            box.RightX > mSettings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
            box.TopY > mSettings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then Exit Function
         For Each obstacle In mForbidden
-            If candidate.CollisionFootprint.Overlaps(obstacle) Then Exit Function
+            If candidate.ForbiddenFootprint.Overlaps(obstacle) Then Exit Function
         Next obstacle
     End If
     Set box = candidate.CollisionFootprint
@@ -389,7 +403,12 @@ Public Function AppliedValid(Optional ByVal minimumAlignment As Boolean = False)
         Else
             Set cut = mCuts(i)
             If Not AnglesMatch(cut.RotationAngle, mCutAngle(i)) Then Exit Function
-            geometry.CaptureBounds design
+            If mSettings.IncludeDesignZones Then
+                geometry.Capture design
+                Set geometry = geometry.OuterBoundary
+            Else
+                geometry.CaptureBounds design
+            End If
             Set geometry = geometry.Placed(geometry.LeftX - mDesignOriginX, geometry.TopY - mDesignOriginY)
             Set collision = New AAGeometry
             collision.Capture cut
@@ -400,7 +419,7 @@ Public Function AppliedValid(Optional ByVal minimumAlignment As Boolean = False)
         box.AddBounds geometry.LeftX, geometry.BottomY, geometry.RightX, geometry.TopY
         box.AddBounds collision.LeftX, collision.BottomY, collision.RightX, collision.TopY
         Set orientation = New AARotationVariant
-        orientation.Configure 0#, geometry, collision
+        orientation.Configure 0#, geometry, collision, mSettings.IncludeDesignZones
         Set mCurrent(i) = orientation.MakePlacement(i, -1, 0, box.LeftX, box.TopY, h, v)
     Next i
     If minimumAlignment Then

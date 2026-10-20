@@ -24,6 +24,7 @@ Private mMediumGapH As String, mMediumGapV As String
 Private mDefaultPreferences As AADefaultPreferences
 Private mAreaModel As Long
 Private mCustomAreaWidth As String, mCustomAreaHeight As String
+Private mAreaEditing As Boolean
 
 Private Sub cmbCutPartner_Change()
     Dim i As Long, cutID As Long
@@ -69,7 +70,7 @@ Private Sub AAUpdatePairEditor()
         End If
     Next i
     mUpdatingPair = True
-    cmbCutPartner.clear
+    cmbCutPartner.Clear
     cmbCutPartner.Style = fmStyleDropDownList
     cmbCutPartner.ColumnCount = 2
     cmbCutPartner.ColumnWidths = "170 pt;0 pt"
@@ -134,7 +135,7 @@ End Sub
 Private Sub AAInitializeRotationEditor()
     Dim mode As Long
     mUpdatingRotation = True
-    cmbRotation.clear
+    cmbRotation.Clear
     cmbRotation.Style = fmStyleDropDownList
     For mode = AA_ROTATION_AUTO To AA_ROTATION_QUARTER
         cmbRotation.AddItem AARotationText(mode)
@@ -171,6 +172,40 @@ Private Sub AAUpdateRotationEditor()
         If mixed Then lblRotation.Caption = "Rotasi Design (Campuran)"
     End If
     mUpdatingRotation = False
+End Sub
+
+Private Sub cmdCustomMarginSettings_Click()
+    Dim editor As CustomMarginSettings, settings As AASettings, doc As Document, message As String
+    If mProcessRunning Or AAProgressRunning Or mAreaEditing Then Exit Sub
+    On Error GoTo Failed
+    If Not optCustom.Value Then Err.Raise vbObjectError + 5458, "AutoAlignMenu", "Pilih model Custom terlebih dahulu."
+    If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5459, "AutoAlignMenu", "Tidak ada dokumen aktif."
+    Set doc = ActiveDocument
+    Set settings = New AASettings
+    settings.Configure AA_MODEL_CUSTOM, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), "", ""
+    Set editor = VBA.UserForms.Add("CustomMarginSettings")
+    editor.Configure Me, mPresenter.CustomAreaDraft(doc, doc.ActivePage.Index), doc, doc.ActivePage.Index, _
+        settings.FullAreaWidthMM, settings.FullAreaHeightMM
+    mAreaEditing = True
+    Me.Hide
+    editor.Show vbModeless
+    Set editor = Nothing
+    Exit Sub
+Failed:
+    message = Err.Description
+    On Error Resume Next
+    If Not editor Is Nothing Then Unload editor
+    Set editor = Nothing
+    mAreaEditing = False
+    If Not Me.Visible Then Me.Show vbModeless
+    On Error GoTo 0
+    MsgBox message, vbExclamation, "Area Custom"
+End Sub
+
+Public Sub AACloseAreaEditor(ByVal draft As AACustomArea, ByVal apply As Boolean)
+    If apply Then mPresenter.SetCustomArea draft
+    mAreaEditing = False
+    Me.Show vbModeless
 End Sub
 
 Private Sub cmdDefaultSetting_Click()
@@ -658,7 +693,7 @@ End Sub
 Private Sub AAUnlockInputs()
     Dim i As Long
     If mLockedControls Is Nothing Then Exit Sub
-    For i = 1 To mLockedControls.count
+    For i = 1 To mLockedControls.Count
         mLockedControls(i).enabled = mEnabledStates(i)
     Next i
     Set mLockedControls = Nothing
@@ -668,7 +703,7 @@ Private Sub AAUnlockInputs()
 End Sub
 
 Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
-    If mProcessRunning Then Cancel = True
+    If mProcessRunning Or mAreaEditing Then Cancel = True
 End Sub
 
 ' Dipanggil AAProgress hanya saat repaint, bukan pada setiap pemeriksaan segmen.
@@ -893,7 +928,7 @@ Private Sub AARefreshObjects()
     Dim i As Long
 
     mUpdatingQuantity = True
-    lbxObjects.clear
+    lbxObjects.Clear
     For i = 0 To mPresenter.ObjectCount - 1
         lbxObjects.AddItem mPresenter.ObjectListText(i)
     Next i

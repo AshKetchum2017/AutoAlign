@@ -5,12 +5,19 @@ Private mDesign As AAGeometry
 Private mCollision As AAGeometry
 Private mBounds As AAGeometry
 Private mContour As AAContour
+Private mForbidden As AAGeometry
 
 Public Sub Configure(ByVal angle As Double, ByVal design As AAGeometry, _
-                     ByVal collision As AAGeometry)
+                     ByVal collision As AAGeometry, Optional ByVal includeDesignZones As Boolean = False)
     mAngle = angle
     Set mDesign = design
     Set mCollision = collision
+    Set mForbidden = Nothing
+    If includeDesignZones Then
+        Set mForbidden = New AAGeometry
+        mForbidden.AddPlaced design, design.LeftX, design.TopY
+        If Not (design Is collision) Then mForbidden.AddPlaced collision, collision.LeftX, collision.TopY
+    End If
     Set mBounds = New AAGeometry
     mBounds.AddBounds design.LeftX, design.BottomY, design.RightX, design.TopY
     mBounds.AddBounds collision.LeftX, collision.BottomY, collision.RightX, collision.TopY
@@ -34,6 +41,8 @@ Public Function MakePlacement(ByVal designIndex As Long, ByVal cutIndex As Long,
     result.Configure designIndex, cutIndex, areaIndex, mDesign.LeftX + dx, _
         mDesign.TopY + dy, mCollision.LeftX + dx, mCollision.TopY + dy, footprint
     result.SetCollisionFootprint collision
+    If Not mForbidden Is Nothing Then result.SetForbiddenFootprint _
+        mForbidden.Placed(mForbidden.LeftX + dx, mForbidden.TopY + dy)
     result.SetMediumData mAngle, dx, dy, mContour, gapH, gapV
     Set MakePlacement = result
     If AADebugProfiling Then AADebugPerfEnd AA_PERF_PLACEMENT, perfStarted
