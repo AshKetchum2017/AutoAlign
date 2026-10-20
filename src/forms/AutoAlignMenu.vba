@@ -366,6 +366,40 @@ Private Sub optMaximum_Click()
 ' Pending: Implementasikan fungsionalitas mode maksimum. Saat ini, fitur tersebut dinonaktifkan di UI.
 End Sub
 
+Private Sub cmdProductionSummary_Click()
+    Dim report As AAProductionReport, resultView As Object
+    Dim owner As Object, ownerWasVisible As Boolean, description As String
+    If mProcessRunning Or AAProgressRunning Or mAreaEditing Then Exit Sub
+    If mPresenter Is Nothing Then Set mPresenter = New AAPresenter
+    Set report = mPresenter.ProductionReport
+    If report Is Nothing Then
+        MsgBox "Belum ada ringkasan. Jalankan Process hingga berhasil dalam sesi AA ini.", _
+            vbInformation, "Ringkasan Hasil Produksi"
+        Exit Sub
+    End If
+    On Error GoTo SummaryFailed
+    Set owner = Me
+    ownerWasVisible = owner.Visible
+    Set resultView = VBA.UserForms.Add("ProductionSummary")
+    resultView.LoadReport report
+    resultView.Show vbModal
+    Set resultView = Nothing
+    If ownerWasVisible And Not owner.Visible Then owner.Show vbModeless
+    Set owner = Nothing
+    Exit Sub
+SummaryFailed:
+    description = Err.description
+    On Error Resume Next
+    If Not resultView Is Nothing Then Unload resultView
+    Set resultView = Nothing
+    If Not owner Is Nothing Then
+        If ownerWasVisible And Not owner.Visible Then owner.Show vbModeless
+    End If
+    Set owner = Nothing
+    On Error GoTo 0
+    MsgBox "Ringkasan tidak dapat dibuka: " & description, vbExclamation, "Ringkasan Hasil Produksi"
+End Sub
+
 Private Sub cmdCheckLayout_Click()
     Dim modelMode As Long, report As AAInspectionReport, resultView As Object
     Dim description As String, owner As Object, ownerWasVisible As Boolean

@@ -231,3 +231,7 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 [Margin dan area terlarang Custom]
 + CustomMarginSettings mengatur empat margin serta zona rectangle manual atau salinan geometri seleksi; zona diulang pada setiap area hasil. Terapkan menerima draft, Batal/X membuang perubahan.
 + Checkbox menentukan apakah Design berpasangan ikut menghindari zona atau cukup Cut Line. Process, Optimize dan Periksa Susunan memakai pembatas yang sama; ukuran area penuh dan jarak antararea dipertahankan.
+
+[Ringkasan hasil produksi]
++ Ringkasan Hasil menampilkan catatan Process terakhir yang berhasil: jumlah Design per sumber/area, total Cut Line fisik, area hasil, pengaturan dan durasi. Cut Line bersama dihitung sesuai objek yang dibuat.
++ Salin Ringkasan menyalin tabel beserta detail. Catatan berlaku selama sesi AA; perubahan manual, Undo atau Optimize tidak memperbaruinya dan percobaan gagal tidak mengganti hasil sukses sebelumnya.

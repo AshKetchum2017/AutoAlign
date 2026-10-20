@@ -5,7 +5,8 @@ Private Const AA_GROUP_GAP_MM As Double = 50#
 Public Function Build(ByVal plan As AALayoutPlan, ByRef sourceShapes() As Shape, _
                       ByVal entryCount As Long, ByVal settings As AASettings, _
                       ByVal pageCenterX As Double, ByVal pageCenterY As Double, _
-                      Optional ByVal sharedCutOwnerIndex As Long = -1) As ShapeRange
+                      Optional ByVal sharedCutOwnerIndex As Long = -1, _
+                      Optional ByVal productionReport As AAProductionReport = Nothing) As ShapeRange
     Dim placements As Collection
     Dim placement As AAPlacement
     Dim designs() As Shape
@@ -70,6 +71,8 @@ Public Function Build(ByVal plan As AALayoutPlan, ByRef sourceShapes() As Shape,
         If Not cuts(i) Is Nothing Then _
             AddToBucket sourceBuckets, sourceOrder, placement.AreaIndex, _
                 placement.CutIndex, AA_ROLE_CUT_LINE, cuts(i)
+        If Not productionReport Is Nothing Then _
+            productionReport.RecordCreated placement, Not (cuts(i) Is Nothing)
     Next i
 
     Set parentBuckets = CreateObject("Scripting.Dictionary")

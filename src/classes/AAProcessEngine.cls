@@ -1,5 +1,11 @@
 Option Explicit
 
+Private mProductionReport As AAProductionReport
+
+Public Property Get ProductionReport() As AAProductionReport
+    Set ProductionReport = mProductionReport
+End Property
+
 Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
                ByVal areaWidthText As String, ByVal areaHeightText As String, _
                ByVal horizontalGapText As String, ByVal verticalGapText As String, _
@@ -49,7 +55,10 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim operation As String
     Dim hasQuantityGroups As Boolean
     Dim perfStarted As Double, perfStage As String
+    Dim productionDraft As AAProductionReport, startedAt As Date
 
+    Set mProductionReport = Nothing
+    startedAt = Now
     feedback = vbNullString
     feedbackStyle = vbExclamation
     On Error GoTo RunFailed
@@ -256,12 +265,15 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
             "Pick Tool tidak dapat diaktifkan untuk mengelompokkan hasil."
     End If
     operation = "membuat dan mengelompokkan hasil"
+    Set productionDraft = New AAProductionReport
+    productionDraft.Configure objects, settings, layoutMode, doc.Name, targetPage.Index, _
+        startedAt, (cutCount = 1 And designCount > 1)
     mutationStarted = True
     Set builder = New AAResultBuilder
     perfStage = "Build and group results"
     perfStarted = AADebugPerfBegin()
     Set resultSelection = builder.Build(plan, sourceShapes, entryCount, settings, _
-        originalCenterX, originalCenterY, sharedCutOwnerIndex)
+        originalCenterX, originalCenterY, sharedCutOwnerIndex, productionDraft)
     operation = "memilih group hasil"
     resultSelection.CreateSelection
     AADebugStageEnd perfStage, perfStarted
@@ -291,6 +303,11 @@ CleanExit:
     perfStage = vbNullString
     AADebugPerfFinish "OK"
     AADebugWrite "Process", "OK"
+    ' Publikasi hanya sesudah build, pemulihan unit, dan EndCommandGroup berhasil.
+    If Not productionDraft Is Nothing Then
+        productionDraft.Complete Now
+        Set mProductionReport = productionDraft
+    End If
     Exit Sub
 
 RunFailed:

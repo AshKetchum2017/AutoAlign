@@ -3,6 +3,11 @@ Option Explicit
 Private mStore As AAObjectStore
 Private mLastProcessCompleted As Boolean
 Private mCustomArea As AACustomArea
+Private mProductionReport As AAProductionReport
+
+Public Property Get ProductionReport() As AAProductionReport
+    Set ProductionReport = mProductionReport
+End Property
 
 Public Function CustomAreaDraft(ByVal doc As Document, ByVal pageIndex As Long) As AACustomArea
     If Not mCustomArea Is Nothing Then
@@ -167,6 +172,8 @@ Public Sub RunLayout(ByVal modelMode As Long, ByVal areaWidthText As String, _
     engine.Run mStore, modelMode, areaWidthText, areaHeightText, _
         horizontalGapText, verticalGapText, _
         mLastProcessCompleted, feedback, feedbackStyle, layoutMode, mCustomArea
+    ' Gagal/Cancel tidak mengganti catatan sukses sebelumnya.
+    If Not engine.ProductionReport Is Nothing Then Set mProductionReport = engine.ProductionReport
 End Sub
 
 Public Sub OptimizeLayout(ByVal modelMode As Long, ByVal areaWidthText As String, _

@@ -287,6 +287,18 @@ Cancel, geometri gagal dibaca, ID hilang, daftar tumpang tindih, pasangan ambigu
 
 Jangan mendaftarkan container bersamaan dengan anggotanya. Untuk memeriksa banyak area atau seluruh hasil, daftarkan semua container yang diperlukan. Objek yang tidak didaftarkan tidak termasuk cakupan laporan.
 
+## Ringkasan Hasil Produksi
+
+Sesudah **Process** berhasil, tekan **Ringkasan Hasil** (`cmdProductionSummary`) untuk membuka `ProductionSummary`. Dialog tidak muncul otomatis. Ringkasan berisi jumlah Design per sumber dan per area, total Design, total Cut Line fisik, jumlah area hasil, serta total per sumber termasuk Design dengan hasil nol.
+
+Kolom Design/Cut Line memakai **ID sumber saat Process**, bukan ID setiap duplikat. Pada satu Cut Line bersama, hubungan pasangan tetap ditampilkan pada setiap Design, tetapi total Cut Line hanya menghitung objek fisik yang dibuat. Jumlah area menghitung area hasil yang terisi, bukan jumlah lembar bahan. Persentase pemakaian bahan dan limbah tidak dihitung.
+
+Detail mencatat nama dokumen, halaman, waktu selesai, durasi Process hingga pemulihan dokumen, model/mode, ukuran area penuh dan setelah margin, Gap H/V input/default, serta margin/zona Custom. Pengecualian gap default rectangle tajam preset tetap berlaku. Durasi beresolusi detik dan tidak mencakup waktu membaca dialog.
+
+**Salin Ringkasan** menyalin ringkasan, tabel dan detail ke clipboard sebagai teks. Tutup dialog untuk melanjutkan penggunaan AA.
+
+Laporan adalah catatan Process terakhir yang berhasil **selama sesi form AA masih terbuka**. Clear Objects, perubahan input, berpindah dokumen, Optimize, Undo, dan edit manual tidak memperbarui catatan tersebut; periksa nama dokumen dan waktu pencatatannya. Process gagal, dibatalkan, atau tanpa hasil tidak mengganti catatan sukses sebelumnya. Menutup form utama mengakhiri sesi; ringkasan tidak disimpan ke registry atau CDR. Ringkasan bukan hasil Check Layout dan tidak menyatakan susunan sudah bebas collision.
+
 ## Pemasangan dari Source
 
 Target penggunaan project adalah **CorelDRAW 2024 64-bit dengan VBA**. Kompatibilitas dengan versi lain perlu diperiksa tersendiri.
@@ -296,7 +308,7 @@ Repository menyediakan code-behind UserForm, Class Module, dan Standard Module. 
 1. Buat atau gunakan project GMS AutoAlign di editor VBA CorelDRAW.
 2. Siapkan Class Module untuk setiap file pada `src/classes/`, dengan properti `(Name)` sama persis seperti nama file tanpa ekstensi. File `.cls` berisi source headerless; masukkan isinya ke Class Module bernama sesuai, bukan mengandalkan metadata import class.
 3. Masukkan seluruh Standard Module pada `src/modules/` dengan nama sesuai file. `AADebug` tetap dibutuhkan walaupun keluaran debug dinonaktifkan.
-4. Buat UserForm **AutoAlignMenu**, **DefaultSettings**, **CustomMarginSettings**, dan **InspectionResults**. Pasang code-behind dari `src/forms/` pada form yang namanya cocok, lalu siapkan kontrol berikut.
+4. Buat UserForm **AutoAlignMenu**, **DefaultSettings**, **CustomMarginSettings**, **InspectionResults**, dan **ProductionSummary**. Pasang code-behind dari `src/forms/` pada form yang namanya cocok, lalu siapkan kontrol berikut.
 5. Lakukan **Debug → Compile** pada project VBA dan selesaikan referensi atau kontrol yang belum cocok sebelum menjalankan form.
 
 ### AutoAlignMenu
@@ -319,6 +331,7 @@ Repository menyediakan code-behind UserForm, Class Module, dan Standard Module. 
 | CommandButton | `cmdDefaultSetting` | Membuka DefaultSettings. |
 | CommandButton | `cmdCustomMarginSettings` | Membuka editor margin dan zona Custom. |
 | CommandButton | `cmdProcess`, `cmdOptimize`, `cmdCheckLayout` | Process, Optimize, dan **Periksa Susunan**. |
+| CommandButton | `cmdProductionSummary` | Caption **Ringkasan Hasil**; membuka catatan Process terakhir yang berhasil. |
 | CommandButton | `cmdClose` | Close/Cancel sesuai status operasi. |
 | Frame | `frmProgress` | Area bar progres. |
 | Label | `lblProgressFill` | Isi bar; letakkan di dalam `frmProgress`. |
@@ -361,6 +374,20 @@ Tambahkan Class Module headerless **AACustomArea**. Pembaruan fitur area mencaku
 
 Form ini dibuka oleh `cmdCheckLayout`; tidak memerlukan macro publik tersendiri. Pastikan `AAInspectionEngine`, `AAInspectionReport`, dan `AAInspectionIssue` tersedia sebagai Class Module.
 
+### ProductionSummary
+
+| Tipe kontrol | `(Name)` | Kegunaan/pengaturan |
+| --- | --- | --- |
+| Label | `lblSummary` | Total Design, Cut Line fisik dan area; sediakan beberapa baris. |
+| ListBox | `lbxProduction` | Empat kolom: Area, Design, Cut Line, Jumlah Design. RowSource kosong; kolom diisi kode. |
+| TextBox | `txbDetails` | `MultiLine=True`, `Locked=True`, scrollbar vertikal; ringkasan dan detail. |
+| CommandButton | `cmdCopy` | Caption **Salin Ringkasan**. |
+| CommandButton | `cmdClose` | Caption **Tutup**. |
+
+Tambahkan empat Label judul kolom di atas ListBox; nama Label bebas. Lebar kolom yang diatur kode adalah 45/85/85/85 pt.
+
+Tambahkan Class Module headerless **AAProductionReport** dengan `(Name)` yang sama. Perbarui `AAProcessEngine`, `AAResultBuilder`, `AAPresenter`, serta kode form `AutoAlignMenu` dan `ProductionSummary`. Nama TextBox yang dipakai adalah **txbDetails**. Clipboard memakai `MSForms.DataObject` dari Microsoft Forms yang digunakan UserForm. Tidak diperlukan macro publik tambahan.
+
 ## Integrasi dan Source
 
 | Lokasi | Peran |
@@ -369,6 +396,7 @@ Form ini dibuka oleh `cmdCheckLayout`; tidak memerlukan macro publik tersendiri.
 | `src/classes/AAPresenter.cls`, `AAObjectStore.cls`, `AASettings.cls` | Penghubung form, daftar objek, dan validasi pengaturan. |
 | `src/classes/AADefaultPreferences.cls`, `src/forms/DefaultSettings.vba` | Preferensi Area/Gap per model, draft editor dan penyimpanan registry. |
 | `src/classes/AAProcessEngine.cls`, `AAResultBuilder.cls` | Menjalankan proses, menangani pasangan/kelompok, dan membangun hasil. |
+| `src/classes/AAProductionReport.cls`, `src/forms/ProductionSummary.vba` | Catatan hasil Process, hitungan Design/Cut Line fisik, dan salinan teks ringkasan. |
 | `src/classes/AAInspectionEngine.cls`, `AAInspectionReport.cls`, `AAInspectionIssue.cls`, `src/forms/InspectionResults.vba` | Pemeriksaan susunan terdaftar, laporan temuan, dan pemilihan objek terkait. |
 | `src/classes/AAOptimizeEngine.cls`, `AAOptimizeMinimum.cls`, `AAOptimizeLayout.cls` | Optimize Minimum/Medium, snapshot kelompok, validasi, dan penerapan translasi. Import sebagai Class Module dengan nama yang sesuai. |
 | `src/classes/AAPlanner.cls`, `AAMediumPlanner.cls`, `AAQuantityPlanner.cls` | Perencanaan Minimum, Medium, dan kuota kelompok. |
