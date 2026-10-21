@@ -254,3 +254,6 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Pilihan rotasi 90/270]
 + cmbRotation menyediakan pilihan 90 / 270 tepat di bawah 0 / 180 untuk Process Medium. Kombinasi Design dengan satu Cut Line bersama yang tidak memiliki sudut sama ditolak dengan pesan penjelasan.
+
+[Pendaftaran pasangan]
++ Tombol Pair mendaftarkan objek terakhir dipilih sebagai Cut Line dan semua objek lainnya sebagai Design yang otomatis dipasangkan ke Cut Line tersebut. Objek terdaftar dengan peran sesuai dipakai kembali; konflik peran ditolak.

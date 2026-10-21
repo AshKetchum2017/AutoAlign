@@ -214,6 +214,68 @@ Public Function RegisterSelection(ByVal roleLabel As String, ByVal selectedShape
 
     If roleLabel <> AA_ROLE_DESIGN And roleLabel <> AA_ROLE_CUT_LINE Then Err.Raise _
         vbObjectError + 5301, "AAObjectStore", "Jenis item tidak dikenal."
+    ValidateSelection selectedShapes, sourceDoc, sourcePage
+
+    ' Selesaikan pembacaan posisi/pengurutan sebelum mengubah data daftar.
+    BuildSelectionOrder selectedShapes, sourceDoc, order
+    If mCount = 0 Then
+        Set mSourceDocument = sourceDoc
+        mSourcePageIndex = sourcePage.Index
+    End If
+    For selectionIndex = 1 To selectedShapes.Count
+        Set selectedShape = selectedShapes(order(selectionIndex))
+        If Not ContainsID(CLng(selectedShape.StaticID)) Then
+            AppendEntry roleLabel, CLng(selectedShape.StaticID)
+            RegisterSelection = RegisterSelection + 1
+        End If
+    Next selectionIndex
+End Function
+
+' Corel menempatkan klik seleksi terakhir pada indeks 1. Tentukan peran
+' sebelum pengurutan spasial; urutan ListBox tidak menentukan pasangan.
+Public Sub RegisterSelectionPairs(ByVal selectedShapes As ShapeRange, _
+                                  ByVal sourceDoc As Document, ByVal sourcePage As Page)
+    Dim ids() As Long, order() As Long
+    Dim designShapes As New ShapeRange
+    Dim i As Long, entryIndex As Long, cutID As Long, roleLabel As String
+
+    ValidateSelection selectedShapes, sourceDoc, sourcePage
+    If selectedShapes.Count < 2 Then Err.Raise vbObjectError + 5490, _
+        "AAObjectStore", "Pilih minimal dua object: Design terlebih dahulu, lalu Cut Line terakhir."
+    ReDim ids(1 To selectedShapes.Count)
+    ' Snapshot ID dan periksa seluruh peran sebelum mengubah daftar/pasangan.
+    For i = 1 To selectedShapes.Count
+        ids(i) = CLng(selectedShapes(i).StaticID)
+        If i > 1 Then designShapes.Add selectedShapes(i)
+        roleLabel = AA_ROLE_DESIGN
+        If i = 1 Then roleLabel = AA_ROLE_CUT_LINE
+        entryIndex = EntryIndexForID(ids(i))
+        If entryIndex >= 0 Then
+            If mEntries(entryIndex).RoleLabel <> roleLabel Then Err.Raise vbObjectError + 5491, _
+                "AAObjectStore", "Object /" & CStr(ids(i)) & " sudah terdaftar sebagai " & _
+                mEntries(entryIndex).RoleLabel & ". Hapus barisnya sebelum mendaftar sebagai " & roleLabel & "."
+        End If
+    Next i
+    cutID = ids(1)
+    BuildSelectionOrder designShapes, sourceDoc, order
+    If mCount = 0 Then
+        Set mSourceDocument = sourceDoc
+        mSourcePageIndex = sourcePage.Index
+    End If
+    ' Design baru tetap berurutan spasial; Cut Line baru menyusul di akhir.
+    For i = 1 To designShapes.Count
+        If EntryIndexForID(ids(order(i) + 1)) < 0 Then AppendEntry AA_ROLE_DESIGN, ids(order(i) + 1)
+    Next i
+    If EntryIndexForID(cutID) < 0 Then AppendEntry AA_ROLE_CUT_LINE, cutID
+    For i = 2 To selectedShapes.Count
+        SetCutPartnerAt EntryIndexForID(ids(i)), cutID
+    Next i
+End Sub
+
+Private Sub ValidateSelection(ByVal selectedShapes As ShapeRange, _
+                              ByVal sourceDoc As Document, ByVal sourcePage As Page)
+    Dim selectedShape As Shape, selectionIndex As Long
+
     If selectedShapes Is Nothing Then Err.Raise vbObjectError + 5302, _
         "AAObjectStore", "Pilih object terlebih dahulu."
     If selectedShapes.Count = 0 Then Err.Raise vbObjectError + 5302, _
@@ -236,19 +298,17 @@ Public Function RegisterSelection(ByVal roleLabel As String, ByVal selectedShape
             "AAObjectStore", "Layer object yang dipilih tidak dapat diedit."
     Next selectionIndex
 
-    ' Selesaikan pembacaan posisi/pengurutan sebelum mengubah data daftar.
-    BuildSelectionOrder selectedShapes, sourceDoc, order
-    If mCount = 0 Then
-        Set mSourceDocument = sourceDoc
-        mSourcePageIndex = sourcePage.Index
-    End If
-    For selectionIndex = 1 To selectedShapes.Count
-        Set selectedShape = selectedShapes(order(selectionIndex))
-        If Not ContainsID(CLng(selectedShape.StaticID)) Then
-            AppendEntry roleLabel, CLng(selectedShape.StaticID)
-            RegisterSelection = RegisterSelection + 1
+End Sub
+
+Private Function EntryIndexForID(ByVal staticID As Long) As Long
+    Dim i As Long
+    EntryIndexForID = -1
+    For i = 0 To mCount - 1
+        If mEntries(i).StaticID = staticID Then
+            EntryIndexForID = i
+            Exit Function
         End If
-    Next selectionIndex
+    Next i
 End Function
 
 Private Sub BuildSelectionOrder(ByVal selectedShapes As ShapeRange, _

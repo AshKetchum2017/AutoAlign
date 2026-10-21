@@ -185,6 +185,23 @@ RegisterFailed:
     feedback = Err.Description
 End Sub
 
+Public Sub RegisterSelectedPairs(ByRef feedback As String, ByRef feedbackStyle As VbMsgBoxStyle)
+    Dim doc As Document, targetPage As Page, selectedShapes As ShapeRange
+
+    feedback = vbNullString
+    feedbackStyle = vbExclamation
+    On Error GoTo RegisterFailed
+    If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5310, _
+        "AAPresenter", "Tidak ada dokumen aktif."
+    Set doc = ActiveDocument
+    Set targetPage = doc.ActivePage
+    Set selectedShapes = ActiveSelectionRange
+    mStore.RegisterSelectionPairs selectedShapes, doc, targetPage
+    Exit Sub
+RegisterFailed:
+    feedback = Err.Description
+End Sub
+
 Public Sub RunLayout(ByVal modelMode As Long, ByVal areaWidthText As String, _
                      ByVal areaHeightText As String, ByVal horizontalGapText As String, _
                      ByVal verticalGapText As String, ByRef feedback As String, _

@@ -19,7 +19,7 @@ AutoAlign menyediakan mode **Minimum** dan **Medium**, model area **KissA**, **D
 ## Alur Singkat
 
 1. Aktifkan dokumen dan halaman sumber, lalu buka `AutoAlignMenu`.
-2. Daftarkan objek melalui `cmdSetDesign` dan, jika digunakan, `cmdSetCutLine`.
+2. Daftarkan objek melalui `cmdSetDesign` dan, jika digunakan, `cmdSetCutLine`. Untuk mendaftarkan sekaligus memasangkan, seleksi Design satu per satu, pilih Cut Line terakhir, lalu tekan `cmdPair`.
 3. Pilih Design pada daftar, lalu tentukan **Pasangan Cut Line**, **Quantity**, dan **Rotasi Design** sesuai kebutuhan.
 4. Pilih **KissA**, **DieA**, atau **Custom**, kemudian **Minimum** atau **Medium**. Atur Area dan Gap H/V.
 5. Jalankan `cmdProcess`, tunggu sampai selesai, lalu periksa susunan pada dokumen.
@@ -54,7 +54,11 @@ AutoAlign mendukung tiga susunan input:
 | Satu Cut Line | Semua Design dipasangkan ke ID Cut Line yang sama. |
 | Cut Line sebanyak Design | Setiap Design dipasangkan ke satu ID Cut Line berbeda yang dipilih melalui Pasangan Cut Line. |
 
-Setelah mendaftarkan objek, pilih baris Design lalu tentukan **Pasangan Cut Line** melalui `cmbCutPartner`. Hubungan disimpan berdasarkan ID dalam dokumen sumber. Contoh ringkasan daftar: `Design | Obj. ID: /19 -> Cut /26`. Pendaftaran tidak memilih pasangan secara otomatis; urutan baris tidak menentukan pasangan.
+**Pair** (`cmdPair`) mendaftarkan sedikitnya dua objek sekaligus beserta hubungannya: objek terakhir yang dipilih menjadi Cut Line, sedangkan seluruh objek lainnya menjadi Design dengan Cut Line yang sama. Pilih objek satu per satu dan Cut Line paling akhir; seleksi box atau Select All tidak menyediakan urutan klik untuk menentukan Cut Line. Design baru mengikuti urutan spasial daftar, lalu Cut Line baru ditempatkan di akhir.
+
+Objek yang sudah terdaftar dengan peran sesuai dipakai kembali tanpa duplikasi; pasangan Design terpilih diperbarui dan Quantity/rotasinya dipertahankan. Konflik peran ditolak dengan pesan untuk menghapus baris terkait terlebih dahulu. Validasi dokumen, halaman, objek dan peran diselesaikan sebelum daftar diubah.
+
+Untuk pendaftaran melalui `cmdSetDesign`/`cmdSetCutLine`, pilih baris Design lalu tentukan **Pasangan Cut Line** melalui `cmbCutPartner`. ComboBox ini juga dapat mengubah pasangan hasil `cmdPair`. Hubungan disimpan berdasarkan ID dalam dokumen sumber. Contoh ringkasan daftar: `Design | Obj. ID: /19 -> Cut /26`. Urutan baris tidak menentukan pasangan.
 
 - **Ctrl/Shift** dapat memilih beberapa Design untuk diberi pasangan yang sama; baris Cut Line diabaikan. Pilihan berbeda ditampilkan sebagai **Campuran** tanpa mengubah hubungan sampai pengguna memilih Cut Line atau **Tanpa Cut Line**.
 - Untuk susunan tanpa pasangan, pilih **Tanpa Cut Line** pada semua Design dan hapus semua baris Cut Line dari daftar. Campuran Design standalone dan berpasangan, beberapa kelompok yang berbagi Cut Line berbeda, serta Cut Line tidak terpakai belum didukung.
@@ -341,6 +345,7 @@ Repository menyediakan code-behind UserForm, Class Module, dan Standard Module. 
 | --- | --- | --- |
 | ListBox | `lbxObjects` | Daftar sumber/container. Kode mengatur pilihan Ctrl/Shift. |
 | CommandButton | `cmdSetDesign`, `cmdSetCutLine` | Mendaftarkan selection sebagai Design atau Cut Line. |
+| CommandButton | `cmdPair` | Caption **Pair**; mendaftarkan Design dan Cut Line terakhir sekaligus menetapkan pasangan. |
 | CommandButton | `cmdRemove`, `cmdClear` | Menghapus baris terpilih atau mengosongkan daftar. |
 | Label | `lblCutPartner` | Caption **Pasangan Cut Line**. |
 | ComboBox | `cmbCutPartner` | Style `fmStyleDropDownList`; RowSource/ControlSource kosong. Pilihan dan kolom ID diisi kode. |

@@ -691,6 +691,15 @@ Private Sub cmdRemove_Click()
     AARefreshObjects
 End Sub
 
+Private Sub cmdPair_Click()
+    Dim feedback As String, feedbackStyle As VbMsgBoxStyle
+    If mProcessRunning Or AAProgressRunning Then Exit Sub
+    If mPresenter Is Nothing Then Exit Sub
+    mPresenter.RegisterSelectedPairs feedback, feedbackStyle
+    AARefreshObjects
+    If Len(feedback) > 0 Then MsgBox feedback, feedbackStyle, "Auto Align"
+End Sub
+
 Private Sub cmdSetCutLine_Click()
     If mProcessRunning Then Exit Sub
     AARegisterObjects AA_ROLE_CUT_LINE
@@ -1019,6 +1028,7 @@ Private Sub AARefreshHints()
     cmdDefaultSetting.ControlTipText = "Default Settings - Atur default Area dan Gap H/V untuk model KissA dan DieA."
     cmdCustomMarginSettings.ControlTipText = "Custom Margin Settings - Atur margin dan zona terlarang untuk area model Custom."
     cmdProductionSummary.ControlTipText = "Production Summary - Lihat ringkasan jumlah Design, Cut Line, dan area dari Process terakhir yang berhasil."
+    cmdPair.ControlTipText = "Daftarkan pasangan: pilih Design satu per satu, lalu Cut Line terakhir. Semua Design terpilih memakai Cut Line yang sama."
     If Len(mJobPresetName) > 0 Then
         cmdJobPresets.ControlTipText = "Simpan atau terapkan preset pekerjaan. Default tersimpan: " & mJobPresetName & _
             ". Berlaku pada model preset tersebut. Pilih Tanpa preset untuk kembali ke DefaultSettings."
