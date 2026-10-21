@@ -251,3 +251,6 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Finalisasi kandidat pasangan Medium]
 ~ Medium melewati finalisasi kandidat pasangan satu area yang jumlah objeknya sudah kalah dari rencana valid terbaik satu area; kandidat berjumlah sama tetap dievaluasi.
+
+[Pilihan rotasi 90/270]
++ cmbRotation menyediakan pilihan 90 / 270 tepat di bawah 0 / 180 untuk Process Medium. Kombinasi Design dengan satu Cut Line bersama yang tidak memiliki sudut sama ditolak dengan pesan penjelasan.

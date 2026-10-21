@@ -719,6 +719,9 @@ Private Sub RestrictSharedCutRotations(ByRef models() As AAModel, ByRef indexes(
     For i = 0 To count - 1
         If quantities(indexes(i)) <> 0 Then mask = mask And models(indexes(i)).RotationMask
     Next i
+    If mask = 0 Then Err.Raise vbObjectError + 5423, "AAProcessEngine", _
+        "Design yang memakai satu Cut Line bersama tidak memiliki sudut rotasi yang sama. " & _
+        "Pilih batas rotasi yang kompatibel pada daftar Objects."
     For i = 0 To count - 1
         If quantities(indexes(i)) <> 0 Then models(indexes(i)).SetAllowedRotations mask
     Next i

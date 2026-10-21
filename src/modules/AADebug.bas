@@ -644,12 +644,15 @@ TraceFailed:
 End Sub
 
 Public Sub AADebugModel(ByVal index As Long, ByVal model As AAModel, ByVal quantity As Long)
-    Dim orientation As AARotationVariant, h As Double, v As Double
+    Dim orientation As AARotationVariant, h As Double, v As Double, angle As Double
     If Not AADebugDetailsEnabled Then Exit Sub
     On Error GoTo TraceFailed
     model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
-    Set orientation = model.RotationVariant(0#)
+    angle = 0#
+    If Not model.AllowsRotation(angle) Then angle = 90#
+    Set orientation = model.RotationVariant(angle)
     AADebugWrite "Model", "index=" & CStr(index) & "; quantity=" & CStr(quantity) & _
+        "; angle=" & CStr(angle) & _
         "; size=" & Format$(orientation.Width, "0.000000") & "x" & _
         Format$(orientation.Height, "0.000000") & "; edges=" & CStr(orientation.Contour.EdgeCount) & _
         "; rectangle=" & CStr(model.IsRectangle) & "; triangle=" & CStr(model.IsTriangle) & _

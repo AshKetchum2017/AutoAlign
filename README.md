@@ -78,13 +78,14 @@ Pilih Design pada `lbxObjects`, lalu atur `cmbRotation`. Ctrl/Shift dapat dipaka
 | Otomatis | Mengikuti kandidat AA: langkah 45° untuk non-rectangle dan 90° untuk rectangle. |
 | Tanpa rotasi | 0°. |
 | 0 / 180 | 0° dan 180°. |
+| 90 / 270 | 90° dan 270°. |
 | Kelipatan 90 | 0°, 90°, 180°, dan 270°. |
 
 Sudut relatif terhadap **orientasi sumber saat Process**, bukan sudut absolut terhadap halaman. Rotasi sumber 30° dengan pilihan 0 / 180 berarti orientasi hasil 30° atau 210°. Pembatasan berlaku pada pola utama, pola pasangan berlawanan, pencarian kuota, serta pengisian sisa ruang; jumlah hasil dapat berkurang karena pilihan orientasi lebih sedikit.
 
 - Default saat pendaftaran adalah **Otomatis**. Pilihan mengikuti baris Design selama daftar aktif; Remove/Clear atau penutupan form membuang pilihan terkait. Pengaturan ini tidak disimpan ke registry.
 - Jika beberapa Design terpilih memiliki pilihan berbeda, ComboBox kosong dan label menampilkan **Rotasi Design (Campuran)**. Tidak ada perubahan sampai pengguna memilih preset. Tanpa Design terpilih, kontrol dinonaktifkan.
-- Untuk **satu Cut Line bersama**, semua Design aktif memakai irisan sudut yang diizinkan. Contoh: Otomatis + 0 / 180 memakai 0°/180°; Tanpa rotasi + Kelipatan 90 memakai 0°. Design dengan Quantity 0 tidak membatasi irisan. Aturan ini berlaku juga bila pemakai Cut Line bersama berada pada kelompok `/n` berbeda. Pilihan asli setiap Design di daftar tetap tersimpan.
+- Untuk **satu Cut Line bersama**, semua Design aktif memakai irisan sudut yang diizinkan. Contoh: Otomatis + 0 / 180 memakai 0°/180°; Tanpa rotasi + Kelipatan 90 memakai 0°. Design dengan Quantity 0 tidak membatasi irisan. Aturan ini berlaku juga bila pemakai Cut Line bersama berada pada kelompok `/n` berbeda. Pilihan asli setiap Design di daftar tetap tersimpan. Pada Medium, jika irisan kosong, misalnya 0 / 180 bersama 90 / 270, Process menolak kombinasi tersebut dan meminta pilihan rotasi yang kompatibel.
 - **Minimum** tetap memakai 0° dan mempertahankan jalur template Minimum. **Optimize** mempertahankan rotasi susunan yang sudah ada. **Periksa Susunan** tidak mengaudit preset rotasi terhadap riwayat sumber.
 
 ### Minimum

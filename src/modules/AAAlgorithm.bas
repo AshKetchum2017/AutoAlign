@@ -17,14 +17,16 @@ Public Const AA_ROTATION_AUTO As Long = 0
 Public Const AA_ROTATION_NONE As Long = 1
 Public Const AA_ROTATION_HALF As Long = 2
 Public Const AA_ROTATION_QUARTER As Long = 3
+Public Const AA_ROTATION_90_270 As Long = 4
 
-' Bit ke-n menyatakan sudut n*45 derajat; semua preset mengizinkan 0.
+' Bit ke-n menyatakan sudut n*45 derajat relatif terhadap sumber.
 Public Function AARotationMask(ByVal mode As Long) As Long
     Select Case mode
         Case AA_ROTATION_AUTO: AARotationMask = 255
         Case AA_ROTATION_NONE: AARotationMask = 1
         Case AA_ROTATION_HALF: AARotationMask = 17
         Case AA_ROTATION_QUARTER: AARotationMask = 85
+        Case AA_ROTATION_90_270: AARotationMask = 68
         Case Else: Err.Raise vbObjectError + 5420, "AutoAlign", "Pilihan rotasi tidak valid."
     End Select
 End Function
@@ -35,6 +37,7 @@ Public Function AARotationText(ByVal mode As Long) As String
         Case AA_ROTATION_NONE: AARotationText = "Tanpa rotasi"
         Case AA_ROTATION_HALF: AARotationText = "0 / 180"
         Case AA_ROTATION_QUARTER: AARotationText = "Kelipatan 90"
+        Case AA_ROTATION_90_270: AARotationText = "90 / 270"
         Case Else: Err.Raise vbObjectError + 5420, "AutoAlign", "Pilihan rotasi tidak valid."
     End Select
 End Function

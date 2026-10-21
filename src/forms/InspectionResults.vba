@@ -23,8 +23,6 @@ Public Sub LoadReport(ByVal report As AAInspectionReport)
         If item.SecondID > 0 Then lbxIssues.List(i - 1, 3) = CStr(item.SecondID)
         lbxIssues.List(i - 1, 4) = item.Detail
     Next i
-    cmdSelectIssue.Caption = "Pilih Objek"
-    cmdClose.Caption = "Tutup"
     If report.Count > 0 Then lbxIssues.ListIndex = 0
     RefreshDetail
 End Sub

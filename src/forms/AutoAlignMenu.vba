@@ -8,6 +8,7 @@ Private mLockedControls As Collection, mEnabledStates As Collection
 Private mPresenter As AAPresenter
 Private mUpdatingQuantity As Boolean
 Private mUpdatingRotation As Boolean
+Private mRotationModes As Variant
 Private mUpdatingPair As Boolean
 Private mQuantityIndex As Long
 Private mHintReady As Boolean
@@ -113,8 +114,10 @@ Private Sub cmbRotation_Change()
     Dim i As Long, mode As Long
     If mProcessRunning Or mUpdatingRotation Or mUpdatingQuantity Or mUpdatingPair Then Exit Sub
     If mPresenter Is Nothing Then Exit Sub
-    mode = cmbRotation.ListIndex
-    If mode < AA_ROTATION_AUTO Or mode > AA_ROTATION_QUARTER Then Exit Sub
+    If Not IsArray(mRotationModes) Then Exit Sub
+    If cmbRotation.ListIndex < LBound(mRotationModes) Or _
+       cmbRotation.ListIndex > UBound(mRotationModes) Then Exit Sub
+    mode = CLng(mRotationModes(cmbRotation.ListIndex))
     On Error GoTo InvalidRotation
     mUpdatingRotation = True
     For i = 0 To lbxObjects.ListCount - 1
@@ -135,13 +138,15 @@ InvalidRotation:
 End Sub
 
 Private Sub AAInitializeRotationEditor()
-    Dim mode As Long
+    Dim i As Long
     mUpdatingRotation = True
     cmbRotation.clear
     cmbRotation.Style = fmStyleDropDownList
-    For mode = AA_ROTATION_AUTO To AA_ROTATION_QUARTER
-        cmbRotation.AddItem AARotationText(mode)
-    Next mode
+    mRotationModes = Array(AA_ROTATION_AUTO, AA_ROTATION_NONE, AA_ROTATION_HALF, _
+        AA_ROTATION_90_270, AA_ROTATION_QUARTER)
+    For i = LBound(mRotationModes) To UBound(mRotationModes)
+        cmbRotation.AddItem AARotationText(CLng(mRotationModes(i)))
+    Next i
     cmbRotation.ListIndex = -1
     cmbRotation.enabled = False
     cmbRotation.ControlTipText = "Sudut tambahan terhadap orientasi sumber saat Process; Minimum tetap 0 derajat."
@@ -152,6 +157,7 @@ Private Sub AAUpdateRotationEditor()
     Dim i As Long, commonMode As Long, hasDesign As Boolean, mixed As Boolean
     If mProcessRunning Or mUpdatingQuantity Or mUpdatingRotation Or mUpdatingPair Then Exit Sub
     If mPresenter Is Nothing Then Exit Sub
+    If Not IsArray(mRotationModes) Then Exit Sub
     For i = 0 To lbxObjects.ListCount - 1
         If lbxObjects.selected(i) Then
             If mPresenter.ObjectRoleAt(i) = AA_ROLE_DESIGN Then
@@ -168,7 +174,13 @@ Private Sub AAUpdateRotationEditor()
     cmbRotation.enabled = hasDesign
     lblRotation.Caption = "Rotasi Design"
     If hasDesign And Not mixed Then
-        cmbRotation.ListIndex = commonMode
+        cmbRotation.ListIndex = -1
+        For i = LBound(mRotationModes) To UBound(mRotationModes)
+            If CLng(mRotationModes(i)) = commonMode Then
+                cmbRotation.ListIndex = i
+                Exit For
+            End If
+        Next i
     Else
         cmbRotation.ListIndex = -1
         If mixed Then lblRotation.Caption = "Rotasi Design (Campuran)"

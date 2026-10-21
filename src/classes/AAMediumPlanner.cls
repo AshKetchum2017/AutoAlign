@@ -86,7 +86,8 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     Dim pairAngle As Long, rowMode As Long, patternMode As Long, pairCutIndex As Long
     Dim hasZigZag As Boolean, pairEligible As Boolean
     Dim candidateLabel As String, bestLabel As String, buildError As String
-    Dim perfStarted As Double, capacityValidated As Boolean
+    Dim perfStarted As Double, capacityValidated As Boolean, useMinimumBaseline As Boolean
+    Dim seedAngle As Double
     mFillHits = 0: mFillMisses = 0: mFillReused = 0
     mGapHits = 0#: mGapMisses = 0#: mGapBypasses = 0#: mGapCollisions = 0#
     mRejectHits = 0#: mRejectMisses = 0#: mRejectCollisions = 0#
@@ -95,10 +96,23 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     mCapacitySearch = (capacityTarget > 0)
     Set forbidden = sharedPlanner.ForbiddenFor(settings, sourceDocument)
     perfStarted = AADebugPerfBegin()
-    On Error Resume Next
-    Set minimum = sharedPlanner.BuildMinimum(models, designIndexes, designCount, _
-        cutIndexes, cutCount, quantities, settings, sourceDocument, singleAreaOnly)
-    If Err.Number <> 0 Then lastError = Err.Description
+    useMinimumBaseline = True
+    For i = 0 To designCount - 1
+        If quantities(designIndexes(i)) <> 0 Then
+            If Not models(designIndexes(i)).AllowsRotation(0#) Then
+                useMinimumBaseline = False
+                Exit For
+            End If
+        End If
+    Next i
+    If useMinimumBaseline Then
+        On Error Resume Next
+        Set minimum = sharedPlanner.BuildMinimum(models, designIndexes, designCount, _
+            cutIndexes, cutCount, quantities, settings, sourceDocument, singleAreaOnly)
+        If Err.Number <> 0 Then lastError = Err.Description
+    Else
+        lastError = "rotasi 0 derajat tidak diizinkan pada Design aktif"
+    End If
     Err.Clear
     On Error GoTo 0
     AAProgressCheckCancelled
@@ -127,7 +141,9 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
             pairEligible = models(firstIndex).IsTriangle
             If Not pairEligible Then
                 On Error Resume Next
-                Set firstVariant = models(firstIndex).RotationVariant(0#)
+                seedAngle = 0#
+                If Not models(firstIndex).AllowsRotation(seedAngle) Then seedAngle = 90#
+                Set firstVariant = models(firstIndex).RotationVariant(seedAngle)
                 If Err.Number = 0 And Not firstVariant Is Nothing Then
                     pairEligible = (firstVariant.Contour.EdgeCount <= AA_MAX_PAIR_CONTOUR_EDGES)
                 End If

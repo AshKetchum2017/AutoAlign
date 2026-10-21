@@ -27,7 +27,7 @@ Public Property Get RotationMask() As Long
 End Property
 
 Public Sub SetAllowedRotations(ByVal mask As Long)
-    If mask <> 1 And mask <> 17 And mask <> 85 And mask <> 255 Then _
+    If mask <> 1 And mask <> 17 And mask <> 68 And mask <> 85 And mask <> 255 Then _
         Err.Raise vbObjectError + 5420, "AAModel", "Batas rotasi tidak valid."
     mRotationMask = mask
 End Sub
