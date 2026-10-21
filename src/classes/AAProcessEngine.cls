@@ -692,19 +692,22 @@ Private Function CopySharedCutPlacement(ByVal source As AAPlacement, _
                                         ByVal areaIndex As Long) As AAPlacement
     Dim orientation As AARotationVariant
     Dim leftX As Double, topY As Double
+    Dim result As AAPlacement
 
     If source.UsesCenter Then
         Set orientation = model.RotationVariant(source.RotationDelta)
         leftX = source.CollisionFootprint.LeftX - orientation.InsetX
         topY = source.CollisionFootprint.TopY + orientation.InsetY
-        Set CopySharedCutPlacement = orientation.MakePlacement(designIndex, _
+        Set result = orientation.MakePlacement(designIndex, _
             source.CutIndex, areaIndex, leftX, topY, source.GapH, source.GapV)
     Else
         leftX = source.CutLeft - (model.DesignWidth - model.CutWidth) / 2#
         topY = source.CutTop + (model.DesignHeight - model.CutHeight) / 2#
-        Set CopySharedCutPlacement = model.MakePlacement(designIndex, _
+        Set result = model.MakePlacement(designIndex, _
             source.CutIndex, areaIndex, leftX, topY)
     End If
+    result.SetMarkAreaAllowance source.UsesMarkAreaAllowance
+    Set CopySharedCutPlacement = result
 End Function
 
 ' Seluruh pemakai Cut Line bersama memakai irisan sudut yang sama pada run ini.

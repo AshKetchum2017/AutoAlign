@@ -21,6 +21,10 @@ Private Const AA_MAX_PAIR_CONTOUR_EDGES As Long = 32
 ' Tidak membuka pencarian contact scan 64 langkah untuk semua kurva kompleks.
 Private Const AA_MAX_CURVED_PAIR_EDGES As Long = 512
 Private Const AA_MAX_CURVED_PAIR_NODES As Long = 12
+Private Const AA_MAX_SMALL_PAIR_EDGES As Long = 2048
+Private Const AA_MAX_SMALL_PAIR_NODES As Long = 64
+Private Const AA_MAX_SMALL_PAIR_CELLS As Long = 32
+Private Const AA_MAX_SMALL_PAIR_SLOTS As Long = 128
 Private Const AA_CURVED_PHASE_STEPS As Long = 4
 Private Const AA_PAIR_CONTACT_SCAN_STEPS As Long = 64
 Private Const AA_MAX_PHASE_SLOTS_PER_AREA As Long = 5000
@@ -181,7 +185,9 @@ NextPairAngle:
                 If AADebugEnabled Then AADebugWrite "Pair", "curved lane eligible=" & _
                     CStr(CurvedPairEligible(firstVariant)) & "; nodes=" & _
                     CStr(firstVariant.Contour.Anchors.Count) & "; edges=" & CStr(firstVariant.Contour.EdgeCount)
-                If CurvedPairEligible(firstVariant) Then
+                If AADebugEnabled Then AADebugWrite "Pair", "small complex lane eligible=" & _
+                    CStr(SmallComplexPairEligible(firstVariant, settings))
+                If CurvedPairEligible(firstVariant) Or SmallComplexPairEligible(firstVariant, settings) Then
                     pairCutIndex = -1
                     If cutCount = 1 Then pairCutIndex = cutIndexes(0)
                     ConsiderCurvedPairs models(firstIndex), firstIndex, pairCutIndex, _
@@ -789,7 +795,7 @@ End Function
 
 Private Function AdaptMinimum(ByVal source As AALayoutPlan, _
                               ByRef models() As AAModel) As AALayoutPlan
-    Dim result As AALayoutPlan, placed As AAPlacement
+    Dim result As AALayoutPlan, placed As AAPlacement, adapted As AAPlacement
     Dim orientation As AARotationVariant
     Dim h As Double, v As Double
     Dim firstIndex As Long, singleDesign As Boolean
@@ -802,8 +808,10 @@ Private Function AdaptMinimum(ByVal source As AALayoutPlan, _
         If placed.DesignIndex <> firstIndex Then singleDesign = False
         models(placed.DesignIndex).GetBoundaryGaps AA_MODE_STRAIGHT, h, v
         Set orientation = models(placed.DesignIndex).RotationVariant(0#)
-        result.Add orientation.MakePlacement(placed.DesignIndex, placed.CutIndex, _
+        Set adapted = orientation.MakePlacement(placed.DesignIndex, placed.CutIndex, _
             placed.AreaIndex, placed.Footprint.LeftX, placed.Footprint.TopY, h, v)
+        adapted.SetMarkAreaAllowance placed.UsesMarkAreaAllowance
+        result.Add adapted
     Next placed
     result.SetRegularPattern source.DesignCount > 0 And singleDesign
     Set AdaptMinimum = result
@@ -995,6 +1003,19 @@ Private Function CurvedPairEligible(ByVal orientation As AARotationVariant) As B
         edges > AA_MAX_PAIR_CONTOUR_EDGES And edges <= AA_MAX_CURVED_PAIR_EDGES)
 End Function
 
+' Kontur kompleks hanya dicoba bila grid bbox nominal kecil. Tiga fase dekat
+' nol, dua keluarga sudut dan dua offset baris: paling banyak 12 kandidat.
+Private Function SmallComplexPairEligible(ByVal orientation As AARotationVariant, _
+                                           ByVal settings As AASettings) As Boolean
+    Dim nodes As Long, edges As Long, cells As Double
+    nodes = orientation.Contour.Anchors.Count: edges = orientation.Contour.EdgeCount
+    If nodes < 5 Or nodes > AA_MAX_SMALL_PAIR_NODES Or _
+       edges <= AA_MAX_PAIR_CONTOUR_EDGES Or edges > AA_MAX_SMALL_PAIR_EDGES Then Exit Function
+    If orientation.Width <= AA_EDGE_TOLERANCE_MM Or orientation.Height <= AA_EDGE_TOLERANCE_MM Then Exit Function
+    cells = Int(settings.AreaWidthMM / orientation.Width) * Int(settings.AreaHeightMM / orientation.Height)
+    SmallComplexPairEligible = (cells >= 1# And cells <= AA_MAX_SMALL_PAIR_CELLS)
+End Function
+
 Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Long, _
                                 ByVal cutIndex As Long, ByVal settings As AASettings, _
                                 ByVal forbidden As Collection, ByRef models() As AAModel, _
@@ -1002,7 +1023,8 @@ Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Lon
                                 ByRef best As AALayoutPlan, ByRef bestLabel As String)
     Dim orientation As AARotationVariant, opposite As AARotationVariant
     Dim candidate As AALayoutPlan
-    Dim angle As Long, phaseIndex As Long, rowMode As Long
+    Dim angle As Long, phaseIndex As Long, rowMode As Long, phaseSteps As Long, patternMode As Long
+    Dim smallComplex As Boolean
     Dim phaseLimit As Double, phaseY As Double, h As Double, v As Double
     Dim label As String, buildError As String
 
@@ -1015,31 +1037,60 @@ Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Lon
            Not model.AllowsRotation(CDbl(angle + 180)) Then GoTo NextCurvedAngle
         Set orientation = model.RotationVariant(CDbl(angle))
         Set opposite = model.RotationVariant(CDbl(angle + 180))
-        If Not CurvedPairEligible(orientation) Or Not CurvedPairEligible(opposite) Then GoTo NextCurvedAngle
+        smallComplex = Not (CurvedPairEligible(orientation) And CurvedPairEligible(opposite))
+        If smallComplex Then
+            If Not SmallComplexPairEligible(orientation, settings) Or _
+               Not SmallComplexPairEligible(opposite, settings) Then GoTo NextCurvedAngle
+        End If
         phaseLimit = MinValue(orientation.ReferenceHeight, opposite.ReferenceHeight) * AA_SHIFT_FACTOR
-        For phaseIndex = -AA_CURVED_PHASE_STEPS To AA_CURVED_PHASE_STEPS
-            phaseY = phaseLimit * phaseIndex / AA_CURVED_PHASE_STEPS
+        phaseSteps = AA_CURVED_PHASE_STEPS: patternMode = 4
+        If smallComplex Then
+            phaseLimit = MinValue(phaseLimit, MaxValue(h, v))
+            phaseSteps = 1: patternMode = 5
+        End If
+        If phaseLimit <= AA_EDGE_TOLERANCE_MM Then phaseSteps = 0
+        For phaseIndex = -phaseSteps To phaseSteps
+            phaseY = 0#
+            If phaseSteps > 0 Then phaseY = phaseLimit * phaseIndex / phaseSteps
             For rowMode = 0 To 1
                 AAProgressCandidate
                 label = "Curved pair angle=" & CStr(angle) & " row=" & CStr(rowMode) & _
                     " phase=" & Format$(phaseY, "0.000000")
+                If smallComplex Then label = "Small complex " & label
                 AADebugCandidateStart label
                 Set candidate = Nothing
                 buildError = vbNullString
                 On Error Resume Next
                 Set candidate = BuildOppositeLattice(model, designIndex, cutIndex, settings, _
-                    forbidden, CDbl(angle), rowMode, 4, phaseY)
+                    forbidden, CDbl(angle), rowMode, patternMode, phaseY)
                 If Err.Number <> 0 Then buildError = "Error " & CStr(Err.Number) & ": " & Err.Description
                 Err.Clear
                 On Error GoTo 0
                 AAProgressCheckCancelled
                 AADebugCandidateEnd
                 If Len(buildError) > 0 Then AADebugWrite "Pair", label & " -> " & buildError
-                Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
-                    sourceDocument, sharedPlanner, label)
+                ' Finalisasi/repair hanya menggeser objek yang sudah ada.
+                ' Best sudah valid; kandidat satu area dengan isi lebih sedikit
+                ' tidak dapat menang. Jumlah sama tetap dibandingkan penuh.
                 If Not candidate Is Nothing Then
-                    If ValidPlan(candidate, forbidden, settings, label) Then _
-                        ConsiderCandidate candidate, best, label, bestLabel, sharedPlanner
+                    If Not best Is Nothing Then
+                        If candidate.AreaCount = 1 And best.AreaCount = 1 Then
+                            If candidate.DesignCount < best.DesignCount Then
+                                If AADebugEnabled Then AADebugWrite "Pair", label & _
+                                    " -> skipped before finalize: objects=" & CStr(candidate.DesignCount) & _
+                                    " < best=" & CStr(best.DesignCount) & " (one area)"
+                                Set candidate = Nothing
+                            End If
+                        End If
+                    End If
+                End If
+                If Not candidate Is Nothing Then
+                    Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
+                        sourceDocument, sharedPlanner, label)
+                    If Not candidate Is Nothing Then
+                        If ValidPlan(candidate, forbidden, settings, label) Then _
+                            ConsiderCandidate candidate, best, label, bestLabel, sharedPlanner
+                    End If
                 End If
             Next rowMode
         Next phaseIndex
@@ -1056,7 +1107,7 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
                                       ByVal patternMode As Long, _
                                       Optional ByVal phaseOffset As Double = 0#) As AALayoutPlan
     Dim forward As AARotationVariant, reverse As AARotationVariant
-    Dim result As AALayoutPlan, occupied As Collection
+    Dim result As AALayoutPlan, occupied As Collection, slotForbidden As Collection
     Dim orientation As AARotationVariant, candidate As AAPlacement
     Dim h As Double, v As Double, stepX As Double, stepY As Double
     Dim x As Double, y As Double, rowShift As Double, candidateTop As Double
@@ -1079,12 +1130,18 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
         slotLimit = AA_MAX_PHASE_SLOTS_PER_AREA
     End If
     scanContacts = Not model.IsTriangle
-    If patternMode = 4 Then
-        If Not CurvedPairEligible(forward) Or Not CurvedPairEligible(reverse) Then Exit Function
+    If patternMode = 4 Or patternMode = 5 Then
+        If patternMode = 5 Then
+            If Not SmallComplexPairEligible(forward, settings) Or _
+               Not SmallComplexPairEligible(reverse, settings) Then Exit Function
+        Else
+            If Not CurvedPairEligible(forward) Or Not CurvedPairEligible(reverse) Then Exit Function
+        End If
         If Abs(phaseOffset) > MinValue(forward.ReferenceHeight, reverse.ReferenceHeight) * _
             AA_SHIFT_FACTOR + AA_EDGE_TOLERANCE_MM Then Exit Function
         phaseY = phaseOffset
         slotLimit = AA_MAX_PHASE_SLOTS_PER_AREA
+        If patternMode = 5 Then slotLimit = AA_MAX_SMALL_PAIR_SLOTS
         ' Lane ini memakai bracket aman + bisection; validasi detail di TryExactSlot
         ' dan ValidPlan tetap wajib. Tidak menjalankan 64 contact scan per pitch.
         scanContacts = False
@@ -1098,17 +1155,22 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
     End If
     stepX = OppositeHorizontalPitch(forward, reverse, h, v, phaseY, scanContacts)
     If stepX <= AA_COMPACTION_TOLERANCE_MM Then Exit Function
-    If patternMode = 4 Then stepX = stepX + AA_PAIR_INSET_RESERVE_MM
+    If patternMode = 4 Or patternMode = 5 Then stepX = stepX + AA_PAIR_INSET_RESERVE_MM
     If rowMode = 1 Then rowShift = stepX / 2#
     stepY = OppositeVerticalPitch(forward, reverse, stepX, rowShift, _
         h, v, phaseY, scanContacts)
     If stepY <= AA_COMPACTION_TOLERANCE_MM Then Exit Function
-    If patternMode = 4 Then stepY = stepY + AA_PAIR_INSET_RESERVE_MM
+    If patternMode = 4 Or patternMode = 5 Then stepY = stepY + AA_PAIR_INSET_RESERVE_MM
     Set result = New AALayoutPlan
     result.Configure AA_MODE_MEDIUM
     Set occupied = New Collection
+    Set slotForbidden = forbidden
+    ' Pola kompleks kecil diselesaikan dahulu dalam area nominal. Mark diperiksa
+    ' bersama oleh FinalizeCandidate, agar slot tidak hilang sebelum kelompok
+    ' sempat digeser. ValidPlan tetap memeriksa seluruh kandidat sesudahnya.
+    If patternMode = 5 Then Set slotForbidden = New Collection
     y = settings.AreaHeightMM - MaxValue(0#, phaseY)
-    If patternMode = 4 Then
+    If patternMode = 4 Or patternMode = 5 Then
         ' Pusatkan grid SEBELUM filter mark. Centering sesudah filter tidak
         ' mengembalikan objek sudut yang sudah ditolak pada anchor (0, top).
         columns = Int((settings.AreaWidthMM - MaxValue(forward.Width, reverse.Width)) / stepX) + 1
@@ -1143,7 +1205,7 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
             candidateTop = y
             If columnIndex Mod 2 = 1 Then candidateTop = candidateTop + phaseY
             Set candidate = TryExactSlot(orientation, designIndex, cutIndex, 0, _
-                x, candidateTop, occupied, forbidden, settings, h, v)
+                x, candidateTop, occupied, slotForbidden, settings, h, v)
             If Not candidate Is Nothing Then
                 result.Add candidate
                 occupied.Add candidate
@@ -2009,11 +2071,12 @@ Private Function Fits(ByVal candidate As AAPlacement, ByVal occupied As Collecti
                       Optional ByVal validationLabel As String = vbNullString) As Boolean
     Dim box As AAGeometry, collision As AAGeometry, other As AAGeometry
     Dim placed As AAPlacement, obstacle As AAGeometry, gap As Double
-    Dim nearby As Collection
+    Dim nearby As Collection, allowance As Double
     Set box = candidate.Footprint
-    If box.LeftX < -AA_EDGE_TOLERANCE_MM Or box.BottomY < -AA_EDGE_TOLERANCE_MM Or _
-       box.RightX > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
-       box.TopY > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then
+    If candidate.UsesMarkAreaAllowance Then allowance = settings.MarkShiftAllowanceMM
+    If box.LeftX < -allowance - AA_EDGE_TOLERANCE_MM Or box.BottomY < -allowance - AA_EDGE_TOLERANCE_MM Or _
+       box.RightX > settings.AreaWidthMM + allowance + AA_EDGE_TOLERANCE_MM Or _
+       box.TopY > settings.AreaHeightMM + allowance + AA_EDGE_TOLERANCE_MM Then
         AADebugRejectSlot "bounds"
         If Len(validationLabel) > 0 Then AADebugValidationRejected _
             validationLabel, "bounds", candidate, Nothing

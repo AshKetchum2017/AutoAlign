@@ -18,6 +18,15 @@ Private mGapH As Double, mGapV As Double
 Private mSlotLeft As Double, mSlotTop As Double
 Private mUsesContourGap As Boolean
 Private mSuppressCutLine As Boolean
+Private mUsesMarkAreaAllowance As Boolean
+
+Friend Sub SetMarkAreaAllowance(ByVal allowed As Boolean)
+    mUsesMarkAreaAllowance = allowed
+End Sub
+
+Friend Property Get UsesMarkAreaAllowance() As Boolean
+    UsesMarkAreaAllowance = mUsesMarkAreaAllowance
+End Property
 
 Public Sub SuppressCutLine()
     mSuppressCutLine = True
@@ -173,6 +182,7 @@ Friend Function CopyForPlan() As AAPlacement
         mContour, mGapH, mGapV
     result.SetContourData mContour, mGapH, mGapV, mUsesContourGap
     result.SetShiftOrigin mSlotLeft, mSlotTop
+    result.SetMarkAreaAllowance mUsesMarkAreaAllowance
     If mSuppressCutLine Then result.SuppressCutLine
     Set CopyForPlan = result
 End Function

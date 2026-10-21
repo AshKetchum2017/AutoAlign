@@ -1,5 +1,9 @@
 Option Explicit
 
+' Kelonggaran khusus pergeseran satu kelompok untuk menghindari mark.
+' Tidak menambah ukuran area atau dipakai saat mencari slot baru.
+Private Const AA_KISS_MARK_SHIFT_ALLOWANCE_MM As Double = 0.6
+
 Private Const AA_PRESET_PAGE_WIDTH_MM As Double = 325#
 Private Const AA_PRESET_PAGE_HEIGHT_MM As Double = 485#
 
@@ -56,6 +60,10 @@ End Sub
 
 Public Property Get ModelMode() As Long
     ModelMode = mModelMode
+End Property
+
+Friend Property Get MarkShiftAllowanceMM() As Double
+    If mModelMode = AA_MODEL_KISS_A Then MarkShiftAllowanceMM = AA_KISS_MARK_SHIFT_ALLOWANCE_MM
 End Property
 
 ' Default pekerjaan dibekukan, tetapi status input manual tetap dari Configure.

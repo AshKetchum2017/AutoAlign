@@ -244,3 +244,10 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 2026-10-21
 [Hint tombol pengaturan]
 + Tooltip hover menjelaskan Default Settings, margin/zona Custom, Ringkasan Hasil, dan Preset Pekerjaan; nama preset default aktif tetap ditampilkan.
+
+[Posisi mark KissA dan pasangan kurva kompleks]
++ Medium mencoba pasangan berlawanan pada kurva kompleks berkapasitas kecil dengan pencarian terbatas. Periksa Susunan mengenali kelonggaran pergeseran mark KissA dari geometri aktual.
+~ Process KissA mengutamakan zona mark penuh dan dapat menggeser kelompok hingga 0,6 mm keluar area untuk menghindarinya; ukuran kelompok tetap harus muat secara nominal. DieA/Custom dan gap tetap memakai aturan masing-masing.
+
+[Finalisasi kandidat pasangan Medium]
+~ Medium melewati finalisasi kandidat pasangan satu area yang jumlah objeknya sudah kalah dari rencana valid terbaik satu area; kandidat berjumlah sama tetap dievaluasi.

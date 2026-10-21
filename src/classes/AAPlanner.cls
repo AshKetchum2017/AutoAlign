@@ -34,11 +34,16 @@ Friend Function ForbiddenFor(ByVal settings As AASettings, _
     Set ForbiddenFor = BuildForbidden(settings, sourceDocument)
 End Function
 
+Friend Function NominalForbiddenFor(ByVal settings As AASettings, _
+                                    ByVal sourceDocument As Document) As Collection
+    Set NominalForbiddenFor = BuildForbidden(settings, sourceDocument, 0#)
+End Function
+
 Friend Function FinalPlanFits(ByVal plan As AALayoutPlan, _
                               ByVal settings As AASettings, _
                               ByVal sourceDocument As Document) As Boolean
     Dim offsets As Object
-    Dim areaIndex As Long
+    Dim areaIndex As Long, placement As AAPlacement, nominal As Collection
 
     Set offsets = CreateObject("Scripting.Dictionary")
     For areaIndex = 0 To plan.AreaCount - 1
@@ -46,11 +51,18 @@ Friend Function FinalPlanFits(ByVal plan As AALayoutPlan, _
     Next areaIndex
     FinalPlanFits = CenteredPlanFits(plan, offsets, _
         BuildForbidden(settings, sourceDocument), settings)
+    If Not FinalPlanFits Then Exit Function
+    For Each placement In plan.Placements
+        If placement.UsesMarkAreaAllowance Then
+            If nominal Is Nothing Then Set nominal = NominalForbiddenFor(settings, sourceDocument)
+            If Not PlacementMarksFit(placement, offsets, nominal) Then FinalPlanFits = False: Exit Function
+        End If
+    Next placement
 End Function
 
 Friend Function FinalizeMedium(ByVal plan As AALayoutPlan, ByVal settings As AASettings, _
                                ByVal sourceDocument As Document) As Boolean
-    Dim offsets As Object, forbidden As Collection
+    Dim offsets As Object, forbidden As Collection, nominal As Collection
     Dim placement As AAPlacement, shift As Variant
     Dim safe As Boolean
     If plan.DesignCount = 0 Then
@@ -58,8 +70,9 @@ Friend Function FinalizeMedium(ByVal plan As AALayoutPlan, ByVal settings As AAS
         Exit Function
     End If
     Set forbidden = BuildForbidden(settings, sourceDocument)
+    If settings.ModelMode = AA_MODEL_KISS_A Then Set nominal = NominalForbiddenFor(settings, sourceDocument)
     Set offsets = CenterOffsets(plan, settings)
-    safe = FindSafeOffsets(plan, offsets, forbidden, settings)
+    safe = FindSafeOffsets(plan, offsets, forbidden, settings, nominal)
     If safe Then safe = CenteredPlanFits(plan, offsets, forbidden, settings)
     For Each placement In plan.Placements
         shift = offsets(CStr(placement.AreaIndex))
@@ -268,7 +281,7 @@ Private Function BuildOne(ByRef models() As AAModel, _
                           ByVal sourceDocument As Document, _
                           ByVal layoutMode As Long, ByVal singleAreaOnly As Boolean) As AALayoutPlan
     Dim result As AALayoutPlan
-    Dim forbidden As Collection
+    Dim forbidden As Collection, nominal As Collection
     Dim offsets As Object
     Dim nextOffsets As Object
     Dim placement As AAPlacement
@@ -277,6 +290,7 @@ Private Function BuildOne(ByRef models() As AAModel, _
     Dim areaKey As Variant
 
     Set forbidden = BuildForbidden(settings, sourceDocument)
+    If settings.ModelMode = AA_MODEL_KISS_A Then Set nominal = NominalForbiddenFor(settings, sourceDocument)
     ' Susun tanpa mark dahulu, lalu pusatkan seluruh isi tiap area.
     ' Coba geser seluruh isi area sebelum merencanakan ulang Quantity.
     For passIndex = 1 To AA_MAX_CENTERING_PASSES
@@ -296,7 +310,7 @@ Private Function BuildOne(ByRef models() As AAModel, _
                     Format$(CDbl(shift(1)), "0.000000000")
             Next areaKey
         End If
-        If FindSafeOffsets(result, nextOffsets, forbidden, settings) Then
+        If FindSafeOffsets(result, nextOffsets, forbidden, settings, nominal) Then
             If CenteredPlanFits(result, nextOffsets, forbidden, settings) Then
                 For Each placement In result.Placements
                     shift = nextOffsets(CStr(placement.AreaIndex))
@@ -846,7 +860,8 @@ End Function
 
 Private Function FindSafeOffsets(ByVal plan As AALayoutPlan, ByVal offsets As Object, _
                                  ByVal forbidden As Collection, _
-                                 ByVal settings As AASettings) As Boolean
+                                 ByVal settings As AASettings, _
+                                 ByVal nominal As Collection) As Boolean
     Dim key As Variant
     Dim placement As AAPlacement
     Dim footprints As Collection
@@ -854,7 +869,7 @@ Private Function FindSafeOffsets(ByVal plan As AALayoutPlan, ByVal offsets As Ob
     Dim footprint As AAGeometry
     Dim shift As Variant
     Dim dx As Double, dy As Double
-    Dim allSafe As Boolean
+    Dim allSafe As Boolean, found As Boolean, extended As Boolean, fullMark As Boolean
 
     allSafe = True
     For Each key In offsets.Keys
@@ -871,12 +886,30 @@ Private Function FindSafeOffsets(ByVal plan As AALayoutPlan, ByVal offsets As Ob
                 markFootprints.Add footprint
             End If
         Next placement
-        If FindAreaShift(footprints, markFootprints, forbidden, settings, dx, dy) Then
+        found = False: extended = False
+        If Not nominal Is Nothing Then
+            found = FindAreaShift(footprints, markFootprints, nominal, settings, dx, dy, 0#)
+            If Not found Then
+                found = FindAreaShift(footprints, markFootprints, nominal, settings, _
+                    dx, dy, settings.MarkShiftAllowanceMM)
+                extended = found
+            End If
+        End If
+        fullMark = found And Not nominal Is Nothing
+        If Not found Then found = FindAreaShift(footprints, markFootprints, forbidden, settings, dx, dy, 0#)
+        If found Then
             shift = offsets(key)
             offsets(key) = Array(CDbl(shift(0)) + dx, CDbl(shift(1)) + dy)
         Else
             allSafe = False
         End If
+        For Each placement In plan.Placements
+            If CStr(placement.AreaIndex) = CStr(key) Then placement.SetMarkAreaAllowance extended
+        Next placement
+        If AADebugEnabled Then AADebugWrite "Mark shift", "area=" & CStr(key) & _
+            "; found=" & CStr(found) & "; full mark=" & CStr(fullMark) & _
+            "; allowance=" & CStr(extended) & "; extra X/Y=" & _
+            Format$(dx, "0.000000") & "/" & Format$(dy, "0.000000")
     Next key
     FindSafeOffsets = allSafe
 End Function
@@ -884,7 +917,8 @@ End Function
 Private Function FindAreaShift(ByVal footprints As Collection, _
                                ByVal markFootprints As Collection, _
                                ByVal forbidden As Collection, ByVal settings As AASettings, _
-                               ByRef bestX As Double, ByRef bestY As Double) As Boolean
+                               ByRef bestX As Double, ByRef bestY As Double, _
+                               ByVal areaAllowance As Double) As Boolean
     Dim footprint As AAGeometry
     Dim leftX As Double, bottomY As Double, rightX As Double, topY As Double
     Dim xs() As Double, ys() As Double
@@ -894,7 +928,7 @@ Private Function FindAreaShift(ByVal footprints As Collection, _
 
     bestX = 0#
     bestY = 0#
-    If AreaShiftFits(footprints, markFootprints, 0#, 0#, forbidden, settings) Then
+    If AreaShiftFits(footprints, markFootprints, 0#, 0#, forbidden, settings, 0#) Then
         FindAreaShift = True
         Exit Function
     End If
@@ -909,18 +943,23 @@ Private Function FindAreaShift(ByVal footprints As Collection, _
         If footprint.RightX > rightX Then rightX = footprint.RightX
         If footprint.TopY > topY Then topY = footprint.TopY
     Next footprint
+    ' Ruang ini hanya untuk translasi: ukuran kelompok sendiri wajib muat
+    ' di area nominal, sehingga allowance tidak membuka kapasitas baru.
+    If rightX - leftX > settings.AreaWidthMM + 2# * AA_EDGE_TOLERANCE_MM Or _
+       topY - bottomY > settings.AreaHeightMM + 2# * AA_EDGE_TOLERANCE_MM Then Exit Function
     ' Kandidat 0,2 mm dan posisi tepat di batas ruang gerak; urut jarak dari pusat.
-    BuildShiftValues -leftX, settings.AreaWidthMM - rightX, xs
-    BuildShiftValues -bottomY, settings.AreaHeightMM - topY, ys
+    BuildShiftValues -leftX - areaAllowance, settings.AreaWidthMM - rightX + areaAllowance, xs
+    BuildShiftValues -bottomY - areaAllowance, settings.AreaHeightMM - topY + areaAllowance, ys
     bestDistance = settings.AreaWidthMM ^ 2 + settings.AreaHeightMM ^ 2 + 1#
     For i = LBound(xs) To UBound(xs)
+        AAProgressPulse
         If xs(i) ^ 2 > bestDistance Then Exit For
         For j = LBound(ys) To UBound(ys)
             distance = xs(i) ^ 2 + ys(j) ^ 2
             If distance >= bestDistance Then Exit For
             probes = probes + 1
             If probes > AA_MAX_SHIFT_PROBES_PER_AREA Then GoTo SearchFinished
-            If AreaShiftFits(footprints, markFootprints, xs(i), ys(j), forbidden, settings) Then
+            If AreaShiftFits(footprints, markFootprints, xs(i), ys(j), forbidden, settings, areaAllowance) Then
                 found = True
                 bestDistance = distance
                 bestX = xs(i)
@@ -979,14 +1018,14 @@ Private Function AreaShiftFits(ByVal footprints As Collection, _
                                ByVal markFootprints As Collection, _
                                ByVal dx As Double, ByVal dy As Double, _
                                ByVal forbidden As Collection, _
-                               ByVal settings As AASettings) As Boolean
+                               ByVal settings As AASettings, ByVal areaAllowance As Double) As Boolean
     Dim footprint As AAGeometry
 
     For Each footprint In footprints
-        If footprint.LeftX + dx < -AA_EDGE_TOLERANCE_MM Or _
-           footprint.BottomY + dy < -AA_EDGE_TOLERANCE_MM Or _
-           footprint.RightX + dx > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
-           footprint.TopY + dy > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then Exit Function
+        If footprint.LeftX + dx < -areaAllowance - AA_EDGE_TOLERANCE_MM Or _
+           footprint.BottomY + dy < -areaAllowance - AA_EDGE_TOLERANCE_MM Or _
+           footprint.RightX + dx > settings.AreaWidthMM + areaAllowance + AA_EDGE_TOLERANCE_MM Or _
+           footprint.TopY + dy > settings.AreaHeightMM + areaAllowance + AA_EDGE_TOLERANCE_MM Then Exit Function
     Next footprint
     For Each footprint In markFootprints
         If Not MarksFit(footprint, dx, dy, forbidden) Then Exit Function
@@ -1014,14 +1053,34 @@ Private Function CenteredPlanFits(ByVal plan As AALayoutPlan, ByVal offsets As O
                                   ByVal settings As AASettings) As Boolean
     Dim placement As AAPlacement
     Dim footprint As AAGeometry
+    Dim allowance As Double, bounds As Object, box As Variant, key As Variant
+    Set bounds = CreateObject("Scripting.Dictionary")
     For Each placement In plan.Placements
         Set footprint = ShiftedFootprint(placement, offsets)
-        If footprint.LeftX < -AA_EDGE_TOLERANCE_MM Or _
-           footprint.BottomY < -AA_EDGE_TOLERANCE_MM Or _
-           footprint.RightX > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
-           footprint.TopY > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then Exit Function
+        allowance = 0#
+        If placement.UsesMarkAreaAllowance Then allowance = settings.MarkShiftAllowanceMM
+        If footprint.LeftX < -allowance - AA_EDGE_TOLERANCE_MM Or _
+           footprint.BottomY < -allowance - AA_EDGE_TOLERANCE_MM Or _
+           footprint.RightX > settings.AreaWidthMM + allowance + AA_EDGE_TOLERANCE_MM Or _
+           footprint.TopY > settings.AreaHeightMM + allowance + AA_EDGE_TOLERANCE_MM Then Exit Function
         If Not PlacementMarksFit(placement, offsets, forbidden) Then Exit Function
+        key = CStr(placement.AreaIndex)
+        If bounds.Exists(key) Then
+            box = bounds(key)
+            If footprint.LeftX < box(0) Then box(0) = footprint.LeftX
+            If footprint.BottomY < box(1) Then box(1) = footprint.BottomY
+            If footprint.RightX > box(2) Then box(2) = footprint.RightX
+            If footprint.TopY > box(3) Then box(3) = footprint.TopY
+            bounds(key) = box
+        Else
+            bounds.Add key, Array(footprint.LeftX, footprint.BottomY, footprint.RightX, footprint.TopY)
+        End If
     Next placement
+    For Each key In bounds.Keys
+        box = bounds(key)
+        If CDbl(box(2)) - CDbl(box(0)) > settings.AreaWidthMM + 2# * AA_EDGE_TOLERANCE_MM Or _
+           CDbl(box(3)) - CDbl(box(1)) > settings.AreaHeightMM + 2# * AA_EDGE_TOLERANCE_MM Then Exit Function
+    Next key
     CenteredPlanFits = True
 End Function
 
@@ -1067,22 +1126,23 @@ Private Function MarksFit(ByVal footprint As AAGeometry, _
 End Function
 
 Private Function BuildForbidden(ByVal settings As AASettings, _
-                                ByVal sourceDocument As Document) As Collection
+                                ByVal sourceDocument As Document, _
+                                Optional ByVal markTolerance As Double = AA_MARK_TOLERANCE_MM) As Collection
     Dim result As New Collection
     Select Case settings.ModelMode
         Case AA_MODEL_CUSTOM
             Set result = settings.CustomForbidden
         Case AA_MODEL_KISS_A
-            AddMark result, 6#, 10#, 10#, settings, sourceDocument
-            AddMark result, 6#, 475#, 10#, settings, sourceDocument
-            AddMark result, 319#, 10#, 10#, settings, sourceDocument
-            AddMark result, 319#, 475#, 10#, settings, sourceDocument
-            AddMark result, 162.5, 11.5, 12#, settings, sourceDocument
+            AddMark result, 6#, 10#, 10#, settings, sourceDocument, False, markTolerance
+            AddMark result, 6#, 475#, 10#, settings, sourceDocument, False, markTolerance
+            AddMark result, 319#, 10#, 10#, settings, sourceDocument, False, markTolerance
+            AddMark result, 319#, 475#, 10#, settings, sourceDocument, False, markTolerance
+            AddMark result, 162.5, 11.5, 12#, settings, sourceDocument, False, markTolerance
         Case AA_MODEL_DIE_A
-            AddMark result, 11#, 11#, 11#, settings, sourceDocument, True
-            AddMark result, 11#, 474#, 11#, settings, sourceDocument, True
-            AddMark result, 314#, 11#, 11#, settings, sourceDocument, True
-            AddMark result, 314#, 474#, 11#, settings, sourceDocument, True
+            AddMark result, 11#, 11#, 11#, settings, sourceDocument, True, markTolerance
+            AddMark result, 11#, 474#, 11#, settings, sourceDocument, True, markTolerance
+            AddMark result, 314#, 11#, 11#, settings, sourceDocument, True, markTolerance
+            AddMark result, 314#, 474#, 11#, settings, sourceDocument, True, markTolerance
     End Select
     Set BuildForbidden = result
 End Function
@@ -1090,7 +1150,8 @@ End Function
 Private Sub AddMark(ByVal result As Collection, ByVal centerX As Double, _
                     ByVal centerY As Double, ByVal sizeMM As Double, _
                     ByVal settings As AASettings, ByVal sourceDocument As Document, _
-                    Optional ByVal elliptical As Boolean = False)
+                    Optional ByVal elliptical As Boolean = False, _
+                    Optional ByVal markTolerance As Double = AA_MARK_TOLERANCE_MM)
     Dim mark As AAGeometry
     Dim localX As Double
     Dim localY As Double
@@ -1099,13 +1160,13 @@ Private Sub AddMark(ByVal result As Collection, ByVal centerX As Double, _
     Set mark = New AAGeometry
     ' Abaikan penetrasi hingga 0,2 mm dari tepi mark, bukan dari tepi object/area.
     If elliptical Then
-        mark.AddEllipse localX, localY, sizeMM / 2# - AA_MARK_TOLERANCE_MM, _
-            sizeMM / 2# - AA_MARK_TOLERANCE_MM, sourceDocument
+        mark.AddEllipse localX, localY, sizeMM / 2# - markTolerance, _
+            sizeMM / 2# - markTolerance, sourceDocument
     Else
-        mark.AddRectangle localX - sizeMM / 2# + AA_MARK_TOLERANCE_MM, _
-            localY - sizeMM / 2# + AA_MARK_TOLERANCE_MM, _
-            localX + sizeMM / 2# - AA_MARK_TOLERANCE_MM, _
-            localY + sizeMM / 2# - AA_MARK_TOLERANCE_MM, sourceDocument
+        mark.AddRectangle localX - sizeMM / 2# + markTolerance, _
+            localY - sizeMM / 2# + markTolerance, _
+            localX + sizeMM / 2# - markTolerance, _
+            localY + sizeMM / 2# - markTolerance, sourceDocument
     End If
     result.Add mark
 End Sub

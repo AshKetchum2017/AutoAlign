@@ -108,7 +108,7 @@ Untuk Quantity berupa angka dengan beberapa Design berbeda dalam satu container,
 
 - Pada pilihan rotasi Otomatis, bentuk non-rectangle mencoba rotasi relatif terhadap sumber dengan langkah **45°**: `0°`, `45°`, `90°`, `135°`, `180°`, `225°`, `270°`, dan `315°`.
 - Rectangle memakai rotasi dengan langkah **90°**.
-- Segitiga dan kurva custom yang memenuhi syarat dapat memakai pola pasangan dengan rotasi berlawanan, offset vertikal, dan perapatan menurut kontur.
+- Segitiga dan kurva custom yang memenuhi syarat dapat memakai pola pasangan dengan rotasi berlawanan, offset vertikal, dan perapatan menurut kontur. Kurva kompleks dengan estimasi kapasitas grid kecil juga dapat mencoba keluarga 0°/180° dan 90°/270° dalam jumlah kandidat terbatas; pemeriksaan gap memakai kontur detail.
 - Pemilihan mengutamakan jumlah area paling sedikit, jumlah Design paling banyak, lalu keteraturan pola. Setelah itu, luas bounding box acuan collision ikut dibandingkan.
 - Perapatan dan perataan tetangga tetap diperiksa terhadap gap, collision, batas area, dan mark.
 
@@ -116,7 +116,7 @@ Jika lebar dan tinggi susunan acuan collision pada **setiap area** setara dalam 
 
 Pada satu Design rectangle dengan Quantity kosong dan satu area, Medium juga mencoba mengisi celah yang aman setelah pemusatan. Penambahan ini mempertahankan posisi objek yang sudah tersusun dan tidak memperbesar susunan.
 
-Medium memakai pencarian heuristik dengan batas kandidat. Hasilnya bukan jaminan nesting paling optimal untuk setiap bentuk. Waktu Process dapat bertambah pada kurva kompleks, banyak sumber, atau pencarian Quantity kelompok.
+Medium memakai pencarian heuristik dengan batas kandidat. Kandidat pasangan satu area yang jumlah objeknya lebih sedikit dari rencana valid terbaik satu area dilewati sebelum finalisasi. Kandidat dengan jumlah sama tetap dibandingkan ukuran dan rotasinya. Hasilnya bukan jaminan nesting paling optimal untuk setiap bentuk. Waktu Process dapat bertambah pada kurva kompleks, banyak sumber, atau pencarian Quantity kelompok.
 
 ### Model Area
 
@@ -151,7 +151,11 @@ Zona mark preset menjadi area yang dihindari saat menyusun objek:
 | KissA | Satu persegi **12 × 12 mm** | `(162,5; 11,5)` |
 | DieA | Empat ellipse **11 × 11 mm** | `(11; 11)`, `(11; 474)`, `(314; 11)`, `(314; 474)` |
 
-Koordinat pusat zona diukur dari **kiri bawah sheet preset**. Pemeriksaan zona mark memakai toleransi penetrasi **0,2 mm** dari tepi mark; toleransi ini tidak menambah kelonggaran batas area atau mengurangi gap antarobjek. Zona ini adalah acuan perencanaan; Process tidak membuat objek sensor atau mark fisik.
+Koordinat pusat zona diukur dari **kiri bawah sheet preset**. Pada **Process KissA**, pergeseran seluruh kelompok mengutamakan zona mark penuh, termasuk zona tengah 12 × 12 mm. Pencarian mencoba posisi di dalam area nominal dahulu. Jika belum menemukan posisi yang aman, kelompok boleh digeser hingga **0,6 mm melewati setiap sisi area** untuk menghindari mark penuh. Lebar dan tinggi kelompok sendiri harus tetap muat dalam ukuran area nominal; kelonggaran ini tidak dipakai untuk mencari slot atau menambah kapasitas area.
+
+Jika pencarian mark penuh belum menemukan posisi, Process KissA memakai toleransi penetrasi mark **0,2 mm** dengan batas area nominal. DieA tetap memakai toleransi mark 0,2 mm tanpa kelonggaran area. Gap antarobjek, ukuran sheet, dan koordinat mark tidak berubah oleh toleransi ini. Zona ini adalah acuan perencanaan; Process tidak membuat objek sensor atau mark fisik.
+
+**Periksa Susunan** mengenali pergeseran KissA di luar area bila kelompok muat secara nominal, keluar maksimal 0,6 mm per sisi, mark penuh aman, dan mengembalikan kelompok tepat ke dalam area mengenai mark. Pemeriksaan memakai geometri saat ini, bukan riwayat Process. **Optimize** memakai batas area nominal.
 
 Ukuran sheet preset dipakai sementara saat Process, lalu **ukuran halaman asli dipulihkan**. Hasil tetap mengacu pada pusat halaman asli.
 

@@ -5,6 +5,8 @@ Private Const AA_INSPECTION_EDGE_MM As Double = 0.0001
 Private Const AA_INSPECTION_PAIR_MM As Double = 1#
 Private mSettings As AASettings, mReport As AAInspectionReport
 Private mForbidden As Collection, mOccupied As Collection, mShapeIDs As Collection
+Private mNominalForbidden As Collection, mBoundsMarkRoot As Shape
+Private mRootAreaAllowance As Double
 Private mIndex As AAOccupiedIndex
 Private mSeenIDs As Object
 Private mPageX As Double, mPageY As Double
@@ -58,6 +60,9 @@ Public Function Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     mPageX = page.CenterX: mPageY = page.CenterY
     Set planner = New AAPlanner
     Set mForbidden = planner.ForbiddenFor(mSettings, doc)
+    Set mNominalForbidden = Nothing
+    Set mBoundsMarkRoot = Nothing
+    If mSettings.ModelMode = AA_MODEL_KISS_A Then Set mNominalForbidden = planner.NominalForbiddenFor(mSettings, doc)
     Set mOccupied = New Collection: Set mShapeIDs = New Collection
     Set mIndex = New AAOccupiedIndex
     Set mSeenIDs = CreateObject("Scripting.Dictionary")
@@ -78,9 +83,16 @@ Public Function Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     ' acuan fisik gap/collision; satu template Cut Line bersama dibaca sekali.
     AADebugWrite "Inspect", "containers Design=" & CStr(designs.Count) & "; Cut Line=" & CStr(cuts.Count)
     For i = 1 To designs.Count
+        Set mBoundsMarkRoot = designs(i)
+        If cuts.Count = 1 Then
+            Set mBoundsMarkRoot = cuts(1)
+        ElseIf cuts.Count > 1 Then
+            Set mBoundsMarkRoot = cuts(i)
+        End If
         InspectRoot designs(i), (cuts.Count = 0), True
     Next i
     For i = 1 To cuts.Count
+        Set mBoundsMarkRoot = cuts(i)
         InspectRoot cuts(i), True, False
     Next i
     If designs.Count > 0 And cuts.Count > 0 Then
@@ -174,6 +186,49 @@ Private Function InsideArea(ByVal box As AAGeometry, ByVal areaIndex As Long) As
     InsideArea = (box.LeftX >= x - AA_INSPECTION_EDGE_MM And box.BottomY >= y - AA_INSPECTION_EDGE_MM And _
         box.RightX <= x + mSettings.AreaWidthMM + AA_INSPECTION_EDGE_MM And _
         box.TopY <= y + mSettings.AreaHeightMM + AA_INSPECTION_EDGE_MM)
+    If Not InsideArea And mRootAreaAllowance > 0# Then
+        InsideArea = (box.LeftX >= x - mRootAreaAllowance - AA_INSPECTION_EDGE_MM And _
+            box.BottomY >= y - mRootAreaAllowance - AA_INSPECTION_EDGE_MM And _
+            box.RightX <= x + mSettings.AreaWidthMM + mRootAreaAllowance + AA_INSPECTION_EDGE_MM And _
+            box.TopY <= y + mSettings.AreaHeightMM + mRootAreaAllowance + AA_INSPECTION_EDGE_MM)
+    End If
+End Function
+
+' Inspeksi tidak menyimpan riwayat Process. Verifikasi keadaan aktual: satu
+' kelompok muat secara nominal, mark penuh aman, dan mengembalikannya tepat
+' ke dalam area menabrak mark. Cut pasangan menjadi acuan untuk Design.
+Private Function RootMarkAllowance(ByVal root As Shape, ByVal areaIndex As Long) As Double
+    Dim x As Double, y As Double, w As Double, h As Double, dx As Double, dy As Double, allowance As Double
+    Dim markRoot As Shape, member As Shape, markArea As Long, blocked As Boolean
+    Dim geometry As AAGeometry, localGeometry As AAGeometry, restored As AAGeometry, obstacle As AAGeometry
+    allowance = mSettings.MarkShiftAllowanceMM
+    If allowance <= 0# Then Exit Function
+    root.GetBoundingBox x, y, w, h, False
+    x = x - AreaLeft(areaIndex): y = y - AreaBottom()
+    If w > mSettings.AreaWidthMM + AA_INSPECTION_EDGE_MM Or _
+       h > mSettings.AreaHeightMM + AA_INSPECTION_EDGE_MM Then Exit Function
+    If x < -allowance - AA_INSPECTION_EDGE_MM Or y < -allowance - AA_INSPECTION_EDGE_MM Or _
+       x + w > mSettings.AreaWidthMM + allowance + AA_INSPECTION_EDGE_MM Or _
+       y + h > mSettings.AreaHeightMM + allowance + AA_INSPECTION_EDGE_MM Then Exit Function
+    If x < 0# Then dx = -x
+    If x + w > mSettings.AreaWidthMM Then dx = mSettings.AreaWidthMM - x - w
+    If y < 0# Then dy = -y
+    If y + h > mSettings.AreaHeightMM Then dy = mSettings.AreaHeightMM - y - h
+    If Abs(dx) <= AA_INSPECTION_EDGE_MM And Abs(dy) <= AA_INSPECTION_EDGE_MM Then Exit Function
+    Set markRoot = mBoundsMarkRoot
+    If markRoot Is Nothing Then Set markRoot = root
+    markArea = RootArea(markRoot)
+    For Each member In Members(markRoot)
+        AAProgressPulse
+        Set geometry = New AAGeometry: geometry.Capture member
+        Set localGeometry = geometry.Placed(geometry.LeftX - AreaLeft(markArea), geometry.TopY - AreaBottom())
+        Set restored = localGeometry.Placed(localGeometry.LeftX + dx, localGeometry.TopY + dy)
+        For Each obstacle In mNominalForbidden
+            If localGeometry.Overlaps(obstacle) Then Exit Function
+            If restored.Overlaps(obstacle) Then blocked = True
+        Next obstacle
+    Next member
+    If blocked Then RootMarkAllowance = allowance
 End Function
 
 Private Sub InspectRoot(ByVal root As Shape, ByVal checkGeometry As Boolean, ByVal designRole As Boolean)
@@ -181,6 +236,10 @@ Private Sub InspectRoot(ByVal root As Shape, ByVal checkGeometry As Boolean, ByV
     On Error GoTo Failed
     areaIndex = RootArea(root)
     Set membersList = Members(root)
+    mRootAreaAllowance = 0#
+    mRootAreaAllowance = RootMarkAllowance(root, areaIndex)
+    If mRootAreaAllowance > 0# Then AADebugWrite "Inspect mark shift", _
+        "ID=" & CStr(root.StaticID) & "; allowance=" & CStr(mRootAreaAllowance) & " mm; full mark clear"
     AADebugWrite "Inspect root", "ID=" & CStr(root.StaticID) & "; type=" & CStr(root.Type) & _
         "; members=" & CStr(membersList.Count) & "; geometry=" & CStr(checkGeometry) & _
         "; design=" & CStr(designRole) & "; area=" & CStr(areaIndex + 1)
@@ -205,6 +264,7 @@ Private Sub InspectShape(ByVal target As Shape, ByVal areaIndex As Long, _
     Dim contour As AAContour, placed As AAPlacement, other As AAPlacement, nearby As Collection
     Dim h As Double, v As Double, gap As Double, id As Long, otherID As Long, mark As Long
     Dim number As Long, description As String, zoneCategory As String, zoneDetail As String
+    Dim marks As Collection
     On Error GoTo Failed
     id = CLng(target.StaticID)
     If mSeenIDs.Exists(CStr(id)) Then
@@ -232,7 +292,9 @@ Private Sub InspectShape(ByVal target As Shape, ByVal areaIndex As Long, _
         If mSettings.ModelMode = AA_MODEL_CUSTOM Then
             zoneCategory = "Area terlarang": zoneDetail = "Objek mengenai zona Custom ke-"
         End If
-        For Each obstacle In mForbidden
+        Set marks = mForbidden
+        If mRootAreaAllowance > 0# Then Set marks = mNominalForbidden
+        For Each obstacle In marks
             AAProgressPulse
             mark = mark + 1
             If localGeometry.Overlaps(obstacle) Then mReport.AddIssue zoneCategory, areaIndex + 1, id, 0, _
