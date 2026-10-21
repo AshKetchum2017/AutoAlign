@@ -1004,8 +1004,11 @@ Private Sub AARefreshHints()
     txbGapHorizontal.ControlTipText = "Gap kontur mm, minimal 0. Default KissA/DieA mengikuti Default Settings; Custom 0 mm. Rectangle bersudut runcing pada preset memakai 0 mm. Input manual diutamakan."
     txbGapVertical.ControlTipText = "Gap kontur mm, minimal 0. Sebaris memakai H, sekolom V, diagonal terbesar H/V. Default KissA/DieA mengikuti Default Settings; Custom 0 mm. Rectangle bersudut runcing pada preset memakai 0 mm. Input manual diutamakan."
     txbQuantity.ControlTipText = "Kosong (-): isi sisa area. 0: lewati Design. /n: bagi rata dalam satu container kelompok n. Berlaku untuk semua Design terpilih (Ctrl/Shift)."
+    cmdDefaultSetting.ControlTipText = "Atur default Area dan Gap H/V untuk model KissA dan DieA."
+    cmdCustomMarginSettings.ControlTipText = "Atur margin dan zona terlarang untuk area model Custom."
+    cmdProductionSummary.ControlTipText = "Lihat ringkasan jumlah Design, Cut Line, dan area dari Process terakhir yang berhasil."
     If Len(mJobPresetName) > 0 Then
-        cmdJobPresets.ControlTipText = "Default pekerjaan tersimpan: " & mJobPresetName & _
+        cmdJobPresets.ControlTipText = "Simpan atau terapkan preset pekerjaan. Default tersimpan: " & mJobPresetName & _
             ". Berlaku pada model preset tersebut. Pilih Tanpa preset untuk kembali ke DefaultSettings."
         txbGapHorizontal.ControlTipText = txbGapHorizontal.ControlTipText & _
             " Jika model cocok, nilai default mengikuti preset pekerjaan tersimpan."

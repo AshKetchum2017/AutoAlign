@@ -357,6 +357,8 @@ Repository menyediakan code-behind UserForm, Class Module, dan Standard Module. 
 | Label | `lblProgressFill` | Isi bar; letakkan di dalam `frmProgress`. |
 | Label | `lblProgressStage`, `lblProgressDetail`, `lblProgressTime` | Tahap, detail, dan durasi. |
 
+Tombol Default Settings, margin Custom, Ringkasan Hasil, dan Preset Pekerjaan menampilkan hint saat kursor diarahkan ke tombol. Hint Preset Pekerjaan juga menampilkan nama preset default yang sedang diterapkan.
+
 Kode mengatur GroupName model/mode, daftar ComboBox, multi-selection, dan placeholder. Gunakan tipe serta nama kontrol persis seperti source; ukuran dan tata letak visual dapat disesuaikan.
 
 ### DefaultSettings
