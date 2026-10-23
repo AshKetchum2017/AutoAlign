@@ -247,6 +247,17 @@ NextPairAngle:
             AAProgressCheckCancelled
             AADebugCandidateEnd
             If Len(buildError) > 0 Then AADebugWrite "Medium", candidateLabel & " -> " & buildError
+            ' Hanya satu Design bebas non-rectangle: finalisasi/repair tidak
+            ' menambah objek. Rectangle masih dapat diisi oleh refill di bawah.
+            If designCount = 1 And capacityTarget < 0 Then
+                If quantities(firstIndex) < 0 And Not models(firstIndex).IsRectangle Then
+                    If HasFewerObjects(candidate, best) Then
+                        AADebugWrite "Medium", candidateLabel & " -> skipped before finalize: objects=" & _
+                            CStr(candidate.DesignCount) & " < best=" & CStr(best.DesignCount) & " (one area)"
+                        Set candidate = Nothing
+                    End If
+                End If
+            End If
             Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
                 sourceDocument, sharedPlanner, candidateLabel)
             If designCount = 1 Then
@@ -377,6 +388,13 @@ Private Sub ConsiderCandidate(ByVal candidate As AALayoutPlan, ByRef best As AAL
         bestLabel = label
     End If
 End Sub
+
+Private Function HasFewerObjects(ByVal candidate As AALayoutPlan, _
+                                 ByVal best As AALayoutPlan) As Boolean
+    If candidate Is Nothing Or best Is Nothing Then Exit Function
+    If candidate.AreaCount <> 1 Or best.AreaCount <> 1 Then Exit Function
+    HasFewerObjects = (candidate.DesignCount < best.DesignCount)
+End Function
 
 Private Function FinalizeCandidate(ByVal candidate As AALayoutPlan, ByRef models() As AAModel, _
                                    ByVal forbidden As Collection, ByVal settings As AASettings, _
@@ -1047,6 +1065,7 @@ Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Lon
     Dim candidate As AALayoutPlan, rawCandidate As AALayoutPlan
     Dim angle As Long, phaseIndex As Long, rowMode As Long, phaseSteps As Long, patternMode As Long
     Dim smallComplex As Boolean
+    Dim minimumCount As Long
     Dim phaseLimit As Double, phaseY As Double, h As Double, v As Double
     Dim label As String, buildError As String
 
@@ -1088,9 +1107,13 @@ Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Lon
                 AADebugCandidateStart label
                 Set candidate = Nothing
                 buildError = vbNullString
+                minimumCount = 0
+                If Not best Is Nothing Then
+                    If best.AreaCount = 1 Then minimumCount = best.DesignCount
+                End If
                 On Error Resume Next
                 Set candidate = BuildOppositeLattice(model, designIndex, cutIndex, settings, _
-                    forbidden, CDbl(angle), rowMode, patternMode, phaseY)
+                    forbidden, CDbl(angle), rowMode, patternMode, phaseY, minimumCount)
                 If Err.Number <> 0 Then buildError = "Error " & CStr(Err.Number) & ": " & Err.Description
                 Err.Clear
                 On Error GoTo 0
@@ -1173,7 +1196,8 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
                                       ByVal firstAngle As Double, _
                                       ByVal rowMode As Long, _
                                       ByVal patternMode As Long, _
-                                      Optional ByVal phaseOffset As Double = 0#) As AALayoutPlan
+                                      Optional ByVal phaseOffset As Double = 0#, _
+                                      Optional ByVal minimumCount As Long = 0) As AALayoutPlan
     Dim forward As AARotationVariant, reverse As AARotationVariant
     Dim result As AALayoutPlan, occupied As Collection, slotForbidden As Collection
     Dim orientation As AARotationVariant, candidate As AAPlacement
@@ -1181,7 +1205,7 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
     Dim x As Double, y As Double, rowShift As Double, candidateTop As Double
     Dim rowIndex As Long, columnIndex As Long, probes As Long
     Dim scanContacts As Boolean, phaseY As Double
-    Dim slotLimit As Long
+    Dim slotLimit As Long, upperCount As Long
     Dim startX As Double, spanX As Double, spanY As Double, rows As Long, columns As Long
 
     If Not model.AllowsRotation(firstAngle) Or Not model.AllowsRotation(firstAngle + 180#) Then Exit Function
@@ -1257,6 +1281,15 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
         " row=" & CStr(rowMode) & " pattern=" & CStr(patternMode) & _
         "; phase=" & Format$(phaseY, "0.000000") & "; step=" & _
         Format$(stepX, "0.000000") & "/" & Format$(stepY, "0.000000")
+    If patternMode = 5 And minimumCount > 0 Then
+        upperCount = PairGridCapacity(forward, reverse, settings, startX, y, _
+            stepX, stepY, rowShift, phaseY, slotLimit)
+        If AADebugEnabled Then AADebugWrite "Pair", "grid upper bound=" & CStr(upperCount) & _
+            "; best=" & CStr(minimumCount) & "; skipped=" & CStr(upperCount < minimumCount)
+        ' Batas atas memakai slot aktual beserta batas probe, bukan grid bbox
+        ' nominal. Gap/mark hanya dapat mengurangi jumlah ini. Seri tetap dicoba.
+        If upperCount < minimumCount Then Exit Function
+    End If
     Do While y >= MinValue(forward.Height, reverse.Height - phaseY) - _
         AA_EDGE_TOLERANCE_MM
         x = startX
@@ -1288,6 +1321,47 @@ Private Function BuildOppositeLattice(ByVal model As AAModel, _
         rowIndex = rowIndex + 1
     Loop
     If result.DesignCount > 0 Then Set BuildOppositeLattice = result
+End Function
+
+' Preflight numerik untuk lane kompleks (maksimal 128 probe). Urutan dan
+' penjumlahan koordinat sama dengan BuildOppositeLattice, termasuk probe di
+' luar bounds. Tidak memakai pembagian/floor yang dapat berbeda di batas.
+Private Function PairGridCapacity(ByVal forward As AARotationVariant, _
+                                  ByVal reverse As AARotationVariant, _
+                                  ByVal settings As AASettings, ByVal startX As Double, _
+                                  ByVal y As Double, ByVal stepX As Double, _
+                                  ByVal stepY As Double, ByVal rowShift As Double, _
+                                  ByVal phaseY As Double, ByVal slotLimit As Long) As Long
+    Dim x As Double, candidateTop As Double
+    Dim rowIndex As Long, columnIndex As Long, probes As Long
+    Dim orientation As AARotationVariant
+    Do While y >= MinValue(forward.Height, reverse.Height - phaseY) - AA_EDGE_TOLERANCE_MM
+        x = startX
+        If rowIndex Mod 2 = 1 Then x = x + rowShift
+        columnIndex = 0
+        Do While x <= settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM
+            probes = probes + 1
+            If probes > slotLimit Then Exit Function
+            AAProgressPulse
+            If columnIndex Mod 2 = 0 Then
+                Set orientation = forward
+            Else
+                Set orientation = reverse
+            End If
+            candidateTop = y
+            If columnIndex Mod 2 = 1 Then candidateTop = candidateTop + phaseY
+            If Not (x < -AA_EDGE_TOLERANCE_MM Or candidateTop - orientation.Height < -AA_EDGE_TOLERANCE_MM Or _
+                x + orientation.Width > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
+                candidateTop > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM) Then
+                PairGridCapacity = PairGridCapacity + 1
+                If PairGridCapacity >= AA_MAX_OBJECTS_PER_SOURCE Then Exit Function
+            End If
+            x = x + stepX
+            columnIndex = columnIndex + 1
+        Loop
+        y = y - stepY
+        rowIndex = rowIndex + 1
+    Loop
 End Function
 
 Private Function BuildTightPairLattice(ByVal forward As AARotationVariant, _

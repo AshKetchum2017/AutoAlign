@@ -111,6 +111,8 @@ Untuk Quantity berupa angka dengan beberapa Design berbeda dalam satu container,
 
 `optMedium` mencoba kandidat rotasi dan pergeseran untuk mencari susunan yang lebih baik. Rencana Minimum yang lolos validasi juga ikut menjadi kandidat.
 
+Untuk satu Design non-rectangle dengan Quantity kosong, kandidat satu area yang pasti kalah jumlah dapat dilewati sebelum finalisasi. Pola pasangan kompleks juga menghitung batas atas dari slot aktual sebelum membentuk objek kandidat. Jumlah yang sama tetap diperiksa untuk membandingkan pola, bounds, dan rotasi; kandidat yang bersaing tetap mengikuti pemeriksaan gap, collision, area, dan mark.
+
 - Pada pilihan rotasi Otomatis, bentuk non-rectangle mencoba rotasi relatif terhadap sumber dengan langkah **45°**: `0°`, `45°`, `90°`, `135°`, `180°`, `225°`, `270°`, dan `315°`.
 - Rectangle memakai rotasi dengan langkah **90°**.
 - Segitiga dan kurva custom yang memenuhi syarat dapat memakai pola pasangan dengan rotasi berlawanan, offset vertikal, dan perapatan menurut kontur. Kurva kompleks dengan estimasi kapasitas grid kecil juga dapat mencoba keluarga 0°/180° dan 90°/270° dalam jumlah kandidat terbatas; pemeriksaan gap memakai kontur detail.

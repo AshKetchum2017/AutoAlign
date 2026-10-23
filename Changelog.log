@@ -265,3 +265,6 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Pasangan kurva kompleks pada grid lebih besar]
 ~ Medium mencoba pola pasangan berlawanan untuk estimasi grid sampai 128 sel. Kasus di atas 32 sel memakai fase vertikal nol dan maksimal empat kandidat; pencarian pada grid lebih kecil tetap mempertahankan pilihan fasenya.
+
+[Optimasi kandidat Medium kalah jumlah]
+~ Medium melewati pembentukan pola pasangan kompleks yang batas atas jumlah slotnya sudah kalah, serta finalisasi kandidat biasa yang kalah jumlah pada satu Design bebas non-rectangle. Kandidat berjumlah sama tetap dibandingkan penuh.
