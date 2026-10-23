@@ -257,3 +257,8 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Pendaftaran pasangan]
 + Tombol Pair mendaftarkan objek terakhir dipilih sebagai Cut Line dan semua objek lainnya sebagai Design yang otomatis dipasangkan ke Cut Line tersebut. Objek terdaftar dengan peran sesuai dipakai kembali; konflik peran ditolak.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-23
+[Slot aman pada pola pasangan kompleks kecil]
+~ Medium dapat mempertahankan slot aman dari kandidat pasangan kompleks kecil yang gagal diselesaikan setelah pemusatan/perbaikan. Kandidat cadangan tetap diperiksa terhadap gap, collision, area dan zona mark; Quantity tetap tidak dipangkas.

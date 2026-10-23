@@ -1038,7 +1038,7 @@ Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Lon
                                 ByVal sourceDocument As Document, ByVal sharedPlanner As AAPlanner, _
                                 ByRef best As AALayoutPlan, ByRef bestLabel As String)
     Dim orientation As AARotationVariant, opposite As AARotationVariant
-    Dim candidate As AALayoutPlan
+    Dim candidate As AALayoutPlan, rawCandidate As AALayoutPlan
     Dim angle As Long, phaseIndex As Long, rowMode As Long, phaseSteps As Long, patternMode As Long
     Dim smallComplex As Boolean
     Dim phaseLimit As Double, phaseY As Double, h As Double, v As Double
@@ -1101,8 +1101,15 @@ Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Lon
                     End If
                 End If
                 If Not candidate Is Nothing Then
+                    Set rawCandidate = candidate
                     Set candidate = FinalizeCandidate(candidate, models, forbidden, settings, _
                         sourceDocument, sharedPlanner, label)
+                    If candidate Is Nothing And smallComplex Then
+                        ' FinalizeMedium sudah memusatkan rawCandidate. Jika satu slot
+                        ' tetap terhalang, pertahankan slot aman tanpa menggeser ulang pola.
+                        Set candidate = FilterBlockedPairSlots(rawCandidate, forbidden, settings, _
+                            sourceDocument, sharedPlanner, label)
+                    End If
                     If Not candidate Is Nothing Then
                         If ValidPlan(candidate, forbidden, settings, label) Then _
                             ConsiderCandidate candidate, best, label, bestLabel, sharedPlanner
@@ -1113,6 +1120,39 @@ Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Lon
 NextCurvedAngle:
     Next angle
 End Sub
+
+Private Function FilterBlockedPairSlots(ByVal plan As AALayoutPlan, _
+                                       ByVal forbidden As Collection, ByVal settings As AASettings, _
+                                       ByVal sourceDocument As Document, ByVal sharedPlanner As AAPlanner, _
+                                       ByVal label As String) As AALayoutPlan
+    Dim result As AALayoutPlan, occupied As Collection, marks As Collection
+    Dim placed As AAPlacement, removed As Long
+    If plan Is Nothing Then Exit Function
+    If plan.AreaCount <> 1 Or plan.DesignCount = 0 Then Exit Function
+    Set marks = forbidden
+    ' Kandidat cadangan harus aman terhadap zona nominal, bukan toleransi mark.
+    If settings.ModelMode = AA_MODEL_KISS_A Then _
+        Set marks = sharedPlanner.NominalForbiddenFor(settings, sourceDocument)
+    Set result = New AALayoutPlan
+    result.Configure AA_MODE_MEDIUM
+    result.SetRegularPattern plan.HasRegularPattern
+    Set occupied = New Collection
+    For Each placed In plan.Placements
+        AAProgressPulse
+        If Fits(placed, occupied, marks, settings) Then
+            result.Add placed
+            occupied.Add placed
+        Else
+            removed = removed + 1
+        End If
+    Next placed
+    AADebugWrite "Pair recovery", label & "; kept=" & CStr(result.DesignCount) & _
+        "; removed=" & CStr(removed) & "; original=" & CStr(plan.DesignCount)
+    If removed = 0 Or result.DesignCount = 0 Then Exit Function
+    ' Tidak melakukan centering lagi: posisi ini sudah diperiksa satu per satu.
+    If ValidPlan(result, marks, settings, label & " filtered slots") Then _
+        Set FilterBlockedPairSlots = result
+End Function
 
 Private Function BuildOppositeLattice(ByVal model As AAModel, _
                                       ByVal designIndex As Long, ByVal cutIndex As Long, _
