@@ -109,7 +109,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
     If useMinimumBaseline Then
         On Error Resume Next
         Set minimum = sharedPlanner.BuildMinimum(models, designIndexes, designCount, _
-            cutIndexes, cutCount, quantities, settings, sourceDocument, singleAreaOnly)
+            cutIndexes, cutCount, quantities, settings, sourceDocument, singleAreaOnly, True)
         If Err.Number <> 0 Then lastError = Err.Description
     Else
         lastError = "rotasi 0 derajat tidak diizinkan pada Design aktif"

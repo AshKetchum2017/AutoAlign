@@ -183,7 +183,8 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
                              ByRef cutIndexes() As Long, ByVal cutCount As Long, _
                              ByRef quantities() As Long, ByVal settings As AASettings, _
                              ByVal sourceDocument As Document, _
-                             Optional ByVal singleAreaOnly As Boolean = False) As AALayoutPlan
+                             Optional ByVal singleAreaOnly As Boolean = False, _
+                             Optional ByVal reuseMarkChecks As Boolean = False) As AALayoutPlan
     Dim straightPlan As AALayoutPlan
     Dim zigZagPlan As AALayoutPlan
     Dim straightError As String
@@ -193,7 +194,7 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
     If AllActiveRectangles(models, designIndexes, designCount, quantities) Then
         AADebugCandidateStart "Minimum Straight"
         Set straightPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
-            cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT, singleAreaOnly)
+            cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT, singleAreaOnly, reuseMarkChecks)
         AADebugCandidateEnd
         AADebugPlan "Minimum Straight", straightPlan
         Set BuildMinimum = straightPlan
@@ -203,7 +204,7 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
     On Error Resume Next
     AADebugCandidateStart "Minimum Straight"
     Set straightPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
-        cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT, singleAreaOnly)
+        cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT, singleAreaOnly, reuseMarkChecks)
     If Err.Number <> 0 Then straightError = Err.Description
     Err.Clear
     On Error GoTo 0
@@ -214,7 +215,7 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
     AADebugCandidateStart "Minimum ZigZag"
     On Error Resume Next
     Set zigZagPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
-        cutCount, quantities, settings, sourceDocument, AA_MODE_ZIGZAG, singleAreaOnly)
+        cutCount, quantities, settings, sourceDocument, AA_MODE_ZIGZAG, singleAreaOnly, reuseMarkChecks)
     If Err.Number <> 0 Then zigZagError = Err.Description
     Err.Clear
     On Error GoTo 0
@@ -280,7 +281,8 @@ Private Function BuildOne(ByRef models() As AAModel, _
                           ByRef cutIndexes() As Long, ByVal cutCount As Long, _
                           ByRef quantities() As Long, ByVal settings As AASettings, _
                           ByVal sourceDocument As Document, _
-                          ByVal layoutMode As Long, ByVal singleAreaOnly As Boolean) As AALayoutPlan
+                          ByVal layoutMode As Long, ByVal singleAreaOnly As Boolean, _
+                          ByVal reuseMarkChecks As Boolean) As AALayoutPlan
     Dim result As AALayoutPlan
     Dim forbidden As Collection, nominal As Collection
     Dim offsets As Object
@@ -289,14 +291,19 @@ Private Function BuildOne(ByRef models() As AAModel, _
     Dim shift As Variant
     Dim passIndex As Long
     Dim areaKey As Variant
+    Dim perfStarted As Double, stageLabel As String
+    Dim safe As Boolean, centeredSafe As Boolean
 
     Set forbidden = BuildForbidden(settings, sourceDocument)
     If settings.ModelMode = AA_MODEL_KISS_A Then Set nominal = NominalForbiddenFor(settings, sourceDocument)
     ' Susun tanpa mark dahulu, lalu pusatkan seluruh isi tiap area.
     ' Coba geser seluruh isi area sebelum merencanakan ulang Quantity.
     For passIndex = 1 To AA_MAX_CENTERING_PASSES
+        stageLabel = " layout=" & CStr(layoutMode) & "; pass=" & CStr(passIndex)
+        perfStarted = AADebugPerfBegin()
         Set result = BuildOneRaw(models, designIndexes, designCount, cutIndexes, _
             cutCount, quantities, settings, layoutMode, forbidden, offsets, singleAreaOnly)
+        AADebugStageEnd "Minimum raw build" & stageLabel, perfStarted
         If result.DesignCount = 0 Then
             Set BuildOne = result
             Exit Function
@@ -311,8 +318,14 @@ Private Function BuildOne(ByRef models() As AAModel, _
                     Format$(CDbl(shift(1)), "0.000000000")
             Next areaKey
         End If
-        If FindSafeOffsets(result, nextOffsets, forbidden, settings, nominal) Then
-            If CenteredPlanFits(result, nextOffsets, forbidden, settings) Then
+        perfStarted = AADebugPerfBegin()
+        safe = FindSafeOffsets(result, nextOffsets, forbidden, settings, nominal, reuseMarkChecks)
+        AADebugStageEnd "Minimum center search" & stageLabel, perfStarted
+        If safe Then
+            perfStarted = AADebugPerfBegin()
+            centeredSafe = CenteredPlanFits(result, nextOffsets, forbidden, settings)
+            AADebugStageEnd "Minimum center validation" & stageLabel, perfStarted
+            If centeredSafe Then
                 For Each placement In result.Placements
                     shift = nextOffsets(CStr(placement.AreaIndex))
                     placement.Translate CDbl(shift(0)), CDbl(shift(1))
@@ -511,8 +524,10 @@ Private Function FillMinimumMarkSlots(ByVal result As AALayoutPlan, ByVal slots 
     Dim original As AAPlacement, candidate As AAPlacement, placed As AAPlacement
     Dim envelope As AAGeometry
     Dim probes As Long
+    Dim perfStarted As Double
     If occupied.Count = 0 Or limit <= 0 Then Exit Function
     If horizontalGap < 0# Or verticalGap < 0# Then Exit Function
+    perfStarted = AADebugPerfBegin()
     ' Semua tetangga grid sudah tersedia. Pertahankan bounds agar pemulihan
     ' tidak mengubah offset pemusatan lalu mengulang masalah pada pass berikutnya.
     Set envelope = New AAGeometry
@@ -533,6 +548,7 @@ Private Function FillMinimumMarkSlots(ByVal result As AALayoutPlan, ByVal slots 
     Next original
     If AADebugEnabled Then AADebugWrite "Minimum", "mark recovery: slots=" & CStr(slots.Count) & _
         "; added=" & CStr(FillMinimumMarkSlots) & "; probes=" & CStr(probes) & "; max shift=2 mm"
+    AADebugStageEnd "Minimum mark recovery", perfStarted
 End Function
 
 Private Function ShiftMinimumMarkSlot(ByVal original As AAPlacement, ByVal occupied As Collection, _
