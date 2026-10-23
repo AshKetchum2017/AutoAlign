@@ -23,7 +23,8 @@ Private Const AA_MAX_CURVED_PAIR_EDGES As Long = 512
 Private Const AA_MAX_CURVED_PAIR_NODES As Long = 12
 Private Const AA_MAX_SMALL_PAIR_EDGES As Long = 2048
 Private Const AA_MAX_SMALL_PAIR_NODES As Long = 64
-Private Const AA_MAX_SMALL_PAIR_CELLS As Long = 32
+Private Const AA_MAX_SMALL_PAIR_CELLS As Long = 128
+Private Const AA_MAX_PHASED_PAIR_CELLS As Long = 32
 Private Const AA_MAX_SMALL_PAIR_SLOTS As Long = 128
 Private Const AA_CURVED_PHASE_STEPS As Long = 4
 Private Const AA_PAIR_CONTACT_SCAN_STEPS As Long = 64
@@ -1019,17 +1020,22 @@ Private Function CurvedPairEligible(ByVal orientation As AARotationVariant) As B
         edges > AA_MAX_PAIR_CONTOUR_EDGES And edges <= AA_MAX_CURVED_PAIR_EDGES)
 End Function
 
-' Kontur kompleks hanya dicoba bila grid bbox nominal kecil. Tiga fase dekat
-' nol, dua keluarga sudut dan dua offset baris: paling banyak 12 kandidat.
+' Kontur kompleks memakai grid bbox nominal terbatas. Sampai 32 sel mencoba
+' tiga fase; di atasnya hanya fase nol. Maksimal 12 atau 4 kandidat.
 Private Function SmallComplexPairEligible(ByVal orientation As AARotationVariant, _
                                            ByVal settings As AASettings) As Boolean
     Dim nodes As Long, edges As Long, cells As Double
     nodes = orientation.Contour.Anchors.Count: edges = orientation.Contour.EdgeCount
     If nodes < 5 Or nodes > AA_MAX_SMALL_PAIR_NODES Or _
        edges <= AA_MAX_PAIR_CONTOUR_EDGES Or edges > AA_MAX_SMALL_PAIR_EDGES Then Exit Function
-    If orientation.Width <= AA_EDGE_TOLERANCE_MM Or orientation.Height <= AA_EDGE_TOLERANCE_MM Then Exit Function
-    cells = Int(settings.AreaWidthMM / orientation.Width) * Int(settings.AreaHeightMM / orientation.Height)
+    cells = PairGridCells(orientation, settings)
     SmallComplexPairEligible = (cells >= 1# And cells <= AA_MAX_SMALL_PAIR_CELLS)
+End Function
+
+Private Function PairGridCells(ByVal orientation As AARotationVariant, _
+                               ByVal settings As AASettings) As Double
+    If orientation.Width <= AA_EDGE_TOLERANCE_MM Or orientation.Height <= AA_EDGE_TOLERANCE_MM Then Exit Function
+    PairGridCells = Int(settings.AreaWidthMM / orientation.Width) * Int(settings.AreaHeightMM / orientation.Height)
 End Function
 
 Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Long, _
@@ -1063,8 +1069,14 @@ Private Sub ConsiderCurvedPairs(ByVal model As AAModel, ByVal designIndex As Lon
         If smallComplex Then
             phaseLimit = MinValue(phaseLimit, MaxValue(h, v))
             phaseSteps = 1: patternMode = 5
+            If PairGridCells(orientation, settings) > AA_MAX_PHASED_PAIR_CELLS Or _
+               PairGridCells(opposite, settings) > AA_MAX_PHASED_PAIR_CELLS Then phaseSteps = 0
         End If
         If phaseLimit <= AA_EDGE_TOLERANCE_MM Then phaseSteps = 0
+        If smallComplex And AADebugEnabled Then AADebugWrite "Pair", _
+            "complex grid cells=" & CStr(PairGridCells(orientation, settings)) & "/" & _
+            CStr(PairGridCells(opposite, settings)) & "; phase steps=" & CStr(phaseSteps) & _
+            "; slot limit=" & CStr(AA_MAX_SMALL_PAIR_SLOTS)
         For phaseIndex = -phaseSteps To phaseSteps
             phaseY = 0#
             If phaseSteps > 0 Then phaseY = phaseLimit * phaseIndex / phaseSteps
