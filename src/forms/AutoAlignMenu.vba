@@ -273,7 +273,7 @@ Private Sub cmdJobPresets_Click()
     Set owner = Nothing
     Exit Sub
 Failed:
-    description = Err.Description
+    description = Err.description
     On Error Resume Next
     If Not editor Is Nothing Then Unload editor
     Set editor = Nothing
@@ -291,16 +291,16 @@ Public Function AACaptureJobPreset(ByRef excludedZones As Long) As AAJobPreset
     excludedZones = 0
     modelMode = AACurrentModel()
     layoutMode = AA_MODE_MINIMUM
-    If optMedium.Value Then layoutMode = AA_MODE_MEDIUM
+    If optMedium.value Then layoutMode = AA_MODE_MEDIUM
     settings.Configure modelMode, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight), _
         AAInputText(txbGapHorizontal), AAInputText(txbGapVertical)
     settings.ApplyJobDefaults mPresenter.JobPreset, AAInputText(txbAreaWidth), AAInputText(txbAreaHeight)
     If modelMode = AA_MODEL_CUSTOM Then
-        If Application.Documents.Count = 0 Then Err.Raise vbObjectError + 5484, _
+        If Application.Documents.count = 0 Then Err.Raise vbObjectError + 5484, _
             "AutoAlignMenu", "Buka dokumen untuk menyimpan pengaturan Custom."
         Set doc = ActiveDocument
-        Set area = mPresenter.CustomAreaDraft(doc, doc.ActivePage.Index)
-        settings.ApplyCustomArea area, doc, doc.ActivePage.Index
+        Set area = mPresenter.CustomAreaDraft(doc, doc.ActivePage.index)
+        settings.ApplyCustomArea area, doc, doc.ActivePage.index
         excludedZones = area.ZoneCount
     End If
     result.Capture settings, layoutMode, area
@@ -321,10 +321,10 @@ Public Sub AAApplyJobPreset(ByVal preset As AAJobPreset, ByVal presetName As Str
     End If
     ' Selesaikan seluruh validasi dan konversi sebelum mengubah form/presenter.
     Set snapshot = preset.Copy
-    If Application.Documents.Count > 0 Then Set doc = ActiveDocument
+    If Application.Documents.count > 0 Then Set doc = ActiveDocument
     Set area = mPresenter.JobAreaDraft(snapshot, doc)
-    widthText = snapshot.WidthText: heightText = snapshot.HeightText
-    gapH = snapshot.HorizontalText: gapV = snapshot.VerticalText
+    widthText = snapshot.widthText: heightText = snapshot.heightText
+    gapH = snapshot.horizontalText: gapV = snapshot.verticalText
     If AACurrentModel() = AA_MODEL_CUSTOM Then
         mCustomAreaWidth = AAInputText(txbAreaWidth): mCustomAreaHeight = AAInputText(txbAreaHeight)
     End If
@@ -334,22 +334,22 @@ Public Sub AAApplyJobPreset(ByVal preset As AAJobPreset, ByVal presetName As Str
     mPresenter.SetJobPreset snapshot
     If Not area Is Nothing Then mPresenter.SetCustomArea area
     mJobPresetName = presetName
-    optCustom.Value = (snapshot.ModelMode = AA_MODEL_CUSTOM)
-    optKissA.Value = (snapshot.ModelMode = AA_MODEL_KISS_A)
-    optDieA.Value = (snapshot.ModelMode = AA_MODEL_DIE_A)
-    optMinimum.Value = (snapshot.LayoutMode = AA_MODE_MINIMUM)
-    optMedium.Value = (snapshot.LayoutMode = AA_MODE_MEDIUM)
-    mAreaModel = snapshot.ModelMode
-    If snapshot.ModelMode = AA_MODEL_CUSTOM Then
+    optCustom.value = (snapshot.modelMode = AA_MODEL_CUSTOM)
+    optKissA.value = (snapshot.modelMode = AA_MODEL_KISS_A)
+    optDieA.value = (snapshot.modelMode = AA_MODEL_DIE_A)
+    optMinimum.value = (snapshot.layoutMode = AA_MODE_MINIMUM)
+    optMedium.value = (snapshot.layoutMode = AA_MODE_MEDIUM)
+    mAreaModel = snapshot.modelMode
+    If snapshot.modelMode = AA_MODEL_CUSTOM Then
         mCustomAreaWidth = widthText: mCustomAreaHeight = heightText
         mUpdatingHint = True
         mHintActive(3) = False: mHintActive(4) = False
         txbAreaWidth.ForeColor = mInputColor(3): txbAreaHeight.ForeColor = mInputColor(4)
-        txbAreaWidth.Text = widthText: txbAreaHeight.Text = heightText
+        txbAreaWidth.text = widthText: txbAreaHeight.text = heightText
         mUpdatingHint = False
     End If
     AASetModeGapText gapH, gapV
-    mMediumActive = optMedium.Value
+    mMediumActive = optMedium.value
     If mMediumActive Then
         mMediumVisited = True
         mMediumGapH = gapH: mMediumGapV = gapV
@@ -361,7 +361,7 @@ Public Sub AAApplyJobPreset(ByVal preset As AAJobPreset, ByVal presetName As Str
     AAUpdateModelControls
     Exit Sub
 Failed:
-    number = Err.Number: description = Err.Description
+    number = Err.number: description = Err.description
     mUpdatingHint = False: mChangingMode = False: mApplyingJobPreset = False
     Err.Raise number, "AutoAlignMenu.AAApplyJobPreset", description
 End Sub
@@ -495,7 +495,7 @@ Private Sub cmdProductionSummary_Click()
     Dim owner As Object, ownerWasVisible As Boolean, description As String
     If mProcessRunning Or AAProgressRunning Or mAreaEditing Then Exit Sub
     If mPresenter Is Nothing Then Set mPresenter = New AAPresenter
-    Set report = mPresenter.productionReport
+    Set report = mPresenter.ProductionReport
     If report Is Nothing Then
         MsgBox "Belum ada ringkasan. Jalankan Process hingga berhasil dalam sesi AA ini.", _
             vbInformation, "Production Summary"
@@ -522,6 +522,10 @@ SummaryFailed:
     Set owner = Nothing
     On Error GoTo 0
     MsgBox "Ringkasan tidak dapat dibuka: " & description, vbExclamation, "Production Summary"
+End Sub
+
+Private Sub cmdRefill_Click()
+' Pending: Implementasikan fungsionalitas refill. Saat ini, fitur tersebut dinonaktifkan di UI.
 End Sub
 
 Private Sub cmdCheckLayout_Click()
@@ -809,7 +813,7 @@ Private Sub AARunMode(ByVal modelMode As Long)
         AAInputText(txbGapHorizontal), AAInputText(txbGapVertical), _
         feedback, feedbackStyle, layoutMode
     AARefreshObjects
-    AAProgressEnd (Len(feedback) = 0 And mPresenter.lastProcessCompleted)
+    AAProgressEnd (Len(feedback) = 0 And mPresenter.LastProcessCompleted)
     AAUnlockInputs
     mProcessRunning = False
     AAUpdateQuantityEditor
@@ -845,7 +849,7 @@ End Sub
 Private Sub AALockContainer(ByVal container As Object)
     Dim control As Object
     For Each control In container.Controls
-        If control.Name <> "frmProgress" And control.Name <> "cmdClose" Then
+        If control.name <> "frmProgress" And control.name <> "cmdClose" Then
             If TypeName(control) = "Frame" Then
                 ' Frame tetap aktif agar Close di dalamnya dapat menerima klik.
                 AALockContainer control
@@ -905,7 +909,7 @@ Public Sub AAProgressRender(ByVal stage As String, ByVal detail As String, _
         position = elapsed / 2# - Fix(elapsed / 2#)
         lblProgressFill.Left = 3! + (available - fillWidth) * position
     End If
-    lblProgressFill.Width = fillWidth
+    lblProgressFill.width = fillWidth
     lblProgressFill.Visible = (fillWidth > 0!)
     Me.Repaint
 End Sub
@@ -926,7 +930,7 @@ End Sub
 
 ' Placeholder hanya presentasi; AAInputText selalu mengembalikannya sebagai kosong.
 Private Function AAInputIndex(ByVal box As MSForms.TextBox) As Long
-    Select Case box.Name
+    Select Case box.name
         Case "txbGapHorizontal": AAInputIndex = 1
         Case "txbGapVertical": AAInputIndex = 2
         Case "txbAreaWidth": AAInputIndex = 3
@@ -947,12 +951,12 @@ Private Function AAHintText(ByVal box As MSForms.TextBox) As String
     modelMode = AACurrentModel()
     If Not mPresenter Is Nothing Then Set preset = mPresenter.JobPreset
     If Not preset Is Nothing Then
-        If preset.ModelMode = modelMode Then
+        If preset.modelMode = modelMode Then
             Select Case AAInputIndex(box)
                 Case 1: AAHintText = CStr(preset.DefaultHorizontalGapMM)
                 Case 2: AAHintText = CStr(preset.DefaultVerticalGapMM)
-                Case 3: AAHintText = preset.WidthText
-                Case 4: AAHintText = preset.HeightText
+                Case 3: AAHintText = preset.widthText
+                Case 4: AAHintText = preset.heightText
                 Case 5: AAHintText = "-"
             End Select
             Exit Function
@@ -1003,7 +1007,7 @@ End Sub
 Private Sub AAShowHint(ByVal box As MSForms.TextBox)
     Dim index As Long
     If Not mHintReady Then Exit Sub
-    If mFocusedInput = box.Name Then Exit Sub
+    If mFocusedInput = box.name Then Exit Sub
     index = AAInputIndex(box)
     If Not mHintActive(index) And Len(box.text) > 0 Then Exit Sub
     mUpdatingHint = True
@@ -1044,7 +1048,7 @@ End Sub
 Private Sub AAEnterInput(ByVal box As MSForms.TextBox)
     Dim index As Long
     If Not mHintReady Then Exit Sub
-    mFocusedInput = box.Name
+    mFocusedInput = box.name
     index = AAInputIndex(box)
     mUpdatingHint = True
     If mHintActive(index) Then box.text = vbNullString

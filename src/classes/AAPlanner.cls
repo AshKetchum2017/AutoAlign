@@ -5,6 +5,7 @@ Private Const AA_PLAN_BOUNDS_TOLERANCE_MM As Double = 0.001
 Private Const AA_MARK_TOLERANCE_MM As Double = 0.2
 Private Const AA_SHIFT_STEP_MM As Double = 0.2
 Private Const AA_MAX_SHIFT_PROBES_PER_AREA As Long = 50000
+Private Const AA_MAX_SHIFT_CACHE_ENTRIES As Long = 32768
 Private Const AA_MAX_OBJECTS_PER_SOURCE As Long = 5000
 Private Const AA_MAX_CANDIDATES_PER_AREA As Long = 50000
 Private Const AA_MAX_CENTERING_PASSES As Long = 20
@@ -72,7 +73,7 @@ Friend Function FinalizeMedium(ByVal plan As AALayoutPlan, ByVal settings As AAS
     Set forbidden = BuildForbidden(settings, sourceDocument)
     If settings.ModelMode = AA_MODEL_KISS_A Then Set nominal = NominalForbiddenFor(settings, sourceDocument)
     Set offsets = CenterOffsets(plan, settings)
-    safe = FindSafeOffsets(plan, offsets, forbidden, settings, nominal)
+    safe = FindSafeOffsets(plan, offsets, forbidden, settings, nominal, True)
     If safe Then safe = CenteredPlanFits(plan, offsets, forbidden, settings)
     For Each placement In plan.Placements
         shift = offsets(CStr(placement.AreaIndex))
@@ -861,7 +862,8 @@ End Function
 Private Function FindSafeOffsets(ByVal plan As AALayoutPlan, ByVal offsets As Object, _
                                  ByVal forbidden As Collection, _
                                  ByVal settings As AASettings, _
-                                 ByVal nominal As Collection) As Boolean
+                                 ByVal nominal As Collection, _
+                                 Optional ByVal reuseMarkChecks As Boolean = False) As Boolean
     Dim key As Variant
     Dim placement As AAPlacement
     Dim footprints As Collection
@@ -870,9 +872,11 @@ Private Function FindSafeOffsets(ByVal plan As AALayoutPlan, ByVal offsets As Ob
     Dim shift As Variant
     Dim dx As Double, dy As Double
     Dim allSafe As Boolean, found As Boolean, extended As Boolean, fullMark As Boolean
+    Dim markCache As Object
 
     allSafe = True
     For Each key In offsets.Keys
+        Set markCache = Nothing
         Set footprints = New Collection
         Set markFootprints = New Collection
         For Each placement In plan.Placements
@@ -888,13 +892,17 @@ Private Function FindSafeOffsets(ByVal plan As AALayoutPlan, ByVal offsets As Ob
         Next placement
         found = False: extended = False
         If Not nominal Is Nothing Then
-            found = FindAreaShift(footprints, markFootprints, nominal, settings, dx, dy, 0#)
+            ' Hanya dua pencarian nominal memakai geometri dan mark yang sama.
+            ' Cache lokal per area; tidak bertahan setelah translasi/fallback.
+            If reuseMarkChecks Then Set markCache = NewShiftMarkCache()
+            found = FindAreaShift(footprints, markFootprints, nominal, settings, dx, dy, 0#, markCache)
             If Not found Then
                 found = FindAreaShift(footprints, markFootprints, nominal, settings, _
-                    dx, dy, settings.MarkShiftAllowanceMM)
+                    dx, dy, settings.MarkShiftAllowanceMM, markCache)
                 extended = found
             End If
         End If
+        Set markCache = Nothing
         fullMark = found And Not nominal Is Nothing
         If Not found Then found = FindAreaShift(footprints, markFootprints, forbidden, settings, dx, dy, 0#)
         If found Then
@@ -918,19 +926,23 @@ Private Function FindAreaShift(ByVal footprints As Collection, _
                                ByVal markFootprints As Collection, _
                                ByVal forbidden As Collection, ByVal settings As AASettings, _
                                ByRef bestX As Double, ByRef bestY As Double, _
-                               ByVal areaAllowance As Double) As Boolean
+                               ByVal areaAllowance As Double, _
+                               Optional ByVal markCache As Object = Nothing) As Boolean
     Dim footprint As AAGeometry
     Dim leftX As Double, bottomY As Double, rightX As Double, topY As Double
     Dim xs() As Double, ys() As Double
     Dim i As Long, j As Long, probes As Long
     Dim distance As Double, bestDistance As Double
     Dim found As Boolean
+    Dim perfStarted As Double, cacheHitsBefore As Long
 
+    perfStarted = AADebugPerfBegin()
+    cacheHitsBefore = ShiftMarkCacheHits(markCache)
     bestX = 0#
     bestY = 0#
-    If AreaShiftFits(footprints, markFootprints, 0#, 0#, forbidden, settings, 0#) Then
-        FindAreaShift = True
-        Exit Function
+    If AreaShiftFits(footprints, markFootprints, 0#, 0#, forbidden, settings, 0#, markCache) Then
+        found = True
+        GoTo SearchFinished
     End If
     Set footprint = footprints(1)
     leftX = footprint.LeftX
@@ -946,7 +958,7 @@ Private Function FindAreaShift(ByVal footprints As Collection, _
     ' Ruang ini hanya untuk translasi: ukuran kelompok sendiri wajib muat
     ' di area nominal, sehingga allowance tidak membuka kapasitas baru.
     If rightX - leftX > settings.AreaWidthMM + 2# * AA_EDGE_TOLERANCE_MM Or _
-       topY - bottomY > settings.AreaHeightMM + 2# * AA_EDGE_TOLERANCE_MM Then Exit Function
+       topY - bottomY > settings.AreaHeightMM + 2# * AA_EDGE_TOLERANCE_MM Then GoTo SearchFinished
     ' Kandidat 0,2 mm dan posisi tepat di batas ruang gerak; urut jarak dari pusat.
     BuildShiftValues -leftX - areaAllowance, settings.AreaWidthMM - rightX + areaAllowance, xs
     BuildShiftValues -bottomY - areaAllowance, settings.AreaHeightMM - topY + areaAllowance, ys
@@ -959,7 +971,7 @@ Private Function FindAreaShift(ByVal footprints As Collection, _
             If distance >= bestDistance Then Exit For
             probes = probes + 1
             If probes > AA_MAX_SHIFT_PROBES_PER_AREA Then GoTo SearchFinished
-            If AreaShiftFits(footprints, markFootprints, xs(i), ys(j), forbidden, settings, areaAllowance) Then
+            If AreaShiftFits(footprints, markFootprints, xs(i), ys(j), forbidden, settings, areaAllowance, markCache) Then
                 found = True
                 bestDistance = distance
                 bestX = xs(i)
@@ -969,6 +981,12 @@ Private Function FindAreaShift(ByVal footprints As Collection, _
     Next i
 SearchFinished:
     FindAreaShift = found
+    If AADebugEnabled Then AADebugWrite "Mark search", "allowance=" & CStr(areaAllowance) & _
+        "; objects=" & CStr(footprints.Count) & "; marks=" & CStr(forbidden.Count) & _
+        "; probes=" & CStr(probes) & "; found=" & CStr(found) & _
+        "; cache=" & CStr(Not markCache Is Nothing) & _
+        "; hits=" & CStr(ShiftMarkCacheHits(markCache) - cacheHitsBefore)
+    AADebugStageEnd "Mark shift search", perfStarted
 End Function
 
 Private Sub BuildShiftValues(ByVal minimum As Double, ByVal maximum As Double, _
@@ -1018,7 +1036,8 @@ Private Function AreaShiftFits(ByVal footprints As Collection, _
                                ByVal markFootprints As Collection, _
                                ByVal dx As Double, ByVal dy As Double, _
                                ByVal forbidden As Collection, _
-                               ByVal settings As AASettings, ByVal areaAllowance As Double) As Boolean
+                               ByVal settings As AASettings, ByVal areaAllowance As Double, _
+                               Optional ByVal markCache As Object = Nothing) As Boolean
     Dim footprint As AAGeometry
 
     For Each footprint In footprints
@@ -1027,10 +1046,67 @@ Private Function AreaShiftFits(ByVal footprints As Collection, _
            footprint.RightX + dx > settings.AreaWidthMM + areaAllowance + AA_EDGE_TOLERANCE_MM Or _
            footprint.TopY + dy > settings.AreaHeightMM + areaAllowance + AA_EDGE_TOLERANCE_MM Then Exit Function
     Next footprint
+    ' Batas area selalu diperiksa ulang: allowance tidak menjadi bagian cache mark.
+    AreaShiftFits = ShiftMarksFit(markFootprints, dx, dy, forbidden, markCache)
+End Function
+
+Private Function NewShiftMarkCache() As Object
+    Dim result As Object
+    On Error Resume Next
+    Set result = CreateObject("Scripting.Dictionary")
+    result.Add "hits", 0&
+    If Err.Number <> 0 Then Set result = Nothing
+    Err.Clear
+    Set NewShiftMarkCache = result
+End Function
+
+Private Function ShiftMarkCacheHits(ByVal cache As Object) As Long
+    On Error Resume Next
+    If Not cache Is Nothing Then ShiftMarkCacheHits = CLng(cache.Item("hits"))
+    Err.Clear
+End Function
+
+' Cache hanya boleh dipakai selama markFootprints dan forbidden tetap sama.
+' String memilih entry; dua Double asli wajib sama persis sebelum reuse.
+Private Function ShiftMarksFit(ByVal markFootprints As Collection, _
+                               ByVal dx As Double, ByVal dy As Double, _
+                               ByVal forbidden As Collection, ByVal cache As Object) As Boolean
+    Dim footprint As AAGeometry, key As String, entry As Variant
+    Dim cachedX As Double, cachedY As Double, cachedResult As Boolean
+    Dim hit As Boolean, result As Boolean
+    If Not cache Is Nothing Then
+        key = CStr(dx) & "|" & CStr(dy)
+        ' Kegagalan cache kembali ke predicate; error geometri tidak ditelan.
+        On Error Resume Next
+        If cache.Exists(key) Then entry = cache.Item(key)
+        If IsArray(entry) Then
+            cachedX = CDbl(entry(0)): cachedY = CDbl(entry(1)): cachedResult = CBool(entry(2))
+            If Err.Number = 0 Then hit = (cachedX = dx And cachedY = dy)
+        End If
+        If hit Then cache.Item("hits") = ShiftMarkCacheHits(cache) + 1
+        Err.Clear
+        On Error GoTo 0
+        If hit Then
+            ShiftMarksFit = cachedResult
+            Exit Function
+        End If
+    End If
+    result = True
     For Each footprint In markFootprints
-        If Not MarksFit(footprint, dx, dy, forbidden) Then Exit Function
+        If Not MarksFit(footprint, dx, dy, forbidden) Then
+            result = False
+            Exit For
+        End If
     Next footprint
-    AreaShiftFits = True
+    If Not cache Is Nothing Then
+        On Error Resume Next
+        ' Termasuk satu entry statistik; penuh tetap melayani hit yang ada.
+        If cache.Exists(key) Or cache.Count <= AA_MAX_SHIFT_CACHE_ENTRIES Then _
+            cache.Item(key) = Array(dx, dy, result)
+        Err.Clear
+        On Error GoTo 0
+    End If
+    ShiftMarksFit = result
 End Function
 
 Private Function ShiftedFootprint(ByVal placement As AAPlacement, _

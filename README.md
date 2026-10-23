@@ -478,6 +478,8 @@ AADebugOff          ' Matikan debug dan tutup file log
 
 Debug menyediakan informasi kandidat, waktu tahap Process, pemeriksaan gap/overlap, penempatan, dan snapshot memori proses CorelDRAW. `AADebugFileOn` juga menerima path file dan menambahkan log ke isi yang sudah ada.
 
+`Mark search` mencatat allowance, jumlah objek/mark, probe pencarian, hasil, dan pemakaian cache. `hits` menghitung hasil pemeriksaan mark pada koordinat yang persis sama yang dipakai ulang dalam pencarian tersebut. Pada finalisasi Medium KissA, cache berlaku per area untuk pencarian mark nominal tanpa/dengan allowance; batas area tetap diperiksa ulang. Cache tidak diteruskan ke mark bertoleransi atau area berikutnya. Waktu `Mark shift search` sudah termasuk dalam tahap pemanggilnya, sehingga tidak dijumlahkan lagi dengan waktu finalisasi atau Process.
+
 Pada pencarian kuota Medium, `Quota reject cache` mencatat pemeriksaan posisi gagal yang dipakai ulang (`hits`), pencarian tanpa kecocokan (`misses`), dan penggantian slot cache (`replacements`). Counter ini membantu membandingkan biaya trial pada kasus yang sama.
 
 `edge batches` mencatat pemakaian query indeks untuk kelompok segmen: `queries` adalah query gabungan, `prechecks` pemeriksaan awal per kelompok, dan `rechecks` verifikasi penolakan melalui query per segmen. `fallback cells/spread/dense` membedakan batas luas sel, pelebaran query, dan kepadatan kandidat; `fallback` juga mencakup kelompok yang terlalu pendek. `source edges` menghitung segmen sumber pada jalur tanpa fallback, termasuk pemeriksaan awal. `offered` adalah jumlah kandidat yang disediakan untuk pemeriksaan batch, bukan jumlah pasangan yang benar-benar dihitung jaraknya.

@@ -268,3 +268,6 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Optimasi kandidat Medium kalah jumlah]
 ~ Medium melewati pembentukan pola pasangan kompleks yang batas atas jumlah slotnya sudah kalah, serta finalisasi kandidat biasa yang kalah jumlah pada satu Design bebas non-rectangle. Kandidat berjumlah sama tetap dibandingkan penuh.
+
+[Pemeriksaan mark berulang saat finalisasi Medium]
+~ Medium KissA memakai ulang hasil pemeriksaan mark pada posisi identik ketika mencoba allowance dalam area yang sama. Batas area tetap diperiksa ulang; debug merinci waktu pencarian mark dan pemakaian hasil ulang.
