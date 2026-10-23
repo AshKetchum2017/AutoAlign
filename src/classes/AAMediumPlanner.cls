@@ -54,7 +54,8 @@ Private mGapCacheReady As Boolean, mGapCacheDisabled As Boolean
 Private mGapHits As Double, mGapMisses As Double, mGapBypasses As Double
 Private mGapCollisions As Double, mGapStored As Long
 
-' Hanya FillArea pada trial kapasitas: occupied tidak berubah kecuali append.
+' FillArea pada trial kapasitas atau Design bebas non-rectangle:
+' occupied tidak berubah kecuali append; cache berakhir sebelum finalisasi.
 ' Penolakan lama tetap benar setelah append; blocker pertama juga tetap sama.
 Private Const AA_QUOTA_REJECT_CACHE_SIZE As Long = 32749
 Private mRejectOrientations() As AARotationVariant, mRejectBlockers() As AAPlacement
@@ -900,13 +901,13 @@ Private Function BuildPass(ByRef models() As AAModel, ByRef designIndexes() As L
         If remaining > AA_MAX_OBJECTS_PER_SOURCE Then Err.Raise vbObjectError + 5210, _
             "AAMediumPlanner", "Quantity satu Design melebihi batas 5000 objek."
         If remaining < 0 Then
-            added = FillArea(result, models(index), index, cutIndex, areaIndex, _
+            added = FillFreeArea(result, models(index), index, cutIndex, areaIndex, _
                 occupied, forbidden, settings, AA_MAX_OBJECTS_PER_SOURCE, firstAngle, zigZag)
             If singleAreaOnly Then GoTo NextSource
             If added = 0 And occupied.Count > 0 Then
                 areaIndex = areaIndex + 1
                 Set occupied = New Collection
-                added = FillArea(result, models(index), index, cutIndex, areaIndex, _
+                added = FillFreeArea(result, models(index), index, cutIndex, areaIndex, _
                     occupied, forbidden, settings, AA_MAX_OBJECTS_PER_SOURCE, firstAngle, zigZag)
             End If
             If added = 0 Then Err.Raise vbObjectError + 5231, _
@@ -946,6 +947,45 @@ NextSource:
     If requested And result.DesignCount = 0 Then Err.Raise vbObjectError + 5233, _
         "AAMediumPlanner", "Tidak ada Design yang muat pada pencarian Medium."
     Set BuildPass = result
+End Function
+
+Private Function FillFreeArea(ByVal result As AALayoutPlan, ByVal model As AAModel, _
+                              ByVal designIndex As Long, ByVal cutIndex As Long, _
+                              ByVal areaIndex As Long, ByVal occupied As Collection, _
+                              ByVal forbidden As Collection, ByVal settings As AASettings, _
+                              ByVal limit As Long, ByVal firstAngle As Double, _
+                              ByVal zigZag As Boolean) As Long
+    Dim hitsBefore As Double, missesBefore As Double, replacementsBefore As Double
+    Dim errorNumber As Long, errorSource As String, errorDescription As String
+    Dim cacheActive As Boolean
+    If model.IsRectangle Then
+        FillFreeArea = FillArea(result, model, designIndex, cutIndex, areaIndex, _
+            occupied, forbidden, settings, limit, firstAngle, zigZag)
+        Exit Function
+    End If
+    hitsBefore = mRejectHits: missesBefore = mRejectMisses
+    replacementsBefore = mRejectCollisions
+    On Error GoTo FillFailed
+    BeginQuotaRejectCache occupied
+    cacheActive = Not mRejectOccupied Is Nothing
+    ' FillArea hanya menambah placement; tidak memindah blocker yang tersimpan.
+    FillFreeArea = FillArea(result, model, designIndex, cutIndex, areaIndex, _
+        occupied, forbidden, settings, limit, firstAngle, zigZag)
+    EndQuotaRejectCache
+    On Error GoTo 0
+    If AADebugEnabled Then AADebugWrite "Free fill reject cache", _
+        "design=" & CStr(designIndex) & "; area=" & CStr(areaIndex) & _
+        "; angle=" & CStr(firstAngle) & "; zigzag=" & CStr(zigZag) & _
+        "; active=" & CStr(cacheActive) & "; hits=" & Format$(mRejectHits - hitsBefore, "0") & _
+        "; misses=" & Format$(mRejectMisses - missesBefore, "0") & _
+        "; replacements=" & Format$(mRejectCollisions - replacementsBefore, "0")
+    Exit Function
+FillFailed:
+    errorNumber = Err.Number: errorSource = Err.Source: errorDescription = Err.Description
+    On Error Resume Next
+    EndQuotaRejectCache
+    On Error GoTo 0
+    Err.Raise errorNumber, errorSource, errorDescription
 End Function
 
 Private Function FillQuotaArea(ByVal key As String, ByVal result As AALayoutPlan, _
@@ -1605,6 +1645,7 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
     Dim candidate As AAPlacement, placed As AAPlacement
     Dim h As Double, v As Double, i As Long, probes As Long, angleBudget As Long, phase As Long
     Dim remainderOnly As Boolean, mainAngle As Double
+    Dim perfStarted As Double
     model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
     Set angles = AnglesFor(model, firstAngle)
     mainAngle = CDbl(angles(1))
@@ -1612,6 +1653,7 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
     ' Selesaikan pemindaian slot dasar untuk SEMUA rotasi terlebih dahulu.
     ' Batas probe hanya membatasi penyempurnaan, bukan kapasitas slot dasar.
     For phase = 0 To 1
+        perfStarted = AADebugPerfBegin()
         For Each angle In angles
             probes = 0
             Set orientation = model.RotationVariant(CDbl(angle))
@@ -1656,6 +1698,8 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
                 i = i + 1
             Loop
         Next angle
+        AADebugStageEnd "Medium fill phase=" & CStr(phase) & "; first angle=" & _
+            CStr(firstAngle) & "; zigzag=" & CStr(zigZag), perfStarted
     Next phase
 End Function
 
