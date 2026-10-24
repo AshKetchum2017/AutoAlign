@@ -20,7 +20,7 @@ Maximum mengutamakan jumlah objek dan pemanfaatan ruang yang layak diisi. Kerapi
 - Boleh memakai Design lain yang terdaftar untuk mengisi celah, sesuai konteks container dan aturan Quantity. Jangan mengambil Design kelompok lain untuk mengisi container `/n`.
 - Boleh menggeser objek dan mengganti orientasinya selama perencanaan.
 - Pasangan Design/Cut Line, template bersama, gap, mark, batas area dan margin Custom tetap harus valid.
-- Input mengikuti susunan pairing yang didukung AA. Dukungan campuran standalone/berpasangan atau beberapa kelompok berbagi Cut Line berbeda bukan bagian otomatis dari roadmap ini.
+- Input mengikuti pemetaan pasangan yang didukung AA. Beberapa kelompok berbagi Cut Line berbeda masuk perbaikan prasyarat Process di bawah. Campuran standalone/berpasangan tetap di luar scope; Optimize/Periksa Susunan untuk beberapa kelompok Cut bersama dijalankan per kelompok.
 - Perubahan Maximum tidak mengubah kontrak Minimum, Medium, Optimize, atau Periksa Susunan.
 
 ### Rotasi
@@ -59,6 +59,17 @@ Maximum mengutamakan jumlah objek dan pemanfaatan ruang yang layak diisi. Kerapi
 S9 menggabungkan hasil, tetapi pengukuran dan pengujian tetap dilakukan pada setiap scope. Tidak perlu mengimplementasikan seluruh roadmap dalam satu perubahan.
 
 ## 3. Scope implementasi
+
+### Prasyarat P0 — Regresi Process beberapa kelompok Cut bersama
+
+Kasus sumber: Design `/81`, `/80`, `/79` berbagi Cut `/32`, dan Design `/41` memakai Cut `/78`. Guard lama menolak pengulangan Cut ketika daftar memuat lebih dari satu Cut Line. Perbaikan source Process sudah disusun; compile VBE dan runtime masih perlu dikonfirmasi sebelum fondasi Maximum dilanjutkan.
+
+- [ ] Uji Minimum dan Medium: reuse template per Cut untuk Quantity biasa, termasuk Design pertama Quantity 0.
+- [ ] Uji `/n` lintas Cut dan kombinasi kelompok `/n` dengan Quantity biasa; pembagian jumlah dan pemisahan container tetap benar.
+- [ ] Periksa jumlah Cut fisik, rotasi per kelompok, gap, mark, bounds, laporan, Cancel dan satu Undo.
+- [ ] Pastikan input lama tetap bekerja dan Optimize/Periksa Susunan menolak struktur di luar cakupannya sebelum mutasi.
+
+**Gerbang lanjut:** sumber multi-Design/per-Cut menjadi acuan regresi yang valid untuk S0. Status dan bukti berada di `Development.log` workspace; perbaikan ini tidak mengaktifkan Maximum.
 
 ### S0 — Kontrak job dan acuan regresi
 
@@ -185,7 +196,7 @@ Pemeriksaan statis dan harness adaptasi membantu menguji kontrak, tetapi **tidak
 ## 5. Batas scope dan cara melanjutkan
 
 - Kerjakan satu scope dan tutup risiko konkretnya sebelum memperluas pencarian.
-- Titik mulai berikutnya adalah **S0–S1: kontrak job, snapshot dan baseline sumber**. Apply ulang bergantung pada fondasi ini.
+- Tutup prasyarat regresi Process beberapa kelompok Cut bersama, lalu lanjutkan **S0–S1: kontrak job, snapshot dan baseline sumber**. Apply ulang bergantung pada fondasi ini.
 - Untuk perubahan kode, periksa ulang active source, caller dan log terkait. Nama kontrol di roadmap adalah rencana; resource form belum diubah.
 - Optimasi MediumPlanner lanjutan yang ditunda tidak otomatis dilanjutkan oleh roadmap Maximum.
 - Migrasi ke AutomatonStudio, penyimpanan kandidat lintas sesi, preview penuh artwork dan pencarian tanpa batas bukan bagian implementasi awal.

@@ -59,10 +59,23 @@ Public Function CutPartnerTextAt(ByVal index As Long) As String
     End If
 End Function
 
-' Satu kontrak untuk Process, Optimize dan Check Layout. Urutan Cut hasil
-' mengikuti pasangan eksplisit Design; urutan pendaftaran tidak menentukan pasangan.
+' Urutan Cut mengikuti ID pasangan Design, bukan urutan pendaftaran.
+' Optimize/Check Layout mempertahankan tiga susunan input yang didukungnya.
 Public Sub BuildPairing(ByRef designIndexes() As Long, ByRef designCount As Long, _
                         ByRef cutIndexes() As Long, ByRef cutCount As Long)
+    BuildPairingCore designIndexes, designCount, cutIndexes, cutCount, False
+End Sub
+
+' Process: beberapa kelompok Cut bersama. Bila Cut lebih dari satu, referensi
+' Cut mengikuti setiap Design (boleh berulang), dengan cutCount=designCount.
+Public Sub BuildProcessPairing(ByRef designIndexes() As Long, ByRef designCount As Long, _
+                               ByRef cutIndexes() As Long, ByRef cutCount As Long)
+    BuildPairingCore designIndexes, designCount, cutIndexes, cutCount, True
+End Sub
+
+Private Sub BuildPairingCore(ByRef designIndexes() As Long, ByRef designCount As Long, _
+                             ByRef cutIndexes() As Long, ByRef cutCount As Long, _
+                             ByVal allowSharedGroups As Boolean)
     Dim i As Long, j As Long, id As Long, cutIndex As Long
     Dim used As Object
     designCount = 0: cutCount = 0
@@ -92,16 +105,21 @@ Public Sub BuildPairing(ByRef designIndexes() As Long, ByRef designCount As Long
             If cutIndex < 0 Then Err.Raise vbObjectError + 5433, "AAObjectStore", _
                 "Pasangan Design /" & CStr(mEntries(i).StaticID) & " hilang: Cut /" & CStr(id) & _
                 ". Pilih ulang pasangan atau pilih Tanpa Cut Line."
-            If cutCount > 1 And used.Exists(CStr(id)) Then Err.Raise vbObjectError + 5434, _
+            If cutCount > 1 And used.Exists(CStr(id)) And Not allowSharedGroups Then Err.Raise vbObjectError + 5434, _
                 "AAObjectStore", "Cut /" & CStr(id) & _
                 " dipakai lebih dari satu Design. Gunakan satu Cut Line bersama untuk semua Design, atau pasangan satu-per-satu."
             used(CStr(id)) = True
             If cutCount > 1 Then cutIndexes(j) = cutIndex
         End If
     Next j
-    If cutCount <> 0 And cutCount <> 1 And cutCount <> designCount Then _
+    If allowSharedGroups Then
+        If used.Count <> cutCount Then Err.Raise vbObjectError + 5435, "AAObjectStore", _
+            "Ada Cut Line yang tidak dipakai Design. Hapus Cut Line tersebut atau tetapkan pasangannya."
+        If cutCount > 1 Then cutCount = designCount
+    ElseIf cutCount <> 0 And cutCount <> 1 And cutCount <> designCount Then
         Err.Raise vbObjectError + 5435, "AAObjectStore", _
             "Gunakan tanpa Cut Line, satu Cut Line bersama, atau satu Cut Line berbeda per Design. Hapus Cut Line yang tidak dipakai dari daftar."
+    End If
 End Sub
 
 Public Property Get SourceDocument() As Document

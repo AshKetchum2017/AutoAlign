@@ -274,7 +274,6 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Reuse penolakan gap pada kandidat biasa Medium]
 ~ Medium memakai ulang penolakan gap identik selama pengisian area untuk Design non-rectangle dengan Quantity kosong. Urutan kandidat dan pemeriksaan penempatan tetap; debug merinci hit cache serta waktu fase slot dasar dan penyempurnaan.
-
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 2026-10-24
 [Profil biaya fase Medium]
@@ -282,3 +281,6 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Reuse gap berpasangan pada pengisian bebas Medium]
 ~ Kandidat biasa non-rectangle dengan Quantity kosong memakai ulang pemeriksaan gap pasangan identik dalam satu pengisian area. Pemeriksaan terhadap tetangga baru tetap berjalan; debug mencatat pemakaian cache dan memisahkan biaya sort dari persiapan slot.
+
+[Beberapa kelompok Cut bersama pada Process]
++ Minimum/Medium mendukung beberapa kelompok Design yang masing-masing berbagi Cut Line sendiri. Template dan irisan rotasi diproses per Cut; Quantity /n tetap boleh lintas Cut Line. Optimize/Periksa Susunan untuk struktur ini dijalankan per kelompok Cut.

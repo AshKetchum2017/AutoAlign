@@ -27,6 +27,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim designCount As Long
     Dim layoutDesignCount As Long
     Dim cutCount As Long
+    Dim cutSourceCount As Long, hasSharedCutGroups As Boolean
     Dim entryIndex As Long
     Dim roleIndex As Long
     Dim cutIndex As Long
@@ -57,6 +58,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim hasQuantityGroups As Boolean
     Dim perfStarted As Double, perfStage As String
     Dim productionDraft As AAProductionReport, startedAt As Date
+    Dim cutModels As Object, cutKey As String, cutModelIndex As Long
 
     Set mProductionReport = Nothing
     startedAt = Now
@@ -127,12 +129,14 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
             "Layer Obj. ID: /" & CStr(objects.StaticIDAt(entryIndex)) & _
             " tidak dapat diedit."
         quantities(entryIndex) = objects.QuantityAt(entryIndex)
+        If objects.RoleAt(entryIndex) = AA_ROLE_CUT_LINE Then cutSourceCount = cutSourceCount + 1
     Next entryIndex
     operation = "memeriksa pasangan Design dan Cut Line"
-    objects.BuildPairing designIndexes, designCount, cutIndexes, cutCount
+    objects.BuildProcessPairing designIndexes, designCount, cutIndexes, cutCount
     If designCount = 0 Then Err.Raise vbObjectError + 5318, _
         "AAProcessEngine", "Process memerlukan sedikitnya satu Design."
-    AADebugWrite "Model", "Design=" & CStr(designCount) & " Cut=" & CStr(cutCount)
+    AADebugWrite "Model", "Design=" & CStr(designCount) & " Cut=" & CStr(cutSourceCount)
+    hasSharedCutGroups = HasSharedCutReferences(cutIndexes, cutCount)
 
     operation = "memulai CommandGroup"
     previousUnit = doc.Unit
@@ -155,6 +159,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     perfStage = "Prepare geometry"
     perfStarted = AADebugPerfBegin()
     AAProgressStage "Membaca geometri", "Design dan Cut Line", 0, designCount
+    Set cutModels = CreateObject("Scripting.Dictionary")
     For roleIndex = 0 To designCount - 1
         AAProgressStep roleIndex, designCount
         entryIndex = designIndexes(roleIndex)
@@ -177,15 +182,23 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         AADebugWrite "Rotation", "Design ID=" & CStr(objects.StaticIDAt(entryIndex)) & _
             "; pilihan=" & AARotationText(objects.RotationModeAt(entryIndex))
         AADebugModel entryIndex, models(entryIndex), quantities(entryIndex)
-        If cutCount = 1 And roleIndex > 0 Then
-            If Not models(entryIndex).CanShareCutWith( _
-                   models(designIndexes(0))) Then Err.Raise _
-                vbObjectError + 5326, "AAProcessEngine", _
-                "Satu Cut Line bersama memerlukan bentuk Design yang sama dan selisih ukuran yang memenuhi batas 2 mm. Gunakan pasangan Cut Line masing-masing."
+        If cutIndex >= 0 Then
+            cutKey = CStr(cutIndex)
+            If cutModels.Exists(cutKey) Then
+                cutModelIndex = CLng(cutModels(cutKey))
+                If Not models(entryIndex).CanShareCutWith(models(cutModelIndex)) Then Err.Raise _
+                    vbObjectError + 5326, "AAProcessEngine", _
+                    "Design yang memakai Cut /" & CStr(objects.StaticIDAt(cutIndex)) & _
+                    " bersama memerlukan bentuk yang sama dan selisih ukuran dalam batas 2 mm. Gunakan pasangan Cut Line masing-masing."
+            Else
+                cutModels.Add cutKey, entryIndex
+            End If
         End If
     Next roleIndex
 
     If cutCount = 1 Then RestrictSharedCutRotations models, designIndexes, designCount, quantities
+    If hasSharedCutGroups Then RestrictCutGroupRotations models, designIndexes, designCount, _
+        cutIndexes, quantities
     ReDim layoutDesignIndexes(0 To designCount - 1)
     AADebugStageEnd perfStage, perfStarted
     AADebugMemory "After prepare geometry"
@@ -215,6 +228,9 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         operation = "merencanakan kelompok Quantity"
         Set plan = BuildQuantityGroups(objects, models, designIndexes, designCount, _
             cutIndexes, cutCount, quantities, settings, doc, layoutMode, planner)
+    ElseIf hasSharedCutGroups Then
+        Set plan = BuildLegacyCutGroups(models, designIndexes, designCount, cutIndexes, _
+            quantities, settings, doc, layoutMode, planner)
     ElseIf layoutMode = AA_MODE_MEDIUM Then
         Set plan = planner.BuildMedium(models, layoutDesignIndexes, layoutDesignCount, _
             cutIndexes, cutCount, quantities, settings, doc)
@@ -423,6 +439,121 @@ Private Function FindSelectionShape(ByVal parent As Object, ByVal staticID As Lo
     Next candidate
 End Function
 
+Private Function HasSharedCutReferences(ByRef cutIndexes() As Long, ByVal cutCount As Long) As Boolean
+    Dim seen As Object, i As Long, key As String
+    If cutCount < 2 Then Exit Function
+    Set seen = CreateObject("Scripting.Dictionary")
+    For i = 0 To cutCount - 1
+        key = CStr(cutIndexes(i))
+        If seen.Exists(key) Then
+            HasSharedCutReferences = True
+            Exit Function
+        End If
+        seen.Add key, True
+    Next i
+End Function
+
+' Referensi Cut sudah sejajar dengan setiap Design; urutan kelompok mengikuti
+' kemunculan pertama dalam daftar, bukan urutan key Dictionary.
+Private Function GroupDesignsByCut(ByRef designIndexes() As Long, ByVal designCount As Long, _
+                                   ByRef cutIndexes() As Long, ByRef cutOrder As Collection) As Object
+    Dim groups As Object, members As Collection, i As Long, key As String
+    Set groups = CreateObject("Scripting.Dictionary")
+    Set cutOrder = New Collection
+    For i = 0 To designCount - 1
+        key = CStr(cutIndexes(i))
+        If Not groups.Exists(key) Then
+            Set members = New Collection
+            groups.Add key, members
+            cutOrder.Add cutIndexes(i)
+        End If
+        Set members = groups(key)
+        members.Add designIndexes(i)
+    Next i
+    Set GroupDesignsByCut = groups
+End Function
+
+Private Sub RestrictCutGroupRotations(ByRef models() As AAModel, _
+                                      ByRef designIndexes() As Long, ByVal designCount As Long, _
+                                      ByRef cutIndexes() As Long, ByRef quantities() As Long)
+    Dim groups As Object, cutOrder As Collection, members As Collection, key As Variant
+    Dim selected() As Long, i As Long
+    Set groups = GroupDesignsByCut(designIndexes, designCount, cutIndexes, cutOrder)
+    For Each key In cutOrder
+        Set members = groups(CStr(key))
+        If members.Count > 1 Then
+            ReDim selected(0 To members.Count - 1)
+            For i = 0 To members.Count - 1
+                selected(i) = CLng(members(i + 1))
+            Next i
+            RestrictSharedCutRotations models, selected, members.Count, quantities
+        End If
+    Next key
+End Sub
+
+Private Function BuildLegacyLayout(ByRef models() As AAModel, _
+                                    ByRef designIndexes() As Long, ByVal designCount As Long, _
+                                    ByRef cutIndexes() As Long, ByVal cutCount As Long, _
+                                    ByRef quantities() As Long, ByVal settings As AASettings, _
+                                    ByVal sourceDocument As Document, ByVal layoutMode As Long, _
+                                    ByVal planner As AAPlanner, ByRef cutOwner As Long) As AALayoutPlan
+    Dim layoutDesigns() As Long, layoutCount As Long, i As Long, result As AALayoutPlan
+    ReDim layoutDesigns(0 To designCount - 1)
+    layoutCount = designCount: cutOwner = -1
+    For i = 0 To designCount - 1
+        layoutDesigns(i) = designIndexes(i)
+    Next i
+    If cutCount = 1 And designCount > 1 Then
+        For i = 0 To designCount - 1
+            If quantities(designIndexes(i)) <> 0 Then
+                layoutDesigns(0) = designIndexes(i): layoutCount = 1
+                Exit For
+            End If
+        Next i
+    End If
+    If layoutMode = AA_MODE_MEDIUM Then
+        Set result = planner.BuildMedium(models, layoutDesigns, layoutCount, cutIndexes, _
+            cutCount, quantities, settings, sourceDocument)
+    Else
+        Set result = planner.BuildMinimum(models, layoutDesigns, layoutCount, cutIndexes, _
+            cutCount, quantities, settings, sourceDocument)
+    End If
+    If cutCount = 1 And designCount > 1 And result.DesignCount > 0 Then _
+        Set result = ShareCutLayout(result, models, designIndexes, designCount, quantities, _
+            planner, settings, sourceDocument, cutOwner)
+    Set BuildLegacyLayout = result
+End Function
+
+Private Function BuildLegacyCutGroups(ByRef models() As AAModel, _
+                                       ByRef designIndexes() As Long, ByVal designCount As Long, _
+                                       ByRef cutIndexes() As Long, ByRef quantities() As Long, _
+                                       ByVal settings As AASettings, ByVal sourceDocument As Document, _
+                                       ByVal layoutMode As Long, ByVal planner As AAPlanner) As AALayoutPlan
+    Dim groups As Object, cutOrder As Collection, members As Collection, key As Variant
+    Dim selected() As Long, oneCut(0 To 0) As Long, i As Long, cutOwner As Long
+    Dim result As AALayoutPlan, part As AALayoutPlan
+    Set groups = GroupDesignsByCut(designIndexes, designCount, cutIndexes, cutOrder)
+    Set result = New AALayoutPlan
+    result.Configure layoutMode: result.SetRegularPattern True
+    For Each key In cutOrder
+        AAProgressPulse
+        Set members = groups(CStr(key))
+        ReDim selected(0 To members.Count - 1)
+        For i = 0 To members.Count - 1
+            selected(i) = CLng(members(i + 1))
+        Next i
+        oneCut(0) = CLng(key)
+        AADebugWrite "Pair group", "Cut index=" & CStr(key) & "; Design=" & CStr(members.Count)
+        Set part = BuildLegacyLayout(models, selected, members.Count, oneCut, 1, _
+            quantities, settings, sourceDocument, layoutMode, planner, cutOwner)
+        AppendQuantityPlan result, part, cutOwner
+    Next key
+    SuppressDuplicateCutTemplates result
+    If Not planner.FinalPlanFits(result, settings, sourceDocument) Then Err.Raise _
+        vbObjectError + 5331, "AAProcessEngine", "Kelompok Cut Line tidak memenuhi batas area atau mark."
+    Set BuildLegacyCutGroups = result
+End Function
+
 Private Function BuildQuantityGroups(ByVal objects As AAObjectStore, ByRef models() As AAModel, _
                                      ByRef designIndexes() As Long, ByVal designCount As Long, _
                                      ByRef cutIndexes() As Long, ByVal cutCount As Long, _
@@ -430,10 +561,10 @@ Private Function BuildQuantityGroups(ByVal objects As AAObjectStore, ByRef model
                                      ByVal sourceDocument As Document, ByVal layoutMode As Long, _
                                      ByVal planner As AAPlanner) As AALayoutPlan
     Dim groups As Object, groupNumbers() As Long, keys As Variant
-    Dim selectedDesigns() As Long, selectedCuts() As Long, layoutDesigns() As Long
+    Dim selectedDesigns() As Long, selectedCuts() As Long
     Dim result As AALayoutPlan, part As AALayoutPlan, balanced As AAQuantityPlanner
     Dim roleIndex As Long, i As Long, j As Long, groupNumber As Long, swap As Long
-    Dim selectedCount As Long, selectedCutCount As Long, layoutCount As Long, cutOwner As Long
+    Dim selectedCount As Long, selectedCutCount As Long, cutOwner As Long, sameCut As Boolean
     Set groups = CreateObject("Scripting.Dictionary")
     For roleIndex = 0 To designCount - 1
         groupNumber = objects.QuantityGroupAt(designIndexes(roleIndex))
@@ -484,6 +615,11 @@ Private Function BuildQuantityGroups(ByVal objects As AAObjectStore, ByRef model
             selectedCutCount = 1
         ElseIf cutCount > 1 Then
             selectedCutCount = selectedCount
+            sameCut = True
+            For j = 1 To selectedCount - 1
+                If selectedCuts(j) <> selectedCuts(0) Then sameCut = False
+            Next j
+            If sameCut Then selectedCutCount = 1
         End If
         If groupNumber > 0 Then
             AADebugWrite "Quantity", "group=/" & CStr(groupNumber) & "; members=" & CStr(selectedCount)
@@ -497,35 +633,18 @@ Private Function BuildQuantityGroups(ByVal objects As AAObjectStore, ByRef model
             If part.AreaCount <> 1 Then Err.Raise vbObjectError + 5334, "AAProcessEngine", _
                 "Kelompok /" & CStr(groupNumber) & " harus menghasilkan tepat satu container."
         Else
-            ReDim layoutDesigns(0 To selectedCount - 1)
-            layoutCount = selectedCount
-            For j = 0 To selectedCount - 1
-                layoutDesigns(j) = selectedDesigns(j)
-            Next j
-            If selectedCutCount = 1 And selectedCount > 1 Then
-                For j = 0 To selectedCount - 1
-                    If quantities(selectedDesigns(j)) <> 0 Then
-                        layoutDesigns(0) = selectedDesigns(j)
-                        layoutCount = 1
-                        Exit For
-                    End If
-                Next j
-            End If
-            If layoutMode = AA_MODE_MEDIUM Then
-                Set part = planner.BuildMedium(models, layoutDesigns, layoutCount, selectedCuts, _
-                    selectedCutCount, quantities, settings, sourceDocument)
+            If HasSharedCutReferences(selectedCuts, selectedCutCount) Then
+                Set part = BuildLegacyCutGroups(models, selectedDesigns, selectedCount, selectedCuts, _
+                    quantities, settings, sourceDocument, layoutMode, planner)
             Else
-                Set part = planner.BuildMinimum(models, layoutDesigns, layoutCount, selectedCuts, _
-                    selectedCutCount, quantities, settings, sourceDocument)
+                Set part = BuildLegacyLayout(models, selectedDesigns, selectedCount, selectedCuts, _
+                    selectedCutCount, quantities, settings, sourceDocument, layoutMode, planner, cutOwner)
             End If
-            If selectedCutCount = 1 And selectedCount > 1 And part.DesignCount > 0 Then _
-                Set part = ShareCutLayout(part, models, selectedDesigns, selectedCount, quantities, _
-                    planner, settings, sourceDocument, cutOwner)
         End If
         AppendQuantityPlan result, part, cutOwner
 NextGroup:
     Next i
-    If cutCount = 1 Then SuppressDuplicateCutTemplates result
+    If cutCount > 0 Then SuppressDuplicateCutTemplates result
     If Not planner.FinalPlanFits(result, settings, sourceDocument) Then Err.Raise _
         vbObjectError + 5331, "AAProcessEngine", "Kelompok Quantity tidak memenuhi batas area atau mark."
     Set BuildQuantityGroups = result
