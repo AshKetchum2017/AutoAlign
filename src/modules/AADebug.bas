@@ -15,6 +15,10 @@ Public Const AA_PERF_GAP As Long = 2
 Public Const AA_PERF_OVERLAP As Long = 3
 Public Const AA_PERF_PLACEMENT As Long = 4
 Public Const AA_PERF_WELD As Long = 5
+Public Const AA_PERF_SLOT_PREP As Long = 6
+Public Const AA_PERF_SHIFT_PREP As Long = 7
+Public Const AA_PERF_SLOT_SORT As Long = 8
+Private Const AA_PERF_KIND_COUNT As Long = 8
 ' Flag dibaca langsung oleh fungsi geometri yang sering dipanggil.
 Public AADebugProfiling As Boolean
 ' Aktif hanya saat replay diagnostik sinkron; tidak memengaruhi keputusan gap.
@@ -26,7 +30,7 @@ Public AADebugEdgeBatchQueries As Double, AADebugEdgeBatchRechecks As Double
 Public AADebugEdgeBatchPrechecks As Double
 Public AADebugEdgeBatchEdges As Double, AADebugEdgeBatchOffered As Double
 Public AADebugEdgeBatchWide As Double, AADebugEdgeBatchSpread As Double, AADebugEdgeBatchDense As Double
-Private mPerfSeconds(1 To 5) As Double, mPerfCalls(1 To 5) As Double
+Private mPerfSeconds(1 To AA_PERF_KIND_COUNT) As Double, mPerfCalls(1 To AA_PERF_KIND_COUNT) As Double
 Private mClockFrequency As Currency, mClockStart As Currency
 Private mClockTimerStart As Double, mClockUsesCounter As Boolean
 Private mCandidateStarted As Double, mCandidateTiming As Boolean
@@ -249,7 +253,7 @@ Private Sub AADebugPerfReset()
     On Error Resume Next
     AADebugProfiling = False
     mCandidateTiming = False
-    For i = 1 To 5
+    For i = 1 To AA_PERF_KIND_COUNT
         mPerfCalls(i) = 0#: mPerfSeconds(i) = 0#
     Next i
     AADebugQueryCacheHits = 0#: AADebugQueryCacheMisses = 0#
@@ -323,6 +327,51 @@ Public Sub AADebugStageEnd(ByVal label As String, ByVal started As Double)
     AADebugWrite "Perf", label & "=" & Format$(elapsed, "0.000") & " s"
 End Sub
 
+' Snapshot angka per scope: tidak mengubah counter global atau menahan object.
+Public Function AADebugPerfSnapshot() As Variant
+    Dim values() As Double, i As Long
+    If Not AADebugProfiling Then Exit Function
+    On Error GoTo SnapshotUnavailable
+    ReDim values(0 To AA_PERF_KIND_COUNT * 2 - 1)
+    For i = 1 To AA_PERF_KIND_COUNT
+        values((i - 1) * 2) = mPerfCalls(i)
+        values((i - 1) * 2 + 1) = mPerfSeconds(i)
+    Next i
+    AADebugPerfSnapshot = values
+    Exit Function
+SnapshotUnavailable:
+    Err.Clear
+End Function
+
+Public Sub AADebugPerfDelta(ByVal label As String, ByVal snapshot As Variant)
+    Dim i As Long, counterLabel As String, message As String
+    If Not AADebugProfiling Then Exit Sub
+    If Not IsArray(snapshot) Then Exit Sub
+    On Error GoTo InvalidSnapshot
+    If LBound(snapshot) <> 0 Or UBound(snapshot) <> AA_PERF_KIND_COUNT * 2 - 1 Then Exit Sub
+    message = label
+    For i = 1 To AA_PERF_KIND_COUNT
+        Select Case i
+            Case AA_PERF_CONTOUR: counterLabel = "contour"
+            Case AA_PERF_GAP: counterLabel = "gap"
+            Case AA_PERF_OVERLAP: counterLabel = "overlap"
+            Case AA_PERF_PLACEMENT: counterLabel = "placement"
+            Case AA_PERF_WELD: counterLabel = "weld"
+            Case AA_PERF_SLOT_PREP: counterLabel = "slot prep"
+            Case AA_PERF_SHIFT_PREP: counterLabel = "shift prep"
+            Case AA_PERF_SLOT_SORT: counterLabel = "slot sort"
+        End Select
+        message = message & "; " & counterLabel & " calls=" & _
+            Format$(mPerfCalls(i) - CDbl(snapshot((i - 1) * 2)), "0")
+        If i <> AA_PERF_WELD Then message = message & "; " & counterLabel & " s=" & _
+            Format$(mPerfSeconds(i) - CDbl(snapshot((i - 1) * 2 + 1)), "0.000")
+    Next i
+    AADebugWrite "Phase work", message
+    Exit Sub
+InvalidSnapshot:
+    Err.Clear
+End Sub
+
 Public Sub AADebugContourCaptured(ByVal nodes As Long, ByVal edges As Long, ByVal flatnessMM As Double)
     If Not AADebugProfiling Then Exit Sub
     AADebugWrite "Contour", "nodes=" & CStr(nodes) & "; edges=" & CStr(edges) & _
@@ -361,13 +410,16 @@ Public Sub AADebugPerfFinish(ByVal status As String)
     If Not AADebugProfiling Then Exit Sub
     On Error Resume Next
     AADebugStageEnd "Process total (" & status & ")", 0#
-    For i = 1 To 5
+    For i = 1 To AA_PERF_KIND_COUNT
         Select Case i
             Case AA_PERF_CONTOUR: label = "contour capture"
             Case AA_PERF_GAP: label = "gap checks"
             Case AA_PERF_OVERLAP: label = "curve overlap"
             Case AA_PERF_PLACEMENT: label = "placements"
             Case AA_PERF_WELD: label = "overlap WeldWith"
+            Case AA_PERF_SLOT_PREP: label = "initial slot preparation"
+            Case AA_PERF_SHIFT_PREP: label = "refinement shift preparation"
+            Case AA_PERF_SLOT_SORT: label = "initial slot sorting (inside preparation)"
         End Select
         If i = AA_PERF_WELD Then
             AADebugWrite "Perf", label & ": calls=" & Format$(mPerfCalls(i), "0")

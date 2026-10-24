@@ -40,7 +40,8 @@ Private mQuotaFills As Object
 Private mCachedPlacements As Long
 Private mFillHits As Long, mFillMisses As Long, mFillReused As Long
 
-' Keputusan gap identik selama satu kelompok quota; kontur rotasi immutable.
+' Keputusan gap identik selama satu kelompok quota atau satu FillFreeArea;
+' kontur rotasi immutable. Fill bebas tidak mengaktifkan snapshot quota.
 ' Posisi absolut dibandingkan persis agar pembulatan translasi tetap diperiksa.
 Private Const AA_QUOTA_GAP_BUCKETS As Long = 65521
 Private Const AA_QUOTA_GAP_WAYS As Long = 4
@@ -53,6 +54,7 @@ Private mGapNextVictim() As Byte
 Private mGapCacheReady As Boolean, mGapCacheDisabled As Boolean
 Private mGapHits As Double, mGapMisses As Double, mGapBypasses As Double
 Private mGapCollisions As Double, mGapStored As Long
+Private mFreeGapCache As Boolean
 
 ' FillArea pada trial kapasitas atau Design bebas non-rectangle:
 ' occupied tidak berubah kecuali append; cache berakhir sebelum finalisasi.
@@ -68,10 +70,17 @@ Friend Sub BeginQuotaSearch()
     EndQuotaRejectCache
     Set mQuotaFills = CreateObject("Scripting.Dictionary")
     mCachedPlacements = 0
+    ClearGapCache
+    mGapCacheDisabled = False
+    Set mOccupiedIndex = Nothing
+End Sub
+
+Private Sub ClearGapCache()
+    ' Kegagalan alokasi tetap disabled sampai planner/group baru.
+    mFreeGapCache = False
     Erase mGapOrientations: Erase mGapOthers: Erase mGapKeys: Erase mGapResults
     Erase mGapNextVictim
-    mGapCacheReady = False: mGapCacheDisabled = False: mGapStored = 0
-    Set mOccupiedIndex = Nothing
+    mGapCacheReady = False: mGapStored = 0
 End Sub
 
 Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, _
@@ -956,6 +965,8 @@ Private Function FillFreeArea(ByVal result As AALayoutPlan, ByVal model As AAMod
                               ByVal limit As Long, ByVal firstAngle As Double, _
                               ByVal zigZag As Boolean) As Long
     Dim hitsBefore As Double, missesBefore As Double, replacementsBefore As Double
+    Dim gapHitsBefore As Double, gapMissesBefore As Double, gapBypassesBefore As Double
+    Dim gapReplacementsBefore As Double, gapStored As Long, ownsGapCache As Boolean
     Dim errorNumber As Long, errorSource As String, errorDescription As String
     Dim cacheActive As Boolean
     If model.IsRectangle Then
@@ -965,13 +976,22 @@ Private Function FillFreeArea(ByVal result As AALayoutPlan, ByVal model As AAMod
     End If
     hitsBefore = mRejectHits: missesBefore = mRejectMisses
     replacementsBefore = mRejectCollisions
+    gapHitsBefore = mGapHits: gapMissesBefore = mGapMisses
+    gapBypassesBefore = mGapBypasses: gapReplacementsBefore = mGapCollisions
+    ownsGapCache = (mQuotaFills Is Nothing)
     On Error GoTo FillFailed
+    If ownsGapCache Then
+        ClearGapCache
+        mFreeGapCache = True
+    End If
     BeginQuotaRejectCache occupied
     cacheActive = Not mRejectOccupied Is Nothing
     ' FillArea hanya menambah placement; tidak memindah blocker yang tersimpan.
     FillFreeArea = FillArea(result, model, designIndex, cutIndex, areaIndex, _
         occupied, forbidden, settings, limit, firstAngle, zigZag)
     EndQuotaRejectCache
+    gapStored = mGapStored
+    If ownsGapCache Then ClearGapCache
     On Error GoTo 0
     If AADebugEnabled Then AADebugWrite "Free fill reject cache", _
         "design=" & CStr(designIndex) & "; area=" & CStr(areaIndex) & _
@@ -979,11 +999,20 @@ Private Function FillFreeArea(ByVal result As AALayoutPlan, ByVal model As AAMod
         "; active=" & CStr(cacheActive) & "; hits=" & Format$(mRejectHits - hitsBefore, "0") & _
         "; misses=" & Format$(mRejectMisses - missesBefore, "0") & _
         "; replacements=" & Format$(mRejectCollisions - replacementsBefore, "0")
+    If AADebugEnabled And ownsGapCache Then AADebugWrite "Free fill gap cache", _
+        "design=" & CStr(designIndex) & "; area=" & CStr(areaIndex) & _
+        "; angle=" & CStr(firstAngle) & "; zigzag=" & CStr(zigZag) & _
+        "; hits=" & Format$(mGapHits - gapHitsBefore, "0") & _
+        "; misses=" & Format$(mGapMisses - gapMissesBefore, "0") & _
+        "; bypasses=" & Format$(mGapBypasses - gapBypassesBefore, "0") & _
+        "; replacements=" & Format$(mGapCollisions - gapReplacementsBefore, "0") & _
+        "; stored=" & CStr(gapStored)
     Exit Function
 FillFailed:
     errorNumber = Err.Number: errorSource = Err.Source: errorDescription = Err.Description
     On Error Resume Next
     EndQuotaRejectCache
+    If ownsGapCache Then ClearGapCache
     On Error GoTo 0
     Err.Raise errorNumber, errorSource, errorDescription
 End Function
@@ -1646,6 +1675,7 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
     Dim h As Double, v As Double, i As Long, probes As Long, angleBudget As Long, phase As Long
     Dim remainderOnly As Boolean, mainAngle As Double
     Dim perfStarted As Double
+    Dim phaseSnapshot As Variant, prepStarted As Double, sortStarted As Double
     model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
     Set angles = AnglesFor(model, firstAngle)
     mainAngle = CDbl(angles(1))
@@ -1654,8 +1684,10 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
     ' Batas probe hanya membatasi penyempurnaan, bukan kapasitas slot dasar.
     For phase = 0 To 1
         perfStarted = AADebugPerfBegin()
+        phaseSnapshot = AADebugPerfSnapshot()
         For Each angle In angles
             probes = 0
+            prepStarted = AADebugPerfBegin()
             Set orientation = model.RotationVariant(CDbl(angle))
             Set slots = New Collection
             Set unique = CreateObject("Scripting.Dictionary")
@@ -1670,7 +1702,10 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
                     If phase = 1 And slots.Count >= AA_MAX_REFINEMENT_SLOTS Then Exit For
                 Next placed
             End If
+            sortStarted = AADebugPerfBegin()
             Set slots = SortedSlots(slots)
+            AADebugPerfEnd AA_PERF_SLOT_SORT, sortStarted
+            AADebugPerfEnd AA_PERF_SLOT_PREP, prepStarted
             i = 1
             Do While i <= slots.Count
                 slot = slots(i)
@@ -1700,6 +1735,9 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
         Next angle
         AADebugStageEnd "Medium fill phase=" & CStr(phase) & "; first angle=" & _
             CStr(firstAngle) & "; zigzag=" & CStr(zigZag), perfStarted
+        AADebugPerfDelta "phase=" & CStr(phase) & "; first angle=" & CStr(firstAngle) & _
+            "; zigzag=" & CStr(zigZag) & "; design=" & CStr(designIndex) & _
+            "; area=" & CStr(areaIndex), phaseSnapshot
     Next phase
 End Function
 
@@ -1770,7 +1808,7 @@ Private Function HasClearanceAt(ByVal orientation As AARotationVariant, ByVal x 
         gap = MaxValue(MaxValue(h, v), MaxValue(placed.GapH, placed.GapV))
         If leftX < other.RightX + gap And rightX > other.LeftX - gap And _
            bottomY < other.TopY + gap And topY > other.BottomY - gap Then
-            If mQuotaFills Is Nothing Then
+            If mQuotaFills Is Nothing And Not mFreeGapCache Then
                 clear = orientation.HasClearanceAt(x, y, placed, h, v)
             Else
                 clear = QuotaClearanceAt(orientation, x, y, placed, h, v)
@@ -1919,7 +1957,7 @@ CacheUnavailable:
     Erase mGapOrientations: Erase mGapOthers: Erase mGapKeys: Erase mGapResults
     Erase mGapNextVictim
     mGapCacheReady = False: mGapCacheDisabled = True: mGapStored = 0
-    AADebugWrite "Quota gap cache", "disabled: allocation error=" & CStr(number)
+    AADebugWrite "Pair gap cache", "disabled: allocation error=" & CStr(number)
     Err.Clear
 End Function
 
@@ -2150,12 +2188,17 @@ Private Function TrySlot(ByVal orientation As AARotationVariant, ByVal designInd
     Dim obstacle As AAGeometry, placed As AAPlacement
     Dim nearby As Collection
     Dim collisionLeft As Double, collisionTop As Double, gapH As Double, gapV As Double
+    Dim prepStarted As Double
     AAProgressPulse
+    prepStarted = AADebugPerfBegin()
     minX = MaxValue(-orientation.ReferenceWidth * AA_SHIFT_FACTOR, -x)
     maxX = MinValue(orientation.ReferenceWidth * AA_SHIFT_FACTOR, settings.AreaWidthMM - orientation.Width - x)
     minY = MaxValue(-orientation.ReferenceHeight * AA_SHIFT_FACTOR, orientation.Height - y)
     maxY = MinValue(orientation.ReferenceHeight * AA_SHIFT_FACTOR, settings.AreaHeightMM - y)
-    If minX > maxX + AA_EDGE_TOLERANCE_MM Or minY > maxY + AA_EDGE_TOLERANCE_MM Then Exit Function
+    If minX > maxX + AA_EDGE_TOLERANCE_MM Or minY > maxY + AA_EDGE_TOLERANCE_MM Then
+        AADebugPerfEnd AA_PERF_SHIFT_PREP, prepStarted
+        Exit Function
+    End If
     ShiftValues minX, maxX, xs
     ShiftValues minY, maxY, ys
     collisionLeft = x + orientation.InsetX
@@ -2182,6 +2225,7 @@ Private Function TrySlot(ByVal orientation As AARotationVariant, ByVal designInd
             AddShiftValue ys, obstacle.BottomY - gapV - collisionTop, minY, maxY
         End If
     Next placed
+    AADebugPerfEnd AA_PERF_SHIFT_PREP, prepStarted
     bestDistance = 1E+30
     For i = 0 To UBound(xs)
         If xs(i) ^ 2 > bestDistance Then Exit For
