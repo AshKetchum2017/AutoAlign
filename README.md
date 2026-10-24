@@ -520,6 +520,7 @@ AADebugOff
 ## Status dan Batasan
 
 - Process menyediakan mode **Minimum** dan **Medium**. `optMaximum` dinonaktifkan. Optimize bersifat eksperimental; periksa hasil pemadatannya sebelum digunakan.
+- Rencana pengembangan Maximum dan pemilihan kandidat tersimpan dalam [Roadmap Maximum](ROADMAP-Maximum.md). Dokumen tersebut menjelaskan scope yang direncanakan, bukan fitur yang sudah tersedia.
 - Perencanaan dibatasi hingga **5000 objek per sumber**; satu Cut Line bersama juga mempunyai batas jumlah terkait.
 - Sumber harus mempunyai ukuran yang valid dan kurva yang dapat dibaca. Pada group yang perlu dibaca geometrinya, anggota tanpa kurva dapat menyebabkan validasi gagal.
 - Daftar mempertahankan ID sumber. Jika sumber dihapus, dipindah, atau berubah struktur, pulihkan sumber atau daftarkan ulang sebelum Process.

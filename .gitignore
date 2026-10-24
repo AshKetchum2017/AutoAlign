@@ -12,6 +12,7 @@
 # Include Changelog to be tracked by git
 !Changelog.log
 !README.md
+!ROADMAP-Maximum.md
 
 # Ignore specific files in the project directory
 AutoAlignWizard.bas
