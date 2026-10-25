@@ -1028,7 +1028,7 @@ Private Sub AARefreshHints()
     AAShowHint txbQuantity
     txbGapHorizontal.ControlTipText = "Gap kontur mm, minimal 0. Default KissA/DieA mengikuti Default Settings; Custom 0 mm. Rectangle bersudut runcing pada preset memakai 0 mm. Input manual diutamakan."
     txbGapVertical.ControlTipText = "Gap kontur mm, minimal 0. Sebaris memakai H, sekolom V, diagonal terbesar H/V. Default KissA/DieA mengikuti Default Settings; Custom 0 mm. Rectangle bersudut runcing pada preset memakai 0 mm. Input manual diutamakan."
-    txbQuantity.ControlTipText = "Kosong (-): isi sisa area. 0: lewati Design. /n: bagi rata dalam satu container kelompok n. Berlaku untuk semua Design terpilih (Ctrl/Shift)."
+    txbQuantity.ControlTipText = "Kosong (-): filler. 0: lewati. /n: kelompok seimbang. /n 80, /n:80, /n=80: target per Design; sisa diteruskan. *: tolak kelompok lain. &: ambil filler kelompok berikutnya. Berlaku pada Design terpilih."
     cmdDefaultSetting.ControlTipText = "Default Settings - Atur default Area dan Gap H/V untuk model KissA dan DieA."
     cmdCustomMarginSettings.ControlTipText = "Custom Margin Settings - Atur margin dan zona terlarang untuk area model Custom."
     cmdProductionSummary.ControlTipText = "Production Summary - Lihat ringkasan jumlah Design, Cut Line, dan area dari Process terakhir yang berhasil."

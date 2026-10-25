@@ -274,6 +274,7 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Reuse penolakan gap pada kandidat biasa Medium]
 ~ Medium memakai ulang penolakan gap identik selama pengisian area untuk Design non-rectangle dengan Quantity kosong. Urutan kandidat dan pemeriksaan penempatan tetap; debug merinci hit cache serta waktu fase slot dasar dan penyempurnaan.
+
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 2026-10-24
 [Profil biaya fase Medium]
@@ -284,3 +285,22 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Beberapa kelompok Cut bersama pada Process]
 + Minimum/Medium mendukung beberapa kelompok Design yang masing-masing berbagi Cut Line sendiri. Template dan irisan rotasi diproses per Cut; Quantity /n tetap boleh lintas Cut Line. Optimize/Periksa Susunan untuk struktur ini dijalankan per kelompok Cut.
+
+[Quantity kelompok dan target per Design]
++ Menerima /n 80, /n:80 dan /n=80 sebagai target per Design. Sisa diteruskan ke kelompok berikutnya atau container tambahan; anggota tanpa target menjadi filler.
++ Suffix * menolak sisa kelompok lain, sedangkan & mengizinkan pengisian dari Design tanpa target tetap pada kelompok berikutnya. Keduanya tidak digabung dalam satu kelompok.
+
+[Pengisian filler Medium]
+~ Mengoptimasi hasil quota lalu mengisi ulang celah satu jenis filler berbeda acuan pada posisi hasil akhir, dengan jumlah target tetap dipertahankan. Refill tidak memindahkan objek yang sudah ada; filler tambahan KissA menghindari mark penuh.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-25
+[Kerapian filler Medium]
+~ Mencoba susun ulang satu jenis filler ke pola baris/ZigZag tanpa memindahkan objek utama. Jumlah tetap diutamakan; pola teratur mengganti susunan lama hanya bila jumlahnya sama atau lebih banyak dan lolos validasi.
+
+[Grid Minimum dengan Cut bersama]
+~ Design dalam satu area yang berbagi Cut Line melanjutkan fase grid yang sama, sehingga pergantian Design tidak memulai ulang pola baris/ZigZag. Cut berbeda tetap memakai batas objek sebelumnya sebagai pilihan awal baris.
+
+[Pengisian lokal filler Minimum]
+~ Kelompok Quantity dengan satu jenis filler berbeda acuan mencoba tambahan lokal, termasuk menggeser satu filler untuk membuka slot. Pergeseran diterima hanya bila jumlah bertambah, tanpa memindahkan Design utama atau menambah rotasi.
+~ Kandidat lokal dengan jumlah sama dibandingkan menurut sambungan baris/kolom filler, sehingga tambahan valid pertama tidak langsung menghentikan pencarian pola yang lebih rapi.

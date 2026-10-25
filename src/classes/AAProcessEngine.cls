@@ -55,7 +55,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     Dim errorSource As String
     Dim errorDescription As String
     Dim operation As String
-    Dim hasQuantityGroups As Boolean
+    Dim hasQuantityGroups As Boolean, hasExtendedQuantities As Boolean
     Dim perfStarted As Double, perfStage As String
     Dim productionDraft As AAProductionReport, startedAt As Date
     Dim cutModels As Object, cutKey As String, cutModelIndex As Long
@@ -114,6 +114,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     For entryIndex = 0 To entryCount - 1
         objects.ValidateQuantityAt entryIndex
         If objects.QuantityGroupAt(entryIndex) > 0 Then hasQuantityGroups = True
+        If objects.HasExtendedQuantityAt(entryIndex) Then hasExtendedQuantities = True
         Set sourceShapes(entryIndex) = FindTopLevelShape(targetPage, _
             objects.StaticIDAt(entryIndex))
         If sourceShapes(entryIndex) Is Nothing Then
@@ -207,7 +208,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         layoutDesignIndexes(roleIndex) = designIndexes(roleIndex)
     Next roleIndex
     layoutDesignCount = designCount
-    If Not hasQuantityGroups And cutCount = 1 And designCount > 1 Then
+    If Not hasQuantityGroups And Not hasExtendedQuantities And cutCount = 1 And designCount > 1 Then
         For roleIndex = 0 To designCount - 1
             entryIndex = designIndexes(roleIndex)
             If quantities(entryIndex) <> 0 Then
@@ -224,7 +225,11 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
     perfStage = "Planning total"
     perfStarted = AADebugPerfBegin()
     Set planner = New AAPlanner
-    If hasQuantityGroups Then
+    If hasExtendedQuantities Then
+        operation = "merencanakan Quantity dan sisa kelompok"
+        Set plan = BuildExtendedQuantityGroups(objects, models, designIndexes, designCount, _
+            cutIndexes, cutCount, quantities, settings, doc, layoutMode, planner)
+    ElseIf hasQuantityGroups Then
         operation = "merencanakan kelompok Quantity"
         Set plan = BuildQuantityGroups(objects, models, designIndexes, designCount, _
             cutIndexes, cutCount, quantities, settings, doc, layoutMode, planner)
@@ -248,7 +253,7 @@ Public Sub Run(ByVal objects As AAObjectStore, ByVal modelMode As Long, _
         GoTo CleanExit
     End If
     sharedCutOwnerIndex = -1
-    If Not hasQuantityGroups And cutCount = 1 And designCount > 1 Then
+    If Not hasQuantityGroups And Not hasExtendedQuantities And cutCount = 1 And designCount > 1 Then
         AAProgressStage "Menyiapkan Cut Line bersama"
         operation = "menyamakan susunan Cut Line bersama"
         perfStage = "Expand shared Cut Line"
@@ -553,6 +558,64 @@ Private Function BuildLegacyCutGroups(ByRef models() As AAModel, _
         vbObjectError + 5331, "AAProcessEngine", "Kelompok Cut Line tidak memenuhi batas area atau mark."
     Set BuildLegacyCutGroups = result
 End Function
+
+Private Function BuildExtendedQuantityGroups(ByVal objects As AAObjectStore, ByRef models() As AAModel, _
+                                             ByRef designs() As Long, ByVal designCount As Long, _
+                                             ByRef cuts() As Long, ByVal cutCount As Long, _
+                                             ByRef quantities() As Long, ByVal settings As AASettings, _
+                                             ByVal doc As Document, ByVal layoutMode As Long, _
+                                             ByVal planner As AAPlanner) As AALayoutPlan
+    Dim flow As AAQuantityFlow, result As AALayoutPlan, part As AALayoutPlan
+    Dim selected() As Long, selectedCuts() As Long, count As Long, i As Long
+    Dim selectedCutCount As Long, cutOwner As Long, sameCut As Boolean
+    Set flow = New AAQuantityFlow
+    Set result = flow.Build(objects, models, designs, designCount, cuts, cutCount, _
+        settings, doc, layoutMode, planner)
+    ' Quantity biasa tanpa modifier tetap memakai workflow/template sebelumnya.
+    ReDim selected(0 To designCount - 1): ReDim selectedCuts(0 To designCount - 1)
+    For i = 0 To designCount - 1
+        If objects.QuantityGroupAt(designs(i)) = 0 And Not objects.HasExtendedQuantityAt(designs(i)) Then
+            selected(count) = designs(i)
+            If cutCount > 1 Then selectedCuts(count) = cuts(i)
+            count = count + 1
+        End If
+    Next i
+    If count > 0 Then
+        If cutCount = 1 Then
+            selectedCuts(0) = cuts(0): selectedCutCount = 1
+        ElseIf cutCount > 1 Then
+            selectedCutCount = count: sameCut = True
+            For i = 1 To count - 1
+                If selectedCuts(i) <> selectedCuts(0) Then sameCut = False
+            Next i
+            If sameCut Then selectedCutCount = 1
+        End If
+        If HasSharedCutReferences(selectedCuts, selectedCutCount) Then
+            Set part = BuildLegacyCutGroups(models, selected, count, selectedCuts, quantities, _
+                settings, doc, layoutMode, planner)
+            cutOwner = -1
+        Else
+            Set part = BuildLegacyLayout(models, selected, count, selectedCuts, selectedCutCount, _
+                quantities, settings, doc, layoutMode, planner, cutOwner)
+        End If
+        AppendQuantityPlan result, part, cutOwner
+    End If
+    ValidateExtendedSourceLimits result, objects.Count
+    If cutCount > 0 Then SuppressDuplicateCutTemplates result
+    If Not planner.FinalPlanFits(result, settings, doc) Then Err.Raise vbObjectError + 5331, _
+        "AAProcessEngine", "Kelompok Quantity tidak memenuhi batas area atau mark."
+    Set BuildExtendedQuantityGroups = result
+End Function
+
+Private Sub ValidateExtendedSourceLimits(ByVal plan As AALayoutPlan, ByVal entryCount As Long)
+    Dim counts() As Long, placed As AAPlacement
+    ReDim counts(0 To entryCount - 1)
+    For Each placed In plan.Placements
+        counts(placed.DesignIndex) = counts(placed.DesignIndex) + 1
+        If counts(placed.DesignIndex) > 5000 Then Err.Raise vbObjectError + 5210, _
+            "AAProcessEngine", "Satu Design melebihi batas 5000 objek, termasuk filler lintas kelompok."
+    Next placed
+End Sub
 
 Private Function BuildQuantityGroups(ByVal objects As AAObjectStore, ByRef models() As AAModel, _
                                      ByRef designIndexes() As Long, ByVal designCount As Long, _

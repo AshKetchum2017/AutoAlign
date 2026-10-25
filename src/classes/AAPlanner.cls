@@ -16,6 +16,9 @@ Private Const AA_MAX_MINIMUM_MARK_SLOTS As Long = 8
 Private Const AA_MAX_MINIMUM_MARK_PROBES As Long = 256
 Private Const AA_MINIMUM_MARK_FINE_STEP_MM As Double = 0.025
 Private Const AA_MINIMUM_MARK_FINE_STEPS As Long = 10
+Private Const AA_MAX_MINIMUM_REFILL_PROBES As Long = 1024
+Private Const AA_MAX_MINIMUM_REFILL_TARGETS As Long = 16
+Private Const AA_MINIMUM_REFILL_ALIGNMENT_MM As Double = 0.01
 
 Public Function BuildMedium(ByRef models() As AAModel, _
                             ByRef designIndexes() As Long, ByVal designCount As Long, _
@@ -29,6 +32,167 @@ Public Function BuildMedium(ByRef models() As AAModel, _
     Set BuildMedium = planner.Build(models, designIndexes, designCount, cutIndexes, _
         cutCount, quantities, settings, sourceDocument, Me, singleAreaOnly, capacityTarget)
 End Function
+
+' Perbaikan lokal setelah quota final: maksimal satu filler tambahan, tanpa
+' mengubah sumber lain atau rotasi. Tidak dijalankan di setiap trial quota.
+Friend Function RefillMinimum(ByVal seed As AALayoutPlan, ByVal model As AAModel, _
+                              ByVal designIndex As Long, ByVal cutIndex As Long, ByVal maximum As Long, _
+                              ByVal settings As AASettings, ByVal sourceDocument As Document) As AALayoutPlan
+    Dim original As AAPlacement, neighbor As AAPlacement, placed As AAPlacement, moved As AAPlacement
+    Dim occupied As Collection, trialOccupied As Collection, forbidden As Collection, offsets As Object
+    Dim candidate As AALayoutPlan, best As AALayoutPlan, count As Long, probes As Long, site As Long, targets As Long
+    Dim bestScore As Long, bestDX As Double, bestDY As Double
+    Dim sx As Double, sy As Double, zx As Double, zy As Double, h As Double, v As Double
+    Dim x As Double, y As Double, dx As Double, dy As Double, started As Double
+    Set RefillMinimum = seed: Set best = seed: bestScore = -2147483647
+    If seed.AreaCount <> 1 Then Exit Function
+    For Each placed In seed.Placements
+        If placed.DesignIndex = designIndex Then
+            count = count + 1
+            If placed.RotationDelta <> 0# Then Exit Function
+        End If
+    Next placed
+    If count = 0 Or count >= maximum Or maximum > AA_MAX_OBJECTS_PER_SOURCE Then Exit Function
+    started = AADebugPerfBegin()
+    model.GetMinimumSteps AA_MODE_STRAIGHT, sx, sy
+    model.GetMinimumSteps AA_MODE_ZIGZAG, zx, zy
+    model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+    If sx <= AA_EDGE_TOLERANCE_MM Or sy <= AA_EDGE_TOLERANCE_MM Or zy <= AA_EDGE_TOLERANCE_MM Then Exit Function
+    Set forbidden = ForbiddenFor(settings, sourceDocument)
+    If settings.ModelMode = AA_MODEL_KISS_A Then Set forbidden = NominalForbiddenFor(settings, sourceDocument)
+    Set offsets = CreateObject("Scripting.Dictionary"): offsets.Add "0", Array(0#, 0#)
+    For Each original In seed.Placements
+        AAProgressPulse
+        If original.DesignIndex = designIndex Then
+            If targets >= AA_MAX_MINIMUM_REFILL_TARGETS Then GoTo Finished
+            targets = targets + 1
+            dx = 0#: dy = 0#
+            ' Tambahan langsung tetap kandidat; jangan berhenti sebelum
+            ' membandingkan kerapian alternatif dengan jumlah yang sama.
+            Set candidate = MinimumFillerBonus(seed, original, original, seed.Placements, model, _
+                designIndex, cutIndex, forbidden, offsets, settings, sourceDocument, sx, sy, zy, h, v, probes, bestScore)
+            If Not candidate Is Nothing Then
+                Set best = candidate: bestDX = 0#: bestDY = 0#
+            End If
+            Set occupied = New Collection
+            For Each placed In seed.Placements
+                If Not placed Is original Then occupied.Add placed
+            Next placed
+            For Each neighbor In occupied
+                AAProgressPulse
+                If neighbor.DesignIndex = designIndex Then
+                    If Abs(neighbor.Footprint.LeftX - original.Footprint.LeftX) <= 2# * sx And _
+                       Abs(neighbor.Footprint.TopY - original.Footprint.TopY) <= 2# * sy Then
+                        For site = 0 To 7
+                            If probes >= AA_MAX_MINIMUM_REFILL_PROBES Then GoTo Finished
+                            MinimumLocalSlot neighbor.Footprint, site, sx, sy, zy, x, y
+                            dx = x - original.Footprint.LeftX: dy = y - original.Footprint.TopY
+                            If Abs(dx) <= sx + AA_EDGE_TOLERANCE_MM And Abs(dy) <= sy + AA_EDGE_TOLERANCE_MM And _
+                               Abs(dx) + Abs(dy) > AA_EDGE_TOLERANCE_MM Then
+                                probes = probes + 1: AAProgressPulse
+                                Set moved = original.CopyForPlan(): moved.Translate dx, dy
+                                If CandidateFits(moved, occupied, forbidden, settings, offsets, h, v) Then
+                                    Set trialOccupied = New Collection
+                                    For Each placed In occupied
+                                        trialOccupied.Add placed
+                                    Next placed
+                                    trialOccupied.Add moved
+                                    Set candidate = MinimumFillerBonus(seed, original, moved, trialOccupied, model, _
+                                        designIndex, cutIndex, forbidden, offsets, settings, sourceDocument, sx, sy, zy, h, v, probes, bestScore)
+                                    If Not candidate Is Nothing Then
+                                        Set best = candidate: bestDX = dx: bestDY = dy
+                                    End If
+                                End If
+                            End If
+                        Next site
+                    End If
+                End If
+            Next neighbor
+        End If
+        If probes >= AA_MAX_MINIMUM_REFILL_PROBES Then GoTo Finished
+    Next original
+Finished:
+    Set RefillMinimum = best
+    If best.DesignCount > seed.DesignCount Then AADebugWrite "Minimum filler refill", _
+        "move X/Y=" & Format$(bestDX, "0.000000") & "/" & Format$(bestDY, "0.000000") & _
+        "; alignment gain=" & CStr(bestScore)
+    AADebugStageEnd "Minimum filler local refill", started
+    AADebugWrite "Minimum filler refill", "design=" & CStr(designIndex) & "; probes=" & CStr(probes) & _
+        "; targets=" & CStr(targets) & "; added=" & CStr(best.DesignCount - seed.DesignCount)
+End Function
+
+Private Function MinimumFillerBonus(ByVal seed As AALayoutPlan, ByVal original As AAPlacement, _
+                                    ByVal moved As AAPlacement, ByVal occupied As Collection, ByVal model As AAModel, _
+                                    ByVal designIndex As Long, ByVal cutIndex As Long, ByVal forbidden As Collection, _
+                                    ByVal offsets As Object, ByVal settings As AASettings, ByVal sourceDocument As Document, _
+                                    ByVal sx As Double, ByVal sy As Double, ByVal zy As Double, _
+                                    ByVal h As Double, ByVal v As Double, ByRef probes As Long, _
+                                    ByRef bestScore As Long) As AALayoutPlan
+    Dim bonus As AAPlacement, placed As AAPlacement, result As AALayoutPlan
+    Dim site As Long, x As Double, y As Double, score As Long
+    For site = 0 To 7
+        If probes >= AA_MAX_MINIMUM_REFILL_PROBES Then Exit Function
+        MinimumLocalSlot moved.Footprint, site, sx, sy, zy, x, y
+        probes = probes + 1: AAProgressPulse
+        Set bonus = model.MakePlacement(designIndex, cutIndex, 0, x + model.DesignInsetX, y - model.DesignInsetY)
+        If CandidateFits(bonus, occupied, forbidden, settings, offsets, h, v) Then
+            score = MinimumFillerAlignment(seed, original, moved, bonus)
+            If score > bestScore Then
+                Set result = New AALayoutPlan: result.Configure seed.LayoutMode: result.SetRegularPattern False
+                For Each placed In seed.Placements
+                    AAProgressPulse
+                    If placed Is original Then
+                        result.Add moved.CopyForPlan()
+                    Else
+                        result.Add placed.CopyForPlan()
+                    End If
+                Next placed
+                result.Add bonus
+                If FinalPlanFits(result, settings, sourceDocument) Then
+                    Set MinimumFillerBonus = result: bestScore = score
+                End If
+            End If
+        End If
+    Next site
+End Function
+
+Private Function MinimumFillerAlignment(ByVal seed As AALayoutPlan, ByVal original As AAPlacement, _
+                                       ByVal moved As AAPlacement, ByVal bonus As AAPlacement) As Long
+    Dim placed As AAPlacement, score As Long
+    score = MinimumAxisAlignment(moved.Footprint, bonus.Footprint)
+    For Each placed In seed.Placements
+        If placed.DesignIndex = original.DesignIndex And Not placed Is original Then
+            ' Delta seluruh pola: kurangi hubungan lama yang hilang, bukan
+            ' hanya menghitung hubungan dua objek kandidat secara terpisah.
+            score = score + MinimumAxisAlignment(moved.Footprint, placed.Footprint) + _
+                MinimumAxisAlignment(bonus.Footprint, placed.Footprint) - _
+                MinimumAxisAlignment(original.Footprint, placed.Footprint)
+        End If
+    Next placed
+    MinimumFillerAlignment = score
+End Function
+
+Private Function MinimumAxisAlignment(ByVal first As AAGeometry, ByVal second As AAGeometry) As Long
+    Dim score As Long
+    If Abs(first.LeftX - second.LeftX) <= AA_MINIMUM_REFILL_ALIGNMENT_MM Then score = score + 1
+    If Abs(first.TopY - second.TopY) <= AA_MINIMUM_REFILL_ALIGNMENT_MM Then score = score + 1
+    MinimumAxisAlignment = score
+End Function
+
+Private Sub MinimumLocalSlot(ByVal anchor As AAGeometry, ByVal site As Long, ByVal sx As Double, _
+                             ByVal sy As Double, ByVal zy As Double, ByRef x As Double, ByRef y As Double)
+    x = anchor.LeftX: y = anchor.TopY
+    Select Case site
+        Case 0: x = x + sx
+        Case 1: x = x - sx
+        Case 2: y = y + sy
+        Case 3: y = y - sy
+        Case 4: x = x + sx / 2#: y = y + zy
+        Case 5: x = x - sx / 2#: y = y + zy
+        Case 6: x = x + sx / 2#: y = y - zy
+        Case 7: x = x - sx / 2#: y = y - zy
+    End Select
+End Sub
 
 Friend Function ForbiddenFor(ByVal settings As AASettings, _
                              ByVal sourceDocument As Document) As Collection
@@ -457,7 +621,7 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
     model.GetMinimumSteps layoutMode, horizontalStep, verticalStep
     model.GetBoundaryGaps layoutMode, horizontalGap, verticalGap
     BuildStartingRows occupied, designIndex, verticalGap, _
-        cutIndex >= 0, model.CollisionInsetY, settings.AreaHeightMM, startingRows
+        cutIndex, model.CollisionInsetY, settings.AreaHeightMM, startingRows
     gridTop = startingRows(0)
     yOffset = settings.AreaHeightMM - gridTop
     Do While yOffset + model.FootprintHeight <= settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM
@@ -746,7 +910,7 @@ Private Sub AddMinimumAnchor(ByRef values() As Double, ByRef count As Long, _
 End Sub
 
 Private Sub BuildStartingRows(ByVal occupied As Collection, ByVal designIndex As Long, _
-                              ByVal verticalGap As Double, ByVal hasCut As Boolean, _
+                              ByVal verticalGap As Double, ByVal cutIndex As Long, _
                               ByVal collisionInsetY As Double, ByVal areaTop As Double, _
                               ByRef values() As Double)
     Dim unique As Object
@@ -758,6 +922,10 @@ Private Sub BuildStartingRows(ByVal occupied As Collection, ByVal designIndex As
     Set unique = CreateObject("Scripting.Dictionary")
     unique.Add CStr(areaTop), areaTop
     For Each placed In occupied
+        ' Cut yang sama melanjutkan grid saat Cut itu pertama kali diisi.
+        ' Hanya batas sumber SEBELUM template tersebut boleh memulai baris;
+        ' batas anggota sendiri/sumber sesudahnya tidak mereset fase ZigZag.
+        If cutIndex >= 0 And placed.CutIndex = cutIndex Then Exit For
         If placed.DesignIndex <> designIndex Then
             value = placed.CollisionFootprint.BottomY - verticalGap + collisionInsetY
             If value >= 0# And value <= areaTop Then

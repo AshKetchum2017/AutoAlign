@@ -7,6 +7,9 @@ Private Type AAObjectEntry
     StaticID As Long
     Quantity As Long  ' -1 berarti kosong: isi area aktif, lalu area baru jika tidak muat.
     QuantityGroup As Long  ' 0: perilaku lama; positif: /n; -1: prefix / belum lengkap.
+    QuantitySealed As Boolean
+    QuantityPullFree As Boolean
+    QuantityPending As Boolean
     RotationMode As Long
     CutPartnerID As Long  ' 0: tanpa pasangan; ID hilang tetap disimpan sampai dipilih ulang.
 End Type
@@ -165,9 +168,16 @@ Public Function QuantityTextAt(ByVal index As Long) As String
         QuantityTextAt = "/"
     ElseIf mEntries(index).QuantityGroup > 0 Then
         QuantityTextAt = "/" & CStr(mEntries(index).QuantityGroup)
+        If mEntries(index).QuantityPending Then
+            QuantityTextAt = QuantityTextAt & ":"
+        ElseIf mEntries(index).Quantity >= 0 Then
+            QuantityTextAt = QuantityTextAt & " " & CStr(mEntries(index).Quantity)
+        End If
     ElseIf mEntries(index).Quantity >= 0 Then
         QuantityTextAt = CStr(mEntries(index).Quantity)
     End If
+    If mEntries(index).QuantitySealed Then QuantityTextAt = QuantityTextAt & "*"
+    If mEntries(index).QuantityPullFree Then QuantityTextAt = QuantityTextAt & "&"
 End Function
 
 Public Property Get QuantityGroupAt(ByVal index As Long) As Long
@@ -175,54 +185,103 @@ Public Property Get QuantityGroupAt(ByVal index As Long) As Long
     QuantityGroupAt = mEntries(index).QuantityGroup
 End Property
 
+Public Function QuantitySealedAt(ByVal index As Long) As Boolean
+    CheckIndex index
+    QuantitySealedAt = mEntries(index).QuantitySealed
+End Function
+
+Public Function QuantityPullFreeAt(ByVal index As Long) As Boolean
+    CheckIndex index
+    QuantityPullFreeAt = mEntries(index).QuantityPullFree
+End Function
+
+Public Function HasExtendedQuantityAt(ByVal index As Long) As Boolean
+    CheckIndex index
+    HasExtendedQuantityAt = mEntries(index).QuantitySealed Or mEntries(index).QuantityPullFree Or _
+        (mEntries(index).QuantityGroup > 0 And mEntries(index).Quantity >= 0)
+End Function
+
 Public Sub ValidateQuantityAt(ByVal index As Long)
     CheckIndex index
     If mEntries(index).QuantityGroup < 0 Then Err.Raise vbObjectError + 5315, _
         "AAObjectStore", "Token / harus disertai nomor kelompok positif, misalnya /1."
+    If mEntries(index).QuantityPending Then Err.Raise vbObjectError + 5315, _
+        "AAObjectStore", "Lengkapi Quantity sesudah pemisah, misalnya /1 80."
 End Sub
 
 Public Sub SetQuantityTextAt(ByVal index As Long, ByVal rawText As String)
-    Dim valueText As String
-    Dim i As Long
-    Dim grouped As Boolean, number As Long
+    Dim valueText As String, groupText As String, tail As String, suffix As String
+    Dim i As Long, quantity As Long, groupNumber As Long
+    Dim sealed As Boolean, pullFree As Boolean, pending As Boolean
 
     CheckIndex index
     If mEntries(index).RoleLabel <> AA_ROLE_DESIGN Then Err.Raise _
         vbObjectError + 5308, "AAObjectStore", "Quantity hanya berlaku untuk Design."
     valueText = Trim$(rawText)
-    If Len(valueText) = 0 Then
-        mEntries(index).Quantity = -1
-        mEntries(index).QuantityGroup = 0
-        Exit Sub
-    End If
-    grouped = (Left$(valueText, 1) = "/")
-    If grouped Then valueText = Mid$(valueText, 2)
-    ' Izinkan prefix saat mengetik; Process wajib menolak / tanpa nomor.
-    If grouped And Len(valueText) = 0 Then
-        mEntries(index).Quantity = -1
-        mEntries(index).QuantityGroup = -1
-        Exit Sub
-    End If
-    For i = 1 To Len(valueText)
-        If Mid$(valueText, i, 1) < "0" Or Mid$(valueText, i, 1) > "9" Then _
-            Err.Raise vbObjectError + 5309, "AAObjectStore", _
-                "Quantity harus berupa bilangan bulat nol atau lebih, atau /n dengan nomor kelompok positif."
-    Next i
+    quantity = -1
     On Error GoTo InvalidQuantity
-    number = CLng(valueText)
-    If grouped And number = 0 Then GoTo InvalidQuantity
-    If grouped Then
-        mEntries(index).Quantity = -1
-        mEntries(index).QuantityGroup = number
-    Else
-        mEntries(index).Quantity = number
-        mEntries(index).QuantityGroup = 0
+    If Len(valueText) > 0 Then
+        suffix = Right$(valueText, 1)
+        sealed = (suffix = "*"): pullFree = (suffix = "&")
+        If sealed Or pullFree Then
+            valueText = Trim$(Left$(valueText, Len(valueText) - 1))
+            If Len(valueText) = 0 Then GoTo InvalidQuantity
+        End If
+        If Left$(valueText, 1) = "/" Then
+            ' Prefix editor boleh sementara; Exit/Process wajib menolaknya.
+            If valueText = "/" Then
+                If sealed Or pullFree Then GoTo InvalidQuantity
+                groupNumber = -1
+            Else
+                i = 2
+                Do While i <= Len(valueText)
+                    If Mid$(valueText, i, 1) < "0" Or Mid$(valueText, i, 1) > "9" Then Exit Do
+                    i = i + 1
+                Loop
+                groupText = Mid$(valueText, 2, i - 2)
+                If Not QuantityDigits(groupText) Then GoTo InvalidQuantity
+                groupNumber = CLng(groupText)
+                If groupNumber = 0 Then GoTo InvalidQuantity
+                If i <= Len(valueText) Then
+                    tail = Mid$(valueText, i)
+                    If Left$(tail, 1) <> " " And Left$(tail, 1) <> ":" And _
+                       Left$(tail, 1) <> "=" Then GoTo InvalidQuantity
+                    tail = Trim$(tail)
+                    If Left$(tail, 1) = ":" Or Left$(tail, 1) = "=" Then tail = Trim$(Mid$(tail, 2))
+                    pending = (Len(tail) = 0)
+                    If pending Then
+                        If sealed Or pullFree Then GoTo InvalidQuantity
+                    Else
+                        If Not QuantityDigits(tail) Then GoTo InvalidQuantity
+                        quantity = CLng(tail)
+                    End If
+                End If
+            End If
+        Else
+            If Not QuantityDigits(valueText) Then GoTo InvalidQuantity
+            quantity = CLng(valueText)
+        End If
     End If
+    ' Commit sesudah seluruh token valid; paste gagal tidak mengubah state.
+    mEntries(index).Quantity = quantity
+    mEntries(index).QuantityGroup = groupNumber
+    mEntries(index).QuantitySealed = sealed
+    mEntries(index).QuantityPullFree = pullFree
+    mEntries(index).QuantityPending = pending
     Exit Sub
 InvalidQuantity:
     Err.Raise vbObjectError + 5309, "AAObjectStore", _
-        "Quantity terlalu besar atau tidak valid."
+        "Quantity tidak valid. Gunakan angka, /n, /n 80, /n:80 atau /n=80. Suffix * atau & boleh satu, tidak keduanya."
 End Sub
+
+Private Function QuantityDigits(ByVal valueText As String) As Boolean
+    Dim i As Long
+    If Len(valueText) = 0 Then Exit Function
+    For i = 1 To Len(valueText)
+        If Mid$(valueText, i, 1) < "0" Or Mid$(valueText, i, 1) > "9" Then Exit Function
+    Next i
+    QuantityDigits = True
+End Function
 
 Public Function RegisterSelection(ByVal roleLabel As String, ByVal selectedShapes As ShapeRange, _
                                   ByVal sourceDoc As Document, ByVal sourcePage As Page) As Long

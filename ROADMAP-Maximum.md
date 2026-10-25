@@ -16,8 +16,11 @@ Maximum mengutamakan jumlah objek dan pemanfaatan ruang yang layak diisi. Kerapi
 | `0` | Lewati Design. |
 | Kosong / `-` | Boleh ditambahkan sebagai pengisi ruang. Design kecil boleh mendominasi, dan Design tertentu boleh tidak dipakai demi total objek terbanyak. |
 | `/n` | Satu container per kelompok; kelompok tetap terpisah dan pembagian jumlah antar-Design dijaga dengan selisih maksimal satu. |
+| `/n 80`, `/n:80`, `/n=80` | Target 80 per Design. Pertahankan prioritas target kelompok tujuan, penerusan sisa dan container tambahan sesuai kontrak Quantity. |
+| Suffix `*` | Tolak objek kelompok lain pada container tersebut; sisa target sendiri boleh diteruskan. |
+| Suffix `&` | Boleh menarik filler tanpa Quantity tetap dari kelompok berikutnya. Jangan menarik target angka. Tidak digabung dengan `*`. |
 
-- Boleh memakai Design lain yang terdaftar untuk mengisi celah, sesuai konteks container dan aturan Quantity. Jangan mengambil Design kelompok lain untuk mengisi container `/n`.
+- Boleh memakai Design lain yang terdaftar untuk mengisi celah, sesuai konteks container dan aturan Quantity. Perpindahan lintas kelompok mengikuti aturan sisa target dan modifier; jangan mencampur kelompok di luar aturan tersebut. Pembagian rata berlaku pada anggota tanpa target tetap, sedangkan target angka dihitung per Design.
 - Boleh menggeser objek dan mengganti orientasinya selama perencanaan.
 - Pasangan Design/Cut Line, template bersama, gap, mark, batas area dan margin Custom tetap harus valid.
 - Input mengikuti pemetaan pasangan yang didukung AA. Beberapa kelompok berbagi Cut Line berbeda masuk perbaikan prasyarat Process di bawah. Campuran standalone/berpasangan tetap di luar scope; Optimize/Periksa Susunan untuk beberapa kelompok Cut bersama dijalankan per kelompok.
@@ -62,12 +65,13 @@ S9 menggabungkan hasil, tetapi pengukuran dan pengujian tetap dilakukan pada set
 
 ### Prasyarat P0 — Regresi Process beberapa kelompok Cut bersama
 
-Kasus sumber: Design `/81`, `/80`, `/79` berbagi Cut `/32`, dan Design `/41` memakai Cut `/78`. Guard lama menolak pengulangan Cut ketika daftar memuat lebih dari satu Cut Line. Perbaikan source Process sudah disusun; compile VBE dan runtime masih perlu dikonfirmasi sebelum fondasi Maximum dilanjutkan.
+Kasus sumber: Design `/81`, `/80`, `/79` berbagi Cut `/32`, dan Design `/41` memakai Cut `/78`. Perbaikan source Process tersedia. Tutup matriks regresi berikut sebelum fondasi Maximum dilanjutkan; bukti dan cakupan setiap pengujian dicatat di `Development.log` workspace.
 
-- [ ] Uji Minimum dan Medium: reuse template per Cut untuk Quantity biasa, termasuk Design pertama Quantity 0.
-- [ ] Uji `/n` lintas Cut dan kombinasi kelompok `/n` dengan Quantity biasa; pembagian jumlah dan pemisahan container tetap benar.
-- [ ] Periksa jumlah Cut fisik, rotasi per kelompok, gap, mark, bounds, laporan, Cancel dan satu Undo.
-- [ ] Pastikan input lama tetap bekerja dan Optimize/Periksa Susunan menolak struktur di luar cakupannya sebelum mutasi.
+- [x] Uji Minimum dan Medium: reuse template per Cut untuk Quantity biasa, termasuk Design pertama Quantity 0.
+- [x] Uji `/n` lintas Cut dan kombinasi kelompok `/n` dengan Quantity biasa; pembagian jumlah dan pemisahan container tetap benar.
+- [x] Uji target per Design `/n 80`, penerusan sisa, filler, `*` dan `&`, termasuk container tambahan serta pasangan Cut yang ikut berpindah.
+- [x] Periksa jumlah Cut fisik, rotasi per kelompok, gap, mark, bounds, laporan, Cancel dan satu Undo.
+- [x] Pastikan input lama tetap bekerja dan Optimize/Periksa Susunan menolak struktur di luar cakupannya sebelum mutasi.
 
 **Gerbang lanjut:** sumber multi-Design/per-Cut menjadi acuan regresi yang valid untuk S0. Status dan bukti berada di `Development.log` workspace; perbaikan ini tidak mengaktifkan Maximum.
 
@@ -210,6 +214,7 @@ Pemeriksaan statis dan harness adaptasi membantu menguji kontrak, tetapi **tidak
 | `src/classes/AAPresenter.cls` | Ownership sesi/job, daftar kandidat dan laporan hasil. |
 | `src/classes/AAObjectStore.cls` | Identitas sumber, Quantity, rotasi dan hubungan pasangan. |
 | `src/classes/AAProcessEngine.cls` | Persiapan, routing planner, template/kelompok, validasi dan transaksi hasil. |
+| `src/classes/AAQuantityFlow.cls`, `AAQuantityPlanner.cls` | Kontrak target per Design, sisa lintas container, modifier dan alokasi satu area. |
 | `src/classes/AAResultBuilder.cls` | Penggunaan sumber, duplikasi, penempatan dan grouping. |
 | `src/classes/AALayoutPlan.cls`, `AAPlacement.cls` | Data rencana, snapshot dan metadata placement. |
 | `src/classes/AAModel.cls`, `AARotationVariant.cls` | Kebijakan/varian orientasi dan geometri sumber. |

@@ -72,9 +72,9 @@ Untuk pasangan, **Cut Line menjadi acuan pola, gap, dan collision antarunit**. B
 
 Untuk pasangan selain rectangle bersudut runcing, Design boleh lebih kecil maksimal **0,2 mm** atau lebih besar maksimal **2 mm** dari Cut Line pada setiap sumbu.
 
-Saat beberapa Design memakai satu Cut Line bersama tanpa Quantity `/n`, susunan Design pertama yang aktif menjadi template untuk Design lain pada container terpisah. Satu susunan Cut Line dibuat untuk dipakai bersama. Quantity Design pertama menjadi acuan template; Quantity `0` tetap melewati Design terkait.
+Saat beberapa Design memakai satu Cut Line bersama dengan Quantity biasa tanpa `/n` atau modifier, susunan Design pertama yang aktif menjadi template untuk Design lain pada container terpisah. Satu susunan Cut Line dibuat untuk dipakai bersama. Quantity Design pertama menjadi acuan template; Quantity `0` tetap melewati Design terkait.
 
-Untuk beberapa kelompok Cut pada Process, aturan template tersebut berlaku **per ID Cut Line**, menurut urutan kemunculan pertama Design kelompoknya di daftar. Contoh: tiga Design berbagi Cut `/32` menghasilkan tiga container Design dengan satu template Cut `/32`; Design lain dengan Cut `/78` menghasilkan container dan Cut-nya sendiri. Template tambahan dibuat bila susunan Cut berbeda. Kelompok Quantity `/n` tetap boleh berisi Design dari Cut berbeda dan menghasilkan satu container yang dibagi rata; sisa Design tanpa `/n` diproses terpisah menurut aturan template masing-masing Cut.
+Untuk beberapa kelompok Cut pada Process, aturan template tersebut berlaku **per ID Cut Line**, menurut urutan kemunculan pertama Design kelompoknya di daftar. Contoh: tiga Design berbagi Cut `/32` menghasilkan tiga container Design dengan satu template Cut `/32`; Design lain dengan Cut `/78` menghasilkan container dan Cut-nya sendiri. Template tambahan dibuat bila susunan Cut berbeda. Kelompok Quantity `/n` boleh berisi Design dari Cut berbeda. Target angka dan penerusan sisa mengikuti aturan Quantity di bawah; Design tanpa `/n` atau modifier diproses terpisah menurut aturan template masing-masing Cut.
 
 ### Batas rotasi per Design
 
@@ -108,6 +108,10 @@ Sudut relatif terhadap **orientasi sumber saat Process**, bukan sudut absolut te
 Rectangle, termasuk rectangle dengan sudut lengkung, disusun dengan pola Straight.
 
 Perencanaan memeriksa batas area, zona mark, gap kontur, dan collision, tanpa rotasi tambahan terhadap orientasi sumber. Langkah Straight dan ZigZag mengikuti kontur acuan serta gap yang diminta. Saat susunan perlu menyesuaikan posisi terhadap mark, Minimum mencoba pergeseran bersama sebelum mengurangi isi susunan.
+
+Dalam satu area, Design yang berbagi ID Cut Line melanjutkan grid susunan Cut Line tersebut menurut urutan Design. Pergantian Design mempertahankan fase baris, termasuk selang-seling ZigZag. Cut Line berbeda tetap dapat memulai baris berdasarkan batas objek yang sudah ditempatkan.
+
+Pada kelompok Quantity dengan satu jenis filler berbeda acuan, Minimum mencoba pengisian lokal sesudah alokasi final. Pencarian dapat menambah satu filler langsung atau menggeser satu filler untuk membuka slot tambahan. Jumlah diutamakan; kandidat dengan jumlah sama dibandingkan menurut tambahan sambungan baris dan kolom filler terhadap pola yang ada. Pergeseran hanya diterapkan bila jumlah bertambah; Design lain tetap, rotasi relatif tetap 0°, dan penempatan harus memenuhi gap, area serta mark. Pencarian ini terbatas dan tidak menjamin setiap celah terisi.
 
 Untuk Quantity berupa angka dengan beberapa Design berbeda dalam satu container, Minimum juga mencoba posisi tambahan berdasarkan tepi dan alignment tetangga pada **rotasi 0°** sebelum membuka container baru. Pencarian tambahan ini tetap dibatasi dan harus memenuhi gap, batas area, serta zona mark.
 
@@ -216,16 +220,29 @@ Input gap Minimum dan Medium disimpan terpisah saat berpindah mode. Pada kunjung
 | `0` | Melewati Design tersebut. |
 | Bilangan bulat positif, misalnya `100` | Menyusun jumlah yang diminta; kebutuhan yang belum tertampung dilanjutkan ke area berikutnya. |
 | `/n`, misalnya `/1` | Mengelompokkan Design dengan nomor yang sama untuk dibagi dalam satu container. |
+| `/n 80`, `/n:80`, `/n=80` | Target **80 salinan Design tersebut** dalam kelompok n. Kelebihan diteruskan ke container berikutnya. |
+| Suffix `*`, misalnya `/1*`, `/1 80*`, `60*` | Container menolak sisa dari kelompok lain. Kelebihan milik sendiri tetap boleh diteruskan. |
+| Suffix `&`, misalnya `/1 50&`, `60&` | Ruang tersisa boleh memakai Design tanpa Quantity tetap dari kelompok berikutnya. Target angka kelompok berikutnya tidak ditarik maju. |
 
-Contoh: `100` meminta 100 salinan Design; `/1` pada dua Design meminta pembagian satu container kelompok, bukan satu salinan per Design.
+Contoh: dua Design dengan `/1 80` masing-masing meminta 80 salinan, total **160 objek**. Jika kapasitas 78 objek dengan ukuran yang sama, urutannya adalah 78 A; lalu 2 A + 76 B; lalu 4 B. Urutan Design mengikuti ListBox.
 
 Tanda `-` yang tampil saat Quantity kosong adalah placeholder; gunakan kolom kosong untuk pengisian otomatis. Token `/` harus disertai nomor kelompok positif; `/` saja dan `/0` tidak valid.
 
 **Quantity kelompok `/n`** tersedia pada Minimum dan Medium, untuk Design standalone, Cut Line bersama, maupun Cut Line masing-masing. Contohnya, beri `/1` pada dua Design agar keduanya mengisi satu container kelompok yang sama. `/2` membuat kelompok lain.
 
-Kelompok diproses menurut nomor, lalu Design dengan Quantity biasa diproses terpisah. Pembagian memakai template jika acuan sesuai, atau mencari kuota yang muat dalam satu area. Pembagian template memiliki selisih maksimal satu objek; pencarian kuota dan surplus mengizinkan selisih maksimal **dua objek** antar Design. Nomor setelah `/` adalah **ID kelompok**, bukan jumlah salinan atau pembagi.
+Kelompok diproses menurut nomor terdaftar. Dalam setiap container, prioritasnya adalah target tetap milik kelompok tujuan menurut urutan Design, sisa target kelompok sebelumnya jika diizinkan, lalu filler anggota kelompok tujuan. Anggota yang hanya memakai `/n` menjadi filler; mereka tidak mewarisi angka anggota lain. Filler tidak membuka container tambahan setelah semua target tetap selesai.
 
-Susunan Cut Line bersama yang identik dapat memakai satu template Cut Line. Kelompok `/n` tetap harus muat dalam satu container.
+Jika A memakai `/1 80` dan B memakai `/2`, kapasitas 78 menghasilkan 78 A pada container pertama dan 2 A + 76 B pada container kedua. Jika B juga memakai `/2 80`, container kedua mengutamakan 78 B, lalu sisa 2 A + 2 B masuk container tambahan. Perhitungan ini mengasumsikan bentuk dan ukuran sama; bentuk berbeda tetap memakai pemeriksaan geometri aktual.
+
+Setelah seluruh kelompok terdaftar diproses, target yang masih tersisa dibuatkan container tambahan. Filler dari kelompok asal boleh mengisi ruang pada container tambahan yang menampung sisa target kelompok tersebut. Container bertanda `*` dilewati oleh sisa kelompok lain. Dalam satu kelompok, modifier berlaku pada container kelompok; memakai `*` dan `&` bersamaan, termasuk pada anggota berbeda, ditolak. Quantity `0` melewati Design beserta modifiernya.
+
+Kelompok yang seluruh anggotanya memakai `/n` tanpa target angka dibagi rata dalam satu container. Pembagian memakai template jika acuan sesuai, atau kuota yang muat dalam satu area. Pembagian template memiliki selisih maksimal satu objek; pencarian kuota dan surplus mengizinkan selisih maksimal **dua objek** antar Design. Filler yang ditambahkan bersama target tetap dibagi rata dengan surplus maksimal satu per Design selama batas jumlah sumber memungkinkan. Nomor setelah `/` adalah **ID kelompok**, bukan jumlah salinan atau pembagi.
+
+Angka bermodifier tanpa `/n`, seperti `60*` atau `60&`, memiliki container sendiri dan diproses setelah kelompok bernomor, menurut urutan ListBox. Quantity biasa tanpa `/n` atau modifier tetap diproses terpisah dengan aturan template per Cut. `&` juga dapat memakai Design biasa tanpa Quantity tetap sebagai filler; sumber tersebut tetap mengikuti proses biasanya sesudah kelompok. Batas 5000 objek per sumber menghitung seluruh pemakaiannya, termasuk filler lintas kelompok.
+
+Susunan Cut Line bersama yang identik dapat memakai satu template Cut Line. Pasangan, rotasi, gap, area, dan mark tetap diperiksa ketika Design dipindahkan ke container berikutnya.
+
+Pada Medium, hasil kuota yang dipilih mendapat optimasi akhir. Satu jenis filler dengan acuan berbeda dapat mengisi celah dan disusun ulang ke pola baris atau ZigZag, memakai rotasi yang diizinkan. Posisi, rotasi, dan jumlah objek selain filler dipertahankan. Jumlah diutamakan: pola teratur hanya dipakai jika memuat jumlah yang sama atau lebih banyak; jika tidak, susunan sebelumnya dipertahankan. Penempatan filler tetap mengikuti gap, batas area, dan mark nominal penuh KissA. Pencarian berbatas dan tidak menjamin seluruh celah dapat diisi.
 
 ### Progres dan Cancel
 
@@ -344,7 +361,7 @@ Target penggunaan project adalah **CorelDRAW 2024 64-bit dengan VBA**. Kompatibi
 Repository menyediakan code-behind UserForm, Class Module, dan Standard Module. Paket GMS siap pakai serta layout UserForm `.frm/.frx` tidak disertakan, sehingga pemasangan memerlukan project VBA dan kontrol form yang disiapkan secara manual.
 
 1. Buat atau gunakan project GMS AutoAlign di editor VBA CorelDRAW.
-2. Siapkan Class Module untuk setiap file pada `src/classes/`, dengan properti `(Name)` sama persis seperti nama file tanpa ekstensi. File `.cls` berisi source headerless; masukkan isinya ke Class Module bernama sesuai, bukan mengandalkan metadata import class.
+2. Siapkan Class Module untuk setiap file pada `src/classes/`, termasuk **AAQuantityFlow**, dengan properti `(Name)` sama persis seperti nama file tanpa ekstensi. File `.cls` berisi source headerless; masukkan isinya ke Class Module bernama sesuai, bukan mengandalkan metadata import class.
 3. Masukkan seluruh Standard Module pada `src/modules/` dengan nama sesuai file. `AADebug` tetap dibutuhkan walaupun keluaran debug dinonaktifkan.
 4. Buat UserForm **AutoAlignMenu**, **DefaultSettings**, **CustomMarginSettings**, **InspectionResults**, **ProductionSummary**, dan **JobPresets**. Pasang code-behind dari `src/forms/` pada form yang namanya cocok, lalu siapkan kontrol berikut.
 5. Lakukan **Debug → Compile** pada project VBA dan selesaikan referensi atau kontrol yang belum cocok sebelum menjalankan form.
@@ -454,7 +471,7 @@ Tambahkan dua Class Module headerless **AAJobPreset** dan **AAJobPresetStore** d
 | `src/classes/AAJobPreset.cls`, `AAJobPresetStore.cls`, `src/forms/JobPresets.vba` | Snapshot pengaturan pekerjaan, penyimpanan bernama di registry dan dialog pengelolaan preset. |
 | `src/classes/AAInspectionEngine.cls`, `AAInspectionReport.cls`, `AAInspectionIssue.cls`, `src/forms/InspectionResults.vba` | Pemeriksaan susunan terdaftar, laporan temuan, dan pemilihan objek terkait. |
 | `src/classes/AAOptimizeEngine.cls`, `AAOptimizeMinimum.cls`, `AAOptimizeLayout.cls` | Optimize Minimum/Medium, snapshot kelompok, validasi, dan penerapan translasi. Import sebagai Class Module dengan nama yang sesuai. |
-| `src/classes/AAPlanner.cls`, `AAMediumPlanner.cls`, `AAQuantityPlanner.cls` | Perencanaan Minimum, Medium, dan kuota kelompok. |
+| `src/classes/AAPlanner.cls`, `AAMediumPlanner.cls`, `AAQuantityPlanner.cls`, `AAQuantityFlow.cls` | Perencanaan Minimum/Medium, pembagian kuota, target per Design, dan penerusan sisa kelompok. |
 | `src/classes/AALayoutPlan.cls`, `AAPlacement.cls`, `AARotationVariant.cls`, `AAGroupBucket.cls` | Data rencana, posisi dan orientasi kandidat, serta pengelompokan hasil. |
 | `src/classes/AAModel.cls`, `AAGeometry.cls`, `AAContour.cls`, `AAOccupiedIndex.cls` | Acuan bentuk, kontur, rotasi, gap, dan pemeriksaan tetangga. |
 | `src/modules/AAAlgorithm.bas` | Konstanta serta aturan layer dan Z-Order. |

@@ -16,6 +16,8 @@ Private Const AA_MAX_COMPACTION_PROBES_PER_AREA As Long = 4096
 Private Const AA_COMPACTION_PASSES As Long = 2
 Private Const AA_MAX_ALIGNMENT_PROBES_PER_AREA As Long = 256
 Private Const AA_ALIGNMENT_PASSES As Long = 2
+Private Const AA_MAX_FILLER_GRID_CANDIDATES As Long = 144
+Private Const AA_MAX_FILLER_GRID_PROBES As Long = 32768
 Private Const AA_MAX_PAIR_CONTOUR_EDGES As Long = 32
 ' Lane terbatas untuk kurva sederhana (node sedikit, hasil flatten lebih banyak).
 ' Tidak membuka pencarian contact scan 64 langkah untuk semua kurva kompleks.
@@ -82,6 +84,195 @@ Private Sub ClearGapCache()
     Erase mGapNextVictim
     mGapCacheReady = False: mGapStored = 0
 End Sub
+
+' Instance tersendiri untuk refill satu sumber pada hasil yang sudah difinalisasi.
+' Objek selain filler tidak digeser; slot diperiksa pada koordinat aktualnya.
+Friend Function FillRemaining(ByVal seed As AALayoutPlan, ByVal model As AAModel, _
+                              ByVal designIndex As Long, ByVal cutIndex As Long, _
+                              ByVal maximum As Long, ByVal settings As AASettings, _
+                              ByVal sourceDocument As Document, ByVal planner As AAPlanner) As AALayoutPlan
+    Dim best As AALayoutPlan, candidate As AALayoutPlan, occupied As Collection
+    Dim forbidden As Collection, fillForbidden As Collection, placed As AAPlacement, copied As AAPlacement
+    Dim existing As Long, pattern As Long, added As Long
+    Dim number As Long, source As String, description As String
+    Dim selected As Boolean
+    If seed.AreaCount > 1 Then Err.Raise vbObjectError + 5341, "AAMediumPlanner", _
+        "Pengisian filler memerlukan satu container."
+    For Each placed In seed.Placements
+        If placed.DesignIndex = designIndex Then existing = existing + 1
+    Next placed
+    If maximum < existing Or maximum > AA_MAX_OBJECTS_PER_SOURCE Then Err.Raise _
+        vbObjectError + 5340, "AAMediumPlanner", "Batas filler tidak sesuai jumlah sumber."
+    Set best = seed
+    On Error GoTo RefillFailed
+    ' Snapshot quota sebelum centering tidak boleh dipakai pada seed final.
+    Set mQuotaFills = Nothing: mCapacitySearch = False
+    EndQuotaRejectCache: ClearGapCache
+    Set mOccupiedIndex = Nothing
+    Set forbidden = planner.ForbiddenFor(settings, sourceDocument)
+    Set fillForbidden = forbidden
+    ' Objek bonus KissA menghindari mark penuh tanpa menggeser seed yang aman.
+    If settings.ModelMode = AA_MODEL_KISS_A Then _
+        Set fillForbidden = planner.NominalForbiddenFor(settings, sourceDocument)
+    If maximum > existing Then
+        For pattern = 0 To 1
+            AAProgressPulse
+            selected = False
+            Set candidate = New AALayoutPlan: candidate.Configure AA_MODE_MEDIUM
+            candidate.SetRegularPattern seed.HasRegularPattern
+            Set occupied = New Collection
+            For Each placed In seed.Placements
+                AAProgressPulse
+                Set copied = placed.CopyForPlan()
+                candidate.Add copied: occupied.Add copied
+            Next placed
+            ' FillFreeArea memindai seluruh rotasi legal dan kedua fase slot;
+            ' maximum adalah budget sumber, bukan quota hasil trial terakhir.
+            added = FillFreeArea(candidate, model, designIndex, cutIndex, 0, occupied, _
+                fillForbidden, settings, maximum - existing, 0#, pattern = 1)
+            If added > 0 Then
+                candidate.SetRegularPattern False
+                If ValidPlan(candidate, forbidden, settings, "Quantity refill") Then
+                    If planner.FinalPlanFits(candidate, settings, sourceDocument) Then
+                        If candidate.DesignCount >= best.DesignCount Then
+                            If planner.BetterPlan(candidate, best) Then
+                                Set best = candidate: selected = True
+                            End If
+                        End If
+                    End If
+                End If
+            End If
+            AADebugWrite "Quantity refill", "design=" & CStr(designIndex) & _
+                "; zigzag=" & CStr(pattern = 1) & "; before=" & CStr(existing) & _
+                "; added=" & CStr(added) & "; selected=" & CStr(selected) & _
+                "; selected total=" & CStr(best.DesignCount)
+        Next pattern
+    End If
+    ' Susun ulang filler saja: grid yang kalah jumlah tidak mengganti refill.
+    Set best = RebuildFillerGrid(best, model, designIndex, cutIndex, maximum, _
+        forbidden, fillForbidden, settings, sourceDocument, planner)
+    Set FillRemaining = best
+    Exit Function
+RefillFailed:
+    number = Err.Number: source = Err.Source: description = Err.Description
+    If number = vbObjectError + 5242 Then
+        Err.Clear
+        AAProgressCheckCancelled
+        AADebugWrite "Quantity refill", "slot budget reached; retained validated plan"
+        Set FillRemaining = best
+    Else
+        Err.Raise number, source, description
+    End If
+End Function
+
+Private Function RebuildFillerGrid(ByVal seed As AALayoutPlan, ByVal model As AAModel, _
+                                    ByVal designIndex As Long, ByVal cutIndex As Long, _
+                                    ByVal maximum As Long, ByVal forbidden As Collection, _
+                                    ByVal fillForbidden As Collection, ByVal settings As AASettings, _
+                                    ByVal sourceDocument As Document, ByVal planner As AAPlanner) As AALayoutPlan
+    Dim best As AALayoutPlan, candidate As AALayoutPlan, angles As Collection
+    Dim orientation As AARotationVariant, a As Long, pattern As Long, px As Long, py As Long
+    Dim h As Double, v As Double, stepX As Double, stepY As Double, rightRoom As Double, bottomRoom As Double
+    Dim phasesX(0 To 2) As Double, phasesY(0 To 2) As Double
+    Dim probes As Long, tested As Long, gridSelected As Boolean, selected As Boolean
+    Dim started As Double
+    started = AADebugPerfBegin()
+    Set best = seed
+    Set angles = AnglesFor(model, 0#)
+    model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+    For a = 1 To angles.Count
+        AAProgressPulse
+        Set orientation = model.RotationVariant(CDbl(angles(a)))
+        rightRoom = settings.AreaWidthMM - orientation.Width
+        bottomRoom = settings.AreaHeightMM - orientation.Height
+        stepX = orientation.ReferenceWidth + h
+        If rightRoom >= 0# And bottomRoom >= 0# And stepX > AA_EDGE_TOLERANCE_MM Then
+            For pattern = 0 To 1
+                stepY = orientation.ReferenceHeight + v
+                If pattern = 1 Then
+                    stepY = OppositeVerticalPitch(orientation, orientation, stepX, stepX / 2#, h, v, 0#, True)
+                    stepY = MaxValue(stepY + AA_PAIR_INSET_RESERVE_MM, (orientation.ReferenceHeight + v) / 2#)
+                End If
+                If stepY > AA_EDGE_TOLERANCE_MM Then
+                    phasesX(0) = 0#: phasesX(1) = stepX / 2#
+                    phasesX(2) = rightRoom - stepX * Int(rightRoom / stepX)
+                    phasesY(0) = 0#: phasesY(1) = stepY / 2#
+                    phasesY(2) = bottomRoom - stepY * Int(bottomRoom / stepY)
+                    For px = 0 To 2
+                        For py = 0 To 2
+                            If tested >= AA_MAX_FILLER_GRID_CANDIDATES Or probes >= AA_MAX_FILLER_GRID_PROBES Then _
+                                GoTo FinishedGrid
+                            tested = tested + 1
+                            Set candidate = FillerGridCandidate(seed, orientation, designIndex, cutIndex, maximum, _
+                                fillForbidden, settings, h, v, stepX, stepY, phasesX(px), phasesY(py), pattern = 1, probes)
+                            If candidate.DesignCount >= best.DesignCount Then
+                                selected = (candidate.DesignCount > best.DesignCount Or Not gridSelected)
+                                If Not selected Then selected = planner.BetterPlan(candidate, best)
+                                If selected Then
+                                    If ValidPlan(candidate, forbidden, settings, "Quantity filler grid") Then
+                                        If planner.FinalPlanFits(candidate, settings, sourceDocument) Then
+                                            Set best = candidate: gridSelected = True
+                                            AADebugWrite "Quantity filler grid", "design=" & CStr(designIndex) & _
+                                                "; angle=" & CStr(orientation.Angle) & "; zigzag=" & CStr(pattern = 1) & _
+                                                "; phase=" & CStr(px) & "/" & CStr(py) & "; total=" & CStr(best.DesignCount)
+                                        End If
+                                    End If
+                                End If
+                            End If
+                        Next py
+                    Next px
+                End If
+            Next pattern
+        End If
+    Next a
+FinishedGrid:
+    AADebugStageEnd "Quantity filler grid", started
+    AADebugWrite "Quantity filler grid", "tested=" & CStr(tested) & "; probes=" & CStr(probes) & _
+        "; selected=" & CStr(gridSelected) & "; before total=" & CStr(seed.DesignCount) & "; total=" & CStr(best.DesignCount)
+    Set RebuildFillerGrid = best
+End Function
+
+Private Function FillerGridCandidate(ByVal seed As AALayoutPlan, ByVal orientation As AARotationVariant, _
+                                      ByVal designIndex As Long, ByVal cutIndex As Long, ByVal maximum As Long, _
+                                      ByVal forbidden As Collection, ByVal settings As AASettings, _
+                                      ByVal h As Double, ByVal v As Double, ByVal stepX As Double, ByVal stepY As Double, _
+                                      ByVal phaseX As Double, ByVal phaseY As Double, ByVal zigzag As Boolean, _
+                                      ByRef probes As Long) As AALayoutPlan
+    Dim result As AALayoutPlan, occupied As Collection, placed As AAPlacement, copied As AAPlacement
+    Dim candidate As AAPlacement, x As Double, y As Double, row As Long, count As Long
+    Set result = New AALayoutPlan: result.Configure AA_MODE_MEDIUM
+    ' Sejumlah sumber tetap bukan satu pola global; jangan mengubah flag itu.
+    result.SetRegularPattern False
+    Set occupied = New Collection
+    For Each placed In seed.Placements
+        AAProgressPulse
+        If placed.DesignIndex <> designIndex Then
+            Set copied = placed.CopyForPlan(): result.Add copied: occupied.Add copied
+        End If
+    Next placed
+    If phaseX > settings.AreaWidthMM - orientation.Width + AA_EDGE_TOLERANCE_MM Then
+        Set FillerGridCandidate = result
+        Exit Function
+    End If
+    y = settings.AreaHeightMM - phaseY
+    Do While y >= orientation.Height - AA_EDGE_TOLERANCE_MM And count < maximum
+        x = phaseX
+        If zigzag And row Mod 2 = 1 Then x = x + stepX / 2#
+        Do While x + orientation.Width <= settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM And count < maximum
+            If probes >= AA_MAX_FILLER_GRID_PROBES Then GoTo FinishedCandidate
+            probes = probes + 1
+            Set candidate = TryExactSlot(orientation, designIndex, cutIndex, 0, x, y, _
+                occupied, forbidden, settings, h, v)
+            If Not candidate Is Nothing Then
+                result.Add candidate: occupied.Add candidate: count = count + 1
+            End If
+            x = x + stepX
+        Loop
+        y = y - stepY: row = row + 1
+    Loop
+FinishedCandidate:
+    Set FillerGridCandidate = result
+End Function
 
 Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, _
                       ByVal designCount As Long, ByRef cutIndexes() As Long, _
