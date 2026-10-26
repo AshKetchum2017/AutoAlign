@@ -275,10 +275,15 @@ Public Function CanShareCutWith(ByVal other As AAModel) As Boolean
             ' Ukuran Design sudah divalidasi; artwork bukan acuan Minimum.
             CanShareCutWith = mCutGeometry.SameGeometry(other.CutGeometry)
         End If
-    ElseIf mSharpRectangle Or other.IsSharpRectangle Then
-        CanShareCutWith = mDesignBoundary.SameGeometry(other.DesignBoundary)
     Else
-        CanShareCutWith = mDesignBoundary.SameForm(other.DesignBoundary)
+        ' Template tidak boleh menyalin collision/contour Design standalone
+        ' ke pasangan, meskipun batas artwork kebetulan sama (dan sebaliknya).
+        If Not other.CutGeometry Is Nothing Then Exit Function
+        If mSharpRectangle Or other.IsSharpRectangle Then
+            CanShareCutWith = mDesignBoundary.SameGeometry(other.DesignBoundary)
+        Else
+            CanShareCutWith = mDesignBoundary.SameForm(other.DesignBoundary)
+        End If
     End If
 End Function
 

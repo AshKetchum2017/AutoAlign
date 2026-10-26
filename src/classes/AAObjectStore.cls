@@ -69,8 +69,8 @@ Public Sub BuildPairing(ByRef designIndexes() As Long, ByRef designCount As Long
     BuildPairingCore designIndexes, designCount, cutIndexes, cutCount, False
 End Sub
 
-' Process: beberapa kelompok Cut bersama. Bila Cut lebih dari satu, referensi
-' Cut mengikuti setiap Design (boleh berulang), dengan cutCount=designCount.
+' Process: kelompok Cut bersama dan standalone boleh bercampur. Peta campuran
+' sejajar dengan setiap Design; -1 berarti standalone, bukan referensi Cut.
 Public Sub BuildProcessPairing(ByRef designIndexes() As Long, ByRef designCount As Long, _
                                ByRef cutIndexes() As Long, ByRef cutCount As Long)
     BuildPairingCore designIndexes, designCount, cutIndexes, cutCount, True
@@ -80,6 +80,7 @@ Private Sub BuildPairingCore(ByRef designIndexes() As Long, ByRef designCount As
                              ByRef cutIndexes() As Long, ByRef cutCount As Long, _
                              ByVal allowSharedGroups As Boolean)
     Dim i As Long, j As Long, id As Long, cutIndex As Long
+    Dim resolvedCuts() As Long, hasStandalone As Boolean
     Dim used As Object
     designCount = 0: cutCount = 0
     Erase designIndexes: Erase cutIndexes
@@ -95,12 +96,14 @@ Private Sub BuildPairingCore(ByRef designIndexes() As Long, ByRef designCount As
     Next i
     ' Optimize/Check Layout tetap mendukung Cut Line saja; Process menolaknya.
     If designCount = 0 Then Exit Sub
+    ReDim resolvedCuts(0 To designCount - 1)
     Set used = CreateObject("Scripting.Dictionary")
     For j = 0 To designCount - 1
         i = designIndexes(j)
         id = mEntries(i).CutPartnerID
         If id = 0 Then
-            If cutCount > 0 Then Err.Raise vbObjectError + 5432, "AAObjectStore", _
+            hasStandalone = True: resolvedCuts(j) = -1
+            If cutCount > 0 And Not allowSharedGroups Then Err.Raise vbObjectError + 5432, "AAObjectStore", _
                 "Design /" & CStr(mEntries(i).StaticID) & _
                 " belum dipasangkan. Pilih Pasangan Cut Line, atau hapus semua Cut Line dari daftar untuk susunan tanpa pasangan."
         Else
@@ -112,13 +115,19 @@ Private Sub BuildPairingCore(ByRef designIndexes() As Long, ByRef designCount As
                 "AAObjectStore", "Cut /" & CStr(id) & _
                 " dipakai lebih dari satu Design. Gunakan satu Cut Line bersama untuk semua Design, atau pasangan satu-per-satu."
             used(CStr(id)) = True
-            If cutCount > 1 Then cutIndexes(j) = cutIndex
+            resolvedCuts(j) = cutIndex
+            If cutCount > 1 And Not allowSharedGroups Then cutIndexes(j) = cutIndex
         End If
     Next j
     If allowSharedGroups Then
         If used.Count <> cutCount Then Err.Raise vbObjectError + 5435, "AAObjectStore", _
             "Ada Cut Line yang tidak dipakai Design. Hapus Cut Line tersebut atau tetapkan pasangannya."
-        If cutCount > 1 Then cutCount = designCount
+        If cutCount > 1 Or (cutCount > 0 And hasStandalone) Then
+            For j = 0 To designCount - 1
+                cutIndexes(j) = resolvedCuts(j)
+            Next j
+            cutCount = designCount
+        End If
     ElseIf cutCount <> 0 And cutCount <> 1 And cutCount <> designCount Then
         Err.Raise vbObjectError + 5435, "AAObjectStore", _
             "Gunakan tanpa Cut Line, satu Cut Line bersama, atau satu Cut Line berbeda per Design. Hapus Cut Line yang tidak dipakai dari daftar."

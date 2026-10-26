@@ -449,12 +449,14 @@ Private Function HasSharedCutReferences(ByRef cutIndexes() As Long, ByVal cutCou
     If cutCount < 2 Then Exit Function
     Set seen = CreateObject("Scripting.Dictionary")
     For i = 0 To cutCount - 1
-        key = CStr(cutIndexes(i))
-        If seen.Exists(key) Then
-            HasSharedCutReferences = True
-            Exit Function
+        If cutIndexes(i) >= 0 Then
+            key = CStr(cutIndexes(i))
+            If seen.Exists(key) Then
+                HasSharedCutReferences = True
+                Exit Function
+            End If
+            seen.Add key, True
         End If
-        seen.Add key, True
     Next i
 End Function
 
@@ -486,7 +488,7 @@ Private Sub RestrictCutGroupRotations(ByRef models() As AAModel, _
     Set groups = GroupDesignsByCut(designIndexes, designCount, cutIndexes, cutOrder)
     For Each key In cutOrder
         Set members = groups(CStr(key))
-        If members.Count > 1 Then
+        If CLng(key) >= 0 And members.Count > 1 Then
             ReDim selected(0 To members.Count - 1)
             For i = 0 To members.Count - 1
                 selected(i) = CLng(members(i + 1))
@@ -503,6 +505,10 @@ Private Function BuildLegacyLayout(ByRef models() As AAModel, _
                                     ByVal sourceDocument As Document, ByVal layoutMode As Long, _
                                     ByVal planner As AAPlanner, ByRef cutOwner As Long) As AALayoutPlan
     Dim layoutDesigns() As Long, layoutCount As Long, i As Long, result As AALayoutPlan
+    ' -1 melambangkan standalone; tidak boleh menjadi template satu Cut bersama.
+    If cutCount = 1 Then
+        If cutIndexes(0) < 0 Then cutCount = 0
+    End If
     ReDim layoutDesigns(0 To designCount - 1)
     layoutCount = designCount: cutOwner = -1
     For i = 0 To designCount - 1
@@ -535,7 +541,7 @@ Private Function BuildLegacyCutGroups(ByRef models() As AAModel, _
                                        ByVal settings As AASettings, ByVal sourceDocument As Document, _
                                        ByVal layoutMode As Long, ByVal planner As AAPlanner) As AALayoutPlan
     Dim groups As Object, cutOrder As Collection, members As Collection, key As Variant
-    Dim selected() As Long, oneCut(0 To 0) As Long, i As Long, cutOwner As Long
+    Dim selected() As Long, oneCut(0 To 0) As Long, i As Long, cutOwner As Long, oneCutCount As Long
     Dim result As AALayoutPlan, part As AALayoutPlan
     Set groups = GroupDesignsByCut(designIndexes, designCount, cutIndexes, cutOrder)
     Set result = New AALayoutPlan
@@ -548,8 +554,10 @@ Private Function BuildLegacyCutGroups(ByRef models() As AAModel, _
             selected(i) = CLng(members(i + 1))
         Next i
         oneCut(0) = CLng(key)
+        oneCutCount = 1
+        If oneCut(0) < 0 Then oneCutCount = 0
         AADebugWrite "Pair group", "Cut index=" & CStr(key) & "; Design=" & CStr(members.Count)
-        Set part = BuildLegacyLayout(models, selected, members.Count, oneCut, 1, _
+        Set part = BuildLegacyLayout(models, selected, members.Count, oneCut, oneCutCount, _
             quantities, settings, sourceDocument, layoutMode, planner, cutOwner)
         AppendQuantityPlan result, part, cutOwner
     Next key
@@ -588,7 +596,10 @@ Private Function BuildExtendedQuantityGroups(ByVal objects As AAObjectStore, ByR
             For i = 1 To count - 1
                 If selectedCuts(i) <> selectedCuts(0) Then sameCut = False
             Next i
-            If sameCut Then selectedCutCount = 1
+            If sameCut Then
+                selectedCutCount = 0
+                If selectedCuts(0) >= 0 Then selectedCutCount = 1
+            End If
         End If
         If HasSharedCutReferences(selectedCuts, selectedCutCount) Then
             Set part = BuildLegacyCutGroups(models, selected, count, selectedCuts, quantities, _
@@ -682,7 +693,10 @@ Private Function BuildQuantityGroups(ByVal objects As AAObjectStore, ByRef model
             For j = 1 To selectedCount - 1
                 If selectedCuts(j) <> selectedCuts(0) Then sameCut = False
             Next j
-            If sameCut Then selectedCutCount = 1
+            If sameCut Then
+                selectedCutCount = 0
+                If selectedCuts(0) >= 0 Then selectedCutCount = 1
+            End If
         End If
         If groupNumber > 0 Then
             AADebugWrite "Quantity", "group=/" & CStr(groupNumber) & "; members=" & CStr(selectedCount)

@@ -304,3 +304,8 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 [Pengisian lokal filler Minimum]
 ~ Kelompok Quantity dengan satu jenis filler berbeda acuan mencoba tambahan lokal, termasuk menggeser satu filler untuk membuka slot. Pergeseran diterima hanya bila jumlah bertambah, tanpa memindahkan Design utama atau menambah rotasi.
 ~ Kandidat lokal dengan jumlah sama dibandingkan menurut sambungan baris/kolom filler, sehingga tambahan valid pertama tidak langsung menghentikan pencarian pola yang lebih rapi.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-26
+[Campuran standalone dan pasangan pada Process]
++ Minimum/Medium menerima Design standalone bersama Design berpasangan, termasuk dalam kelompok Quantity /n yang sama. Setiap anggota memakai acuannya sendiri; template dan irisan rotasi Cut bersama tidak diterapkan ke standalone.

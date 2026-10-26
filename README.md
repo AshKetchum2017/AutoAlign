@@ -51,9 +51,10 @@ AutoAlign mendukung tiga susunan input:
 | Input | Perilaku |
 | --- | --- |
 | Design tanpa Cut Line | Susunan memakai siluet luar Design sebagai acuan. |
-| Satu Cut Line | Semua Design dipasangkan ke ID Cut Line yang sama. |
-| Cut Line sebanyak Design | Setiap Design dipasangkan ke satu ID Cut Line berbeda yang dipilih melalui Pasangan Cut Line. |
+| Satu Cut Line bersama | Design yang berbagi Cut Line dipasangkan ke ID yang sama. |
+| Cut Line masing-masing | Setiap Design berpasangan memakai ID Cut Line yang dipilih melalui Pasangan Cut Line. |
 | Beberapa Cut Line, masing-masing dipakai satu atau beberapa Design | Pada Process, setiap kelompok Cut ditangani menurut ID pasangannya. Tanpa `/n`, reuse template berlaku per Cut. |
+| Campuran Design standalone dan berpasangan | Process Minimum/Medium memakai siluet Design untuk anggota standalone dan Cut Line masing-masing untuk anggota berpasangan. Keduanya boleh berada dalam kelompok `/n` yang sama. |
 
 **Pair** (`cmdPair`) mendaftarkan sedikitnya dua objek sekaligus beserta hubungannya: objek terakhir yang dipilih menjadi Cut Line, sedangkan seluruh objek lainnya menjadi Design dengan Cut Line yang sama. Pilih objek satu per satu dan Cut Line paling akhir; seleksi box atau Select All tidak menyediakan urutan klik untuk menentukan Cut Line. Design baru mengikuti urutan spasial daftar, lalu Cut Line baru ditempatkan di akhir.
 
@@ -62,10 +63,10 @@ Objek yang sudah terdaftar dengan peran sesuai dipakai kembali tanpa duplikasi; 
 Untuk pendaftaran melalui `cmdSetDesign`/`cmdSetCutLine`, pilih baris Design lalu tentukan **Pasangan Cut Line** melalui `cmbCutPartner`. ComboBox ini juga dapat mengubah pasangan hasil `cmdPair`. Hubungan disimpan berdasarkan ID dalam dokumen sumber. Contoh ringkasan daftar: `Design | Obj. ID: /19 -> Cut /26`. Urutan baris tidak menentukan pasangan.
 
 - **Ctrl/Shift** dapat memilih beberapa Design untuk diberi pasangan yang sama; baris Cut Line diabaikan. Pilihan berbeda ditampilkan sebagai **Campuran** tanpa mengubah hubungan sampai pengguna memilih Cut Line atau **Tanpa Cut Line**.
-- Untuk susunan tanpa pasangan, pilih **Tanpa Cut Line** pada semua Design dan hapus semua baris Cut Line dari daftar. Campuran Design standalone dan berpasangan serta Cut Line tidak terpakai ditolak.
+- Untuk standalone, pilih **Tanpa Cut Line** pada Design terkait. **Process Minimum/Medium** menerima campuran standalone dan pasangan; Cut Line yang terdaftar harus dipakai sedikitnya satu Design. **Optimize/Periksa Susunan** dijalankan terpisah antara standalone dan pasangan; daftar standalone tidak memuat baris Cut Line.
 - Menghapus baris Cut Line mempertahankan ID pasangan pada Design dan menampilkan **Pasangan hilang /ID**. Pilih ulang pasangan atau lepaskan secara eksplisit. Remove/Clear hanya mengubah daftar, bukan objek dokumen. Quantity dan rotasi tetap mengikuti Design.
 - **Pilih Pasangan** (`cmdSelectPair`) aktif ketika tepat satu Design dipilih. Tombol menyeleksi Design beserta Cut Line-nya pada dokumen/halaman sumber, atau Design saja bila tanpa pasangan. Jika salah satu ID hilang, seleksi dokumen dipertahankan.
-- Process, Optimize, dan Periksa Susunan membaca hubungan berdasarkan ID yang sama. Pasangan belum dipilih atau hilang ditolak sebelum pemrosesan. **Process Minimum/Medium** mendukung beberapa kelompok Cut bersama. **Optimize/Periksa Susunan** menerima standalone, satu Cut bersama, atau pasangan satu-per-satu; untuk hasil dengan beberapa kelompok Cut bersama, daftarkan dan jalankan satu kelompok Cut dalam satu operasi. Keduanya juga mendukung daftar yang hanya berisi Cut Line.
+- Process, Optimize, dan Periksa Susunan membaca hubungan berdasarkan ID yang sama. ID pasangan yang hilang ditolak sebelum pemrosesan. **Process Minimum/Medium** mendukung beberapa kelompok Cut bersama serta anggota standalone. Standalone mempertahankan pilihan rotasinya sendiri dan tidak ikut irisan rotasi Cut bersama. **Optimize/Periksa Susunan** menerima standalone, satu Cut bersama, atau pasangan satu-per-satu; untuk hasil dengan beberapa kelompok Cut bersama, daftarkan dan jalankan satu kelompok Cut dalam satu operasi. Keduanya juga mendukung daftar yang hanya berisi Cut Line.
 - Hubungan berlaku selama daftar aktif; Clear, penghapusan Design, atau penutupan form membuang hubungan terkait. Hubungan tidak disimpan ke registry atau dokumen.
 
 Untuk pasangan, **Cut Line menjadi acuan pola, gap, dan collision antarunit**. Bounds Design tetap diperiksa agar muat di dalam area. Artwork Design berpasangan dapat bertumpuk selama acuan Cut Line memenuhi aturan susunan.
@@ -526,7 +527,7 @@ AADebugOff
 
 | Kondisi | Yang perlu diperiksa |
 | --- | --- |
-| Design belum dipasangkan atau tampil **Pasangan hilang /ID** | Pilih Design, lalu tetapkan ulang `cmbCutPartner`. Untuk standalone, pilih **Tanpa Cut Line** dan hapus semua baris Cut Line. Remove tidak mengalihkan pasangan otomatis. |
+| Design tampil **Pasangan hilang /ID** | Pilih Design, lalu tetapkan ulang `cmbCutPartner`. Untuk standalone, pilih **Tanpa Cut Line** dan hapus baris Cut yang tidak dipakai Design lain. Remove tidak mengalihkan pasangan otomatis. |
 | Ingin berbagi beberapa Cut Line ke beberapa kelompok Design | Process Minimum/Medium membaca kelompok berdasarkan ID pasangan. Untuk Optimize/Periksa Susunan, jalankan kelompok Cut bersama satu per satu. Pastikan setiap Cut terdaftar dipakai oleh Design. |
 | Nilai Quantity/rotasi tampak kosong saat memilih banyak Design | Pilihan dapat berbeda antarbaris. Memilih nilai baru menerapkannya ke semua Design terpilih; Cut Line diabaikan. |
 | Jumlah hasil Medium berkurang setelah rotasi dibatasi | Kandidat orientasi yang boleh dipakai lebih sedikit. Pada Cut Line bersama, periksa irisan preset seluruh Design aktif. |
