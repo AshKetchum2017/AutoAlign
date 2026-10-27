@@ -19,6 +19,9 @@ Private Const AA_MINIMUM_MARK_FINE_STEPS As Long = 10
 Private Const AA_MAX_MINIMUM_REFILL_PROBES As Long = 1024
 Private Const AA_MAX_MINIMUM_REFILL_TARGETS As Long = 16
 Private Const AA_MINIMUM_REFILL_ALIGNMENT_MM As Double = 0.01
+Private Const AA_KISS_CORNER_DIAMETER_MM As Double = 7#
+Private Const AA_KISS_ANCHOR_SEARCH_MM As Double = 10#
+Private Const AA_KISS_ANCHOR_TOLERANCE_MM As Double = 0.000001
 
 Public Function BuildMedium(ByRef models() As AAModel, _
                             ByRef designIndexes() As Long, ByVal designCount As Long, _
@@ -46,8 +49,8 @@ Friend Function RefillMinimum(ByVal seed As AALayoutPlan, ByVal model As AAModel
     Dim x As Double, y As Double, dx As Double, dy As Double, started As Double
     Set RefillMinimum = seed: Set best = seed: bestScore = -2147483647
     If seed.AreaCount <> 1 Then Exit Function
-    For Each placed In seed.Placements
-        If placed.DesignIndex = designIndex Then
+    For Each placed In seed.placements
+        If placed.designIndex = designIndex Then
             count = count + 1
             If placed.RotationDelta <> 0# Then Exit Function
         End If
@@ -59,34 +62,34 @@ Friend Function RefillMinimum(ByVal seed As AALayoutPlan, ByVal model As AAModel
     model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
     If sx <= AA_EDGE_TOLERANCE_MM Or sy <= AA_EDGE_TOLERANCE_MM Or zy <= AA_EDGE_TOLERANCE_MM Then Exit Function
     Set forbidden = ForbiddenFor(settings, sourceDocument)
-    If settings.ModelMode = AA_MODEL_KISS_A Then Set forbidden = NominalForbiddenFor(settings, sourceDocument)
+    If settings.modelMode = AA_MODEL_KISS_A Then Set forbidden = NominalForbiddenFor(settings, sourceDocument)
     Set offsets = CreateObject("Scripting.Dictionary"): offsets.Add "0", Array(0#, 0#)
-    For Each original In seed.Placements
+    For Each original In seed.placements
         AAProgressPulse
-        If original.DesignIndex = designIndex Then
+        If original.designIndex = designIndex Then
             If targets >= AA_MAX_MINIMUM_REFILL_TARGETS Then GoTo Finished
             targets = targets + 1
             dx = 0#: dy = 0#
             ' Tambahan langsung tetap kandidat; jangan berhenti sebelum
             ' membandingkan kerapian alternatif dengan jumlah yang sama.
-            Set candidate = MinimumFillerBonus(seed, original, original, seed.Placements, model, _
+            Set candidate = MinimumFillerBonus(seed, original, original, seed.placements, model, _
                 designIndex, cutIndex, forbidden, offsets, settings, sourceDocument, sx, sy, zy, h, v, probes, bestScore)
             If Not candidate Is Nothing Then
                 Set best = candidate: bestDX = 0#: bestDY = 0#
             End If
             Set occupied = New Collection
-            For Each placed In seed.Placements
+            For Each placed In seed.placements
                 If Not placed Is original Then occupied.Add placed
             Next placed
             For Each neighbor In occupied
                 AAProgressPulse
-                If neighbor.DesignIndex = designIndex Then
-                    If Abs(neighbor.Footprint.LeftX - original.Footprint.LeftX) <= 2# * sx And _
-                       Abs(neighbor.Footprint.TopY - original.Footprint.TopY) <= 2# * sy Then
+                If neighbor.designIndex = designIndex Then
+                    If Abs(neighbor.footprint.leftX - original.footprint.leftX) <= 2# * sx And _
+                       Abs(neighbor.footprint.topY - original.footprint.topY) <= 2# * sy Then
                         For site = 0 To 7
                             If probes >= AA_MAX_MINIMUM_REFILL_PROBES Then GoTo Finished
-                            MinimumLocalSlot neighbor.Footprint, site, sx, sy, zy, x, y
-                            dx = x - original.Footprint.LeftX: dy = y - original.Footprint.TopY
+                            MinimumLocalSlot neighbor.footprint, site, sx, sy, zy, x, y
+                            dx = x - original.footprint.leftX: dy = y - original.footprint.topY
                             If Abs(dx) <= sx + AA_EDGE_TOLERANCE_MM And Abs(dy) <= sy + AA_EDGE_TOLERANCE_MM And _
                                Abs(dx) + Abs(dy) > AA_EDGE_TOLERANCE_MM Then
                                 probes = probes + 1: AAProgressPulse
@@ -113,12 +116,12 @@ Friend Function RefillMinimum(ByVal seed As AALayoutPlan, ByVal model As AAModel
     Next original
 Finished:
     Set RefillMinimum = best
-    If best.DesignCount > seed.DesignCount Then AADebugWrite "Minimum filler refill", _
+    If best.designCount > seed.designCount Then AADebugWrite "Minimum filler refill", _
         "move X/Y=" & Format$(bestDX, "0.000000") & "/" & Format$(bestDY, "0.000000") & _
         "; alignment gain=" & CStr(bestScore)
     AADebugStageEnd "Minimum filler local refill", started
     AADebugWrite "Minimum filler refill", "design=" & CStr(designIndex) & "; probes=" & CStr(probes) & _
-        "; targets=" & CStr(targets) & "; added=" & CStr(best.DesignCount - seed.DesignCount)
+        "; targets=" & CStr(targets) & "; added=" & CStr(best.designCount - seed.designCount)
 End Function
 
 Private Function MinimumFillerBonus(ByVal seed As AALayoutPlan, ByVal original As AAPlacement, _
@@ -132,14 +135,14 @@ Private Function MinimumFillerBonus(ByVal seed As AALayoutPlan, ByVal original A
     Dim site As Long, x As Double, y As Double, score As Long
     For site = 0 To 7
         If probes >= AA_MAX_MINIMUM_REFILL_PROBES Then Exit Function
-        MinimumLocalSlot moved.Footprint, site, sx, sy, zy, x, y
+        MinimumLocalSlot moved.footprint, site, sx, sy, zy, x, y
         probes = probes + 1: AAProgressPulse
         Set bonus = model.MakePlacement(designIndex, cutIndex, 0, x + model.DesignInsetX, y - model.DesignInsetY)
         If CandidateFits(bonus, occupied, forbidden, settings, offsets, h, v) Then
             score = MinimumFillerAlignment(seed, original, moved, bonus)
             If score > bestScore Then
-                Set result = New AALayoutPlan: result.Configure seed.LayoutMode: result.SetRegularPattern False
-                For Each placed In seed.Placements
+                Set result = New AALayoutPlan: result.Configure seed.layoutMode: result.SetRegularPattern False
+                For Each placed In seed.placements
                     AAProgressPulse
                     If placed Is original Then
                         result.Add moved.CopyForPlan()
@@ -159,14 +162,14 @@ End Function
 Private Function MinimumFillerAlignment(ByVal seed As AALayoutPlan, ByVal original As AAPlacement, _
                                        ByVal moved As AAPlacement, ByVal bonus As AAPlacement) As Long
     Dim placed As AAPlacement, score As Long
-    score = MinimumAxisAlignment(moved.Footprint, bonus.Footprint)
-    For Each placed In seed.Placements
-        If placed.DesignIndex = original.DesignIndex And Not placed Is original Then
+    score = MinimumAxisAlignment(moved.footprint, bonus.footprint)
+    For Each placed In seed.placements
+        If placed.designIndex = original.designIndex And Not placed Is original Then
             ' Delta seluruh pola: kurangi hubungan lama yang hilang, bukan
             ' hanya menghitung hubungan dua objek kandidat secara terpisah.
-            score = score + MinimumAxisAlignment(moved.Footprint, placed.Footprint) + _
-                MinimumAxisAlignment(bonus.Footprint, placed.Footprint) - _
-                MinimumAxisAlignment(original.Footprint, placed.Footprint)
+            score = score + MinimumAxisAlignment(moved.footprint, placed.footprint) + _
+                MinimumAxisAlignment(bonus.footprint, placed.footprint) - _
+                MinimumAxisAlignment(original.footprint, placed.footprint)
         End If
     Next placed
     MinimumFillerAlignment = score
@@ -174,14 +177,14 @@ End Function
 
 Private Function MinimumAxisAlignment(ByVal first As AAGeometry, ByVal second As AAGeometry) As Long
     Dim score As Long
-    If Abs(first.LeftX - second.LeftX) <= AA_MINIMUM_REFILL_ALIGNMENT_MM Then score = score + 1
-    If Abs(first.TopY - second.TopY) <= AA_MINIMUM_REFILL_ALIGNMENT_MM Then score = score + 1
+    If Abs(first.leftX - second.leftX) <= AA_MINIMUM_REFILL_ALIGNMENT_MM Then score = score + 1
+    If Abs(first.topY - second.topY) <= AA_MINIMUM_REFILL_ALIGNMENT_MM Then score = score + 1
     MinimumAxisAlignment = score
 End Function
 
 Private Sub MinimumLocalSlot(ByVal anchor As AAGeometry, ByVal site As Long, ByVal sx As Double, _
                              ByVal sy As Double, ByVal zy As Double, ByRef x As Double, ByRef y As Double)
-    x = anchor.LeftX: y = anchor.TopY
+    x = anchor.leftX: y = anchor.topY
     Select Case site
         Case 0: x = x + sx
         Case 1: x = x - sx
@@ -217,7 +220,7 @@ Friend Function FinalPlanFits(ByVal plan As AALayoutPlan, _
     FinalPlanFits = CenteredPlanFits(plan, offsets, _
         BuildForbidden(settings, sourceDocument), settings)
     If Not FinalPlanFits Then Exit Function
-    For Each placement In plan.Placements
+    For Each placement In plan.placements
         If placement.UsesMarkAreaAllowance Then
             If nominal Is Nothing Then Set nominal = NominalForbiddenFor(settings, sourceDocument)
             If Not PlacementMarksFit(placement, offsets, nominal) Then FinalPlanFits = False: Exit Function
@@ -230,17 +233,17 @@ Friend Function FinalizeMedium(ByVal plan As AALayoutPlan, ByVal settings As AAS
     Dim offsets As Object, forbidden As Collection, nominal As Collection
     Dim placement As AAPlacement, shift As Variant
     Dim safe As Boolean
-    If plan.DesignCount = 0 Then
+    If plan.designCount = 0 Then
         FinalizeMedium = True
         Exit Function
     End If
     Set forbidden = BuildForbidden(settings, sourceDocument)
-    If settings.ModelMode = AA_MODEL_KISS_A Then Set nominal = NominalForbiddenFor(settings, sourceDocument)
+    If settings.modelMode = AA_MODEL_KISS_A Then Set nominal = NominalForbiddenFor(settings, sourceDocument)
     Set offsets = CenterOffsets(plan, settings)
     safe = FindSafeOffsets(plan, offsets, forbidden, settings, nominal, True)
     If safe Then safe = CenteredPlanFits(plan, offsets, forbidden, settings)
-    For Each placement In plan.Placements
-        shift = offsets(CStr(placement.AreaIndex))
+    For Each placement In plan.placements
+        shift = offsets(CStr(placement.areaIndex))
         placement.Translate CDbl(shift(0)), CDbl(shift(1))
     Next placement
     ' Saat pergeseran bersama tidak cukup, caller memperbaiki kandidat individual
@@ -256,17 +259,17 @@ Friend Function BetterPlan(ByVal candidate As AALayoutPlan, _
     Dim candidateRotation As Double, referenceRotation As Double
     If candidate.AreaCount <> reference.AreaCount Then
         BetterPlan = (candidate.AreaCount < reference.AreaCount)
-    ElseIf candidate.DesignCount <> reference.DesignCount Then
-        BetterPlan = (candidate.DesignCount > reference.DesignCount)
-    ElseIf candidate.LayoutMode = AA_MODE_MEDIUM And reference.LayoutMode = AA_MODE_MEDIUM And _
+    ElseIf candidate.designCount <> reference.designCount Then
+        BetterPlan = (candidate.designCount > reference.designCount)
+    ElseIf candidate.layoutMode = AA_MODE_MEDIUM And reference.layoutMode = AA_MODE_MEDIUM And _
            candidate.HasRegularPattern <> reference.HasRegularPattern Then
         BetterPlan = candidate.HasRegularPattern
     Else
         candidateBoundsArea = OccupiedBoundsArea(candidate, candidateBounds)
         referenceBoundsArea = OccupiedBoundsArea(reference, referenceBounds)
         ' Toleransi ini hanya untuk ranking Medium, bukan kelonggaran gap/bounds.
-        equivalentBounds = (candidate.LayoutMode = AA_MODE_MEDIUM And _
-                            reference.LayoutMode = AA_MODE_MEDIUM)
+        equivalentBounds = (candidate.layoutMode = AA_MODE_MEDIUM And _
+                            reference.layoutMode = AA_MODE_MEDIUM)
         If equivalentBounds Then
             For areaIndex = 0 To candidate.AreaCount - 1
                 If Abs(candidateBounds(areaIndex, 0) - referenceBounds(areaIndex, 0)) > AA_PLAN_BOUNDS_TOLERANCE_MM Or _
@@ -294,7 +297,7 @@ End Function
 
 Private Function TotalRotation(ByVal plan As AALayoutPlan) As Double
     Dim placement As AAPlacement, angle As Double
-    For Each placement In plan.Placements
+    For Each placement In plan.placements
         ' RotationDelta relatif terhadap sumber; 270 derajat setara putaran -90.
         angle = placement.RotationDelta
         angle = angle - 360# * Int(angle / 360#)
@@ -318,17 +321,17 @@ Private Function OccupiedBoundsArea(ByVal plan As AALayoutPlan, _
     ReDim rights(0 To plan.AreaCount - 1)
     ReDim tops(0 To plan.AreaCount - 1)
     ReDim seen(0 To plan.AreaCount - 1)
-    For Each placement In plan.Placements
-        areaIndex = placement.AreaIndex
-        Set box = placement.CollisionFootprint
+    For Each placement In plan.placements
+        areaIndex = placement.areaIndex
+        Set box = placement.collisionFootprint
         If seen(areaIndex) Then
-            If box.LeftX < lefts(areaIndex) Then lefts(areaIndex) = box.LeftX
-            If box.BottomY < bottoms(areaIndex) Then bottoms(areaIndex) = box.BottomY
-            If box.RightX > rights(areaIndex) Then rights(areaIndex) = box.RightX
-            If box.TopY > tops(areaIndex) Then tops(areaIndex) = box.TopY
+            If box.leftX < lefts(areaIndex) Then lefts(areaIndex) = box.leftX
+            If box.bottomY < bottoms(areaIndex) Then bottoms(areaIndex) = box.bottomY
+            If box.rightX > rights(areaIndex) Then rights(areaIndex) = box.rightX
+            If box.topY > tops(areaIndex) Then tops(areaIndex) = box.topY
         Else
-            lefts(areaIndex) = box.LeftX: bottoms(areaIndex) = box.BottomY
-            rights(areaIndex) = box.RightX: tops(areaIndex) = box.TopY
+            lefts(areaIndex) = box.leftX: bottoms(areaIndex) = box.bottomY
+            rights(areaIndex) = box.rightX: tops(areaIndex) = box.topY
             seen(areaIndex) = True
         End If
     Next placement
@@ -369,7 +372,7 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
     AADebugCandidateStart "Minimum Straight"
     Set straightPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
         cutCount, quantities, settings, sourceDocument, AA_MODE_STRAIGHT, singleAreaOnly, reuseMarkChecks)
-    If Err.Number <> 0 Then straightError = Err.Description
+    If Err.number <> 0 Then straightError = Err.description
     Err.Clear
     On Error GoTo 0
     AAProgressCheckCancelled
@@ -380,7 +383,7 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
     On Error Resume Next
     Set zigZagPlan = BuildOne(models, designIndexes, designCount, cutIndexes, _
         cutCount, quantities, settings, sourceDocument, AA_MODE_ZIGZAG, singleAreaOnly, reuseMarkChecks)
-    If Err.Number <> 0 Then zigZagError = Err.Description
+    If Err.number <> 0 Then zigZagError = Err.description
     Err.Clear
     On Error GoTo 0
     AAProgressCheckCancelled
@@ -397,10 +400,10 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
     ElseIf zigZagPlan.AreaCount < straightPlan.AreaCount Then
         Set BuildMinimum = zigZagPlan
     ElseIf zigZagPlan.AreaCount = straightPlan.AreaCount And _
-        zigZagPlan.DesignCount > straightPlan.DesignCount Then
+        zigZagPlan.designCount > straightPlan.designCount Then
         Set BuildMinimum = zigZagPlan
     ElseIf zigZagPlan.AreaCount = straightPlan.AreaCount And _
-        zigZagPlan.DesignCount = straightPlan.DesignCount Then
+        zigZagPlan.designCount = straightPlan.designCount Then
         If HasFullerEarlierArea(zigZagPlan, straightPlan) Then
             Set BuildMinimum = zigZagPlan
         Else
@@ -459,7 +462,7 @@ Private Function BuildOne(ByRef models() As AAModel, _
     Dim safe As Boolean, centeredSafe As Boolean
 
     Set forbidden = BuildForbidden(settings, sourceDocument)
-    If settings.ModelMode = AA_MODEL_KISS_A Then Set nominal = NominalForbiddenFor(settings, sourceDocument)
+    If settings.modelMode = AA_MODEL_KISS_A Then Set nominal = NominalForbiddenFor(settings, sourceDocument)
     ' Susun tanpa mark dahulu, lalu pusatkan seluruh isi tiap area.
     ' Coba geser seluruh isi area sebelum merencanakan ulang Quantity.
     For passIndex = 1 To AA_MAX_CENTERING_PASSES
@@ -468,14 +471,14 @@ Private Function BuildOne(ByRef models() As AAModel, _
         Set result = BuildOneRaw(models, designIndexes, designCount, cutIndexes, _
             cutCount, quantities, settings, layoutMode, forbidden, offsets, singleAreaOnly)
         AADebugStageEnd "Minimum raw build" & stageLabel, perfStarted
-        If result.DesignCount = 0 Then
+        If result.designCount = 0 Then
             Set BuildOne = result
             Exit Function
         End If
         Set nextOffsets = CenterOffsets(result, settings)
         If AADebugDetailsEnabled Then
             AADebugPlan "Minimum raw pass=" & CStr(passIndex), result
-            For Each areaKey In nextOffsets.Keys
+            For Each areaKey In nextOffsets.keys
                 shift = nextOffsets(areaKey)
                 AADebugWrite "Minimum", "center pass=" & CStr(passIndex) & "; area=" & CStr(areaKey) & _
                     "; shift X/Y=" & Format$(CDbl(shift(0)), "0.000000000") & "/" & _
@@ -490,8 +493,8 @@ Private Function BuildOne(ByRef models() As AAModel, _
             centeredSafe = CenteredPlanFits(result, nextOffsets, forbidden, settings)
             AADebugStageEnd "Minimum center validation" & stageLabel, perfStarted
             If centeredSafe Then
-                For Each placement In result.Placements
-                    shift = nextOffsets(CStr(placement.AreaIndex))
+                For Each placement In result.placements
+                    shift = nextOffsets(CStr(placement.areaIndex))
                     placement.Translate CDbl(shift(0)), CDbl(shift(1))
                 Next placement
                 Set BuildOne = result
@@ -544,7 +547,7 @@ Private Function BuildOneRaw(ByRef models() As AAModel, _
                 areaIndex, occupied, forbidden, settings, layoutMode, _
                 AA_MAX_OBJECTS_PER_SOURCE, offsets)
             If singleAreaOnly Then GoTo NextDesign
-            If added = 0 And occupied.Count > 0 Then
+            If added = 0 And occupied.count > 0 Then
                 areaIndex = areaIndex + 1
                 Set occupied = New Collection
                 added = FillArea(result, models(designIndex), designIndex, cutIndex, _
@@ -553,7 +556,7 @@ Private Function BuildOneRaw(ByRef models() As AAModel, _
             End If
             If added = 0 Then Err.Raise vbObjectError + 5231, "AAPlanner", _
                 "Obj. ID sumber tidak dapat muat dalam satu area."
-            If cutCount = 1 And result.DesignCount > AA_MAX_OBJECTS_PER_SOURCE Then _
+            If cutCount = 1 And result.designCount > AA_MAX_OBJECTS_PER_SOURCE Then _
                 Err.Raise vbObjectError + 5210, "AAPlanner", _
                 "Satu Cut Line bersama melebihi batas 5000 objek."
         Else
@@ -561,12 +564,12 @@ Private Function BuildOneRaw(ByRef models() As AAModel, _
             Do While remaining > 0
                 added = FillArea(result, models(designIndex), designIndex, cutIndex, _
                     areaIndex, occupied, forbidden, settings, layoutMode, remaining, offsets)
-                If added < remaining And occupied.Count > 0 Then
+                If added < remaining And occupied.count > 0 Then
                     added = added + FillMinimumNeighbors(result, models(designIndex), _
                         designIndex, cutIndex, areaIndex, occupied, forbidden, settings, _
                         layoutMode, remaining - added, offsets)
                 End If
-                If added = 0 And occupied.Count = 0 Then Err.Raise _
+                If added = 0 And occupied.count = 0 Then Err.Raise _
                     vbObjectError + 5231, "AAPlanner", _
                     "Obj. ID sumber tidak dapat muat dalam satu area."
                 remaining = remaining - added
@@ -580,13 +583,13 @@ Private Function BuildOneRaw(ByRef models() As AAModel, _
                     Set occupied = New Collection
                 End If
             Loop
-            If cutCount = 1 And result.DesignCount > AA_MAX_OBJECTS_PER_SOURCE Then _
+            If cutCount = 1 And result.designCount > AA_MAX_OBJECTS_PER_SOURCE Then _
                 Err.Raise vbObjectError + 5210, "AAPlanner", _
                 "Satu Cut Line bersama melebihi batas 5000 objek."
         End If
 NextDesign:
     Next roleIndex
-    If requested And result.DesignCount = 0 Then Err.Raise _
+    If requested And result.designCount = 0 Then Err.Raise _
         vbObjectError + 5233, "AAPlanner", _
         "Tidak ada Design yang muat pada area dan zona mark yang dipilih."
     Set BuildOneRaw = result
@@ -621,7 +624,7 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
     model.GetMinimumSteps layoutMode, horizontalStep, verticalStep
     model.GetBoundaryGaps layoutMode, horizontalGap, verticalGap
     BuildStartingRows occupied, designIndex, verticalGap, _
-        cutIndex, model.CollisionInsetY, settings.AreaHeightMM, startingRows
+        cutIndex, model.collisionInsetY, settings.AreaHeightMM, startingRows
     gridTop = startingRows(0)
     yOffset = settings.AreaHeightMM - gridTop
     Do While yOffset + model.FootprintHeight <= settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM
@@ -645,7 +648,7 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
                 FillArea = FillArea + 1
                 rowAdded = True
                 If FillArea >= limit Then Exit Function
-            ElseIf markSlots.Count < AA_MAX_MINIMUM_MARK_SLOTS And candidate.UsesContourGap Then
+            ElseIf markSlots.count < AA_MAX_MINIMUM_MARK_SLOTS And candidate.UsesContourGap Then
                 If Not offsets Is Nothing Then
                     If offsets.Exists(CStr(areaIndex)) Then
                         If Not PlacementMarksFit(candidate, offsets, forbidden) Then markSlots.Add candidate
@@ -674,7 +677,7 @@ Private Function FillArea(ByVal result As AALayoutPlan, ByVal model As AAModel, 
         End If
         yOffset = settings.AreaHeightMM - gridTop + rowIndex * verticalStep
     Loop
-    If FillArea < limit And markSlots.Count > 0 Then
+    If FillArea < limit And markSlots.count > 0 Then
         FillArea = FillArea + FillMinimumMarkSlots(result, markSlots, occupied, forbidden, _
             settings, offsets, horizontalGap, verticalGap, limit - FillArea)
     End If
@@ -689,15 +692,15 @@ Private Function FillMinimumMarkSlots(ByVal result As AALayoutPlan, ByVal slots 
     Dim envelope As AAGeometry
     Dim probes As Long
     Dim perfStarted As Double
-    If occupied.Count = 0 Or limit <= 0 Then Exit Function
+    If occupied.count = 0 Or limit <= 0 Then Exit Function
     If horizontalGap < 0# Or verticalGap < 0# Then Exit Function
     perfStarted = AADebugPerfBegin()
     ' Semua tetangga grid sudah tersedia. Pertahankan bounds agar pemulihan
     ' tidak mengubah offset pemusatan lalu mengulang masalah pada pass berikutnya.
     Set envelope = New AAGeometry
     For Each placed In occupied
-        envelope.AddBounds placed.Footprint.LeftX, placed.Footprint.BottomY, _
-            placed.Footprint.RightX, placed.Footprint.TopY
+        envelope.AddBounds placed.footprint.leftX, placed.footprint.bottomY, _
+            placed.footprint.rightX, placed.footprint.topY
     Next placed
     For Each original In slots
         If AADebugDetailsEnabled Then AADebugMinimumSlotGap original, occupied
@@ -710,7 +713,7 @@ Private Function FillMinimumMarkSlots(ByVal result As AALayoutPlan, ByVal slots 
             If FillMinimumMarkSlots >= limit Then Exit For
         End If
     Next original
-    If AADebugEnabled Then AADebugWrite "Minimum", "mark recovery: slots=" & CStr(slots.Count) & _
+    If AADebugEnabled Then AADebugWrite "Minimum", "mark recovery: slots=" & CStr(slots.count) & _
         "; added=" & CStr(FillMinimumMarkSlots) & "; probes=" & CStr(probes) & "; max shift=2 mm"
     AADebugStageEnd "Minimum mark recovery", perfStarted
 End Function
@@ -763,15 +766,15 @@ Private Function ShiftMinimumMarkSlot(ByVal original As AAPlacement, ByVal occup
             Next y
         Next x
     Next ring
-    Set box = original.Footprint
+    Set box = original.footprint
     For i = 0 To count - 1
         dx = xs(i): dy = ys(i)
         AAProgressPulse
         probes = probes + 1
-        If box.LeftX + dx >= envelope.LeftX - AA_EDGE_TOLERANCE_MM And _
-           box.BottomY + dy >= envelope.BottomY - AA_EDGE_TOLERANCE_MM And _
-           box.RightX + dx <= envelope.RightX + AA_EDGE_TOLERANCE_MM And _
-           box.TopY + dy <= envelope.TopY + AA_EDGE_TOLERANCE_MM Then
+        If box.leftX + dx >= envelope.leftX - AA_EDGE_TOLERANCE_MM And _
+           box.bottomY + dy >= envelope.bottomY - AA_EDGE_TOLERANCE_MM And _
+           box.rightX + dx <= envelope.rightX + AA_EDGE_TOLERANCE_MM And _
+           box.topY + dy <= envelope.topY + AA_EDGE_TOLERANCE_MM Then
             tested = tested + 1
             Set candidate = original.CopyForPlan
             candidate.Translate dx, dy
@@ -779,7 +782,7 @@ Private Function ShiftMinimumMarkSlot(ByVal original As AAPlacement, ByVal occup
             If CandidateFits(candidate, occupied, forbidden, settings, offsets, _
                 horizontalGap, verticalGap, True) Then
                 If AADebugDetailsEnabled Then AADebugWrite "Minimum", "mark recovered: design=" & _
-                    CStr(original.DesignIndex) & "; area=" & CStr(original.AreaIndex) & _
+                    CStr(original.designIndex) & "; area=" & CStr(original.areaIndex) & _
                     "; shift X/Y=" & Format$(dx, "0.000000") & "/" & Format$(dy, "0.000000")
                 Set ShiftMinimumMarkSlot = candidate
                 recovered = True
@@ -792,9 +795,9 @@ Private Function ShiftMinimumMarkSlot(ByVal original As AAPlacement, ByVal occup
     Next i
     If AADebugDetailsEnabled Then
         after = AADebugSlotSnapshot()
-        AADebugWrite "Minimum", "mark slot: design=" & CStr(original.DesignIndex) & _
-            "; area=" & CStr(original.AreaIndex) & "; raw L/T=" & _
-            Format$(box.LeftX, "0.000000") & "/" & Format$(box.TopY, "0.000000") & _
+        AADebugWrite "Minimum", "mark slot: design=" & CStr(original.designIndex) & _
+            "; area=" & CStr(original.areaIndex) & "; raw L/T=" & _
+            Format$(box.leftX, "0.000000") & "/" & Format$(box.topY, "0.000000") & _
             "; recovered=" & CStr(recovered) & "; attempts=" & CStr(probes - startProbes) & _
             "; tested=" & CStr(tested) & "; envelope rejected=" & CStr(outside) & _
             "; bounds=" & CStr(CLng(after(0)) - CLng(before(0))) & _
@@ -821,7 +824,7 @@ Private Function FillMinimumNeighbors(ByVal result As AALayoutPlan, ByVal model 
 
     ' Tambahan terbatas untuk kuota finite campuran; fill bebas/grid satu sumber tetap.
     For Each placed In occupied
-        If placed.DesignIndex <> designIndex Then mixed = True: Exit For
+        If placed.designIndex <> designIndex Then mixed = True: Exit For
     Next placed
     If Not mixed Or limit <= 0 Then Exit Function
     If model.IsRectangle Then layoutMode = AA_MODE_STRAIGHT
@@ -830,10 +833,10 @@ Private Function FillMinimumNeighbors(ByVal result As AALayoutPlan, ByVal model 
     Set origin = model.MakePlacement(designIndex, cutIndex, areaIndex, _
         model.DesignInsetX, settings.AreaHeightMM - model.DesignInsetY)
     If Not origin.UsesContourGap Then Exit Function
-    Set collision = origin.CollisionFootprint
-    width = collision.Width: height = collision.Height
-    insetX = collision.LeftX - origin.Footprint.LeftX
-    insetY = origin.Footprint.TopY - collision.TopY
+    Set collision = origin.collisionFootprint
+    width = collision.width: height = collision.height
+    insetX = collision.leftX - origin.footprint.leftX
+    insetY = origin.footprint.topY - collision.topY
     maxX = settings.AreaWidthMM - model.FootprintWidth
     minY = model.FootprintHeight
     ReDim xs(0 To AA_MAX_MINIMUM_ANCHORS - 1)
@@ -846,21 +849,21 @@ Private Function FillMinimumNeighbors(ByVal result As AALayoutPlan, ByVal model 
         AddMinimumAnchor ys, ny, settings.AreaHeightMM, minY, settings.AreaHeightMM
         AddMinimumAnchor ys, ny, minY, minY, settings.AreaHeightMM
         For Each placed In occupied
-            Set box = placed.CollisionFootprint
-            AddMinimumAnchor xs, nx, box.LeftX - insetX, 0#, maxX
-            AddMinimumAnchor xs, nx, box.RightX - width - insetX, 0#, maxX
-            AddMinimumAnchor ys, ny, box.TopY + insetY, minY, settings.AreaHeightMM
-            AddMinimumAnchor ys, ny, box.BottomY + height + insetY, minY, settings.AreaHeightMM
+            Set box = placed.collisionFootprint
+            AddMinimumAnchor xs, nx, box.leftX - insetX, 0#, maxX
+            AddMinimumAnchor xs, nx, box.rightX - width - insetX, 0#, maxX
+            AddMinimumAnchor ys, ny, box.topY + insetY, minY, settings.AreaHeightMM
+            AddMinimumAnchor ys, ny, box.bottomY + height + insetY, minY, settings.AreaHeightMM
             ' Coba gap persis dahulu, lalu cadangan kecil untuk salinan kurva.
             For pass = 0 To 1
                 dx = h + pass * AA_MINIMUM_NEIGHBOR_RESERVE_MM
                 dy = v + pass * AA_MINIMUM_NEIGHBOR_RESERVE_MM
-                If placed.GapH > h Then dx = placed.GapH + pass * AA_MINIMUM_NEIGHBOR_RESERVE_MM
-                If placed.GapV > v Then dy = placed.GapV + pass * AA_MINIMUM_NEIGHBOR_RESERVE_MM
-                AddMinimumAnchor xs, nx, box.RightX + dx - insetX, 0#, maxX
-                AddMinimumAnchor xs, nx, box.LeftX - dx - width - insetX, 0#, maxX
-                AddMinimumAnchor ys, ny, box.BottomY - dy + insetY, minY, settings.AreaHeightMM
-                AddMinimumAnchor ys, ny, box.TopY + dy + height + insetY, minY, settings.AreaHeightMM
+                If placed.gapH > h Then dx = placed.gapH + pass * AA_MINIMUM_NEIGHBOR_RESERVE_MM
+                If placed.gapV > v Then dy = placed.gapV + pass * AA_MINIMUM_NEIGHBOR_RESERVE_MM
+                AddMinimumAnchor xs, nx, box.rightX + dx - insetX, 0#, maxX
+                AddMinimumAnchor xs, nx, box.leftX - dx - width - insetX, 0#, maxX
+                AddMinimumAnchor ys, ny, box.bottomY - dy + insetY, minY, settings.AreaHeightMM
+                AddMinimumAnchor ys, ny, box.topY + dy + height + insetY, minY, settings.AreaHeightMM
             Next pass
         Next placed
         ' Sumbu terurut: atas ke bawah, lalu kiri ke kanan. Anchor baru dibangun
@@ -925,16 +928,16 @@ Private Sub BuildStartingRows(ByVal occupied As Collection, ByVal designIndex As
         ' Cut yang sama melanjutkan grid saat Cut itu pertama kali diisi.
         ' Hanya batas sumber SEBELUM template tersebut boleh memulai baris;
         ' batas anggota sendiri/sumber sesudahnya tidak mereset fase ZigZag.
-        If cutIndex >= 0 And placed.CutIndex = cutIndex Then Exit For
-        If placed.DesignIndex <> designIndex Then
-            value = placed.CollisionFootprint.BottomY - verticalGap + collisionInsetY
+        If cutIndex >= 0 And placed.cutIndex = cutIndex Then Exit For
+        If placed.designIndex <> designIndex Then
+            value = placed.collisionFootprint.bottomY - verticalGap + collisionInsetY
             If value >= 0# And value <= areaTop Then
                 If Not unique.Exists(CStr(value)) Then unique.Add CStr(value), value
             End If
         End If
     Next placed
-    ReDim values(0 To unique.Count - 1)
-    For Each key In unique.Keys
+    ReDim values(0 To unique.count - 1)
+    For Each key In unique.keys
         values(i) = CDbl(unique(key))
         i = i + 1
     Next key
@@ -963,17 +966,17 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
     Dim spacingFootprint As AAGeometry
     Dim placedSpacing As AAGeometry
 
-    Set footprint = candidate.Footprint
-    Set collisionFootprint = candidate.CollisionFootprint
-    If footprint.LeftX < -AA_EDGE_TOLERANCE_MM Or _
-       footprint.BottomY < -AA_EDGE_TOLERANCE_MM Or _
-       footprint.RightX > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
-       footprint.TopY > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then
+    Set footprint = candidate.footprint
+    Set collisionFootprint = candidate.collisionFootprint
+    If footprint.leftX < -AA_EDGE_TOLERANCE_MM Or _
+       footprint.bottomY < -AA_EDGE_TOLERANCE_MM Or _
+       footprint.rightX > settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Or _
+       footprint.topY > settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then
         AADebugRejectSlot "bounds"
         Exit Function
     End If
     If Not offsets Is Nothing Then
-        If offsets.Exists(CStr(candidate.AreaIndex)) Then
+        If offsets.Exists(CStr(candidate.areaIndex)) Then
             If Not PlacementMarksFit(candidate, offsets, forbidden, "Minimum slot") Then
                 AADebugRejectSlot "mark"
                 Exit Function
@@ -983,7 +986,7 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
     For Each placed In occupied
         ' Acuan pasangan: Cut Line; standalone: siluet Design.
         Set spacingFootprint = collisionFootprint
-        Set placedSpacing = placed.CollisionFootprint
+        Set placedSpacing = placed.collisionFootprint
         If spacingFootprint.Overlaps(placedSpacing) Then
             AADebugRejectSlot "overlap"
             Exit Function
@@ -996,10 +999,10 @@ Private Function CandidateFits(ByVal candidate As AAPlacement, _
                 Exit Function
             End If
         Else
-            If spacingFootprint.RightX + horizontalGap > placedSpacing.LeftX + AA_EDGE_TOLERANCE_MM And _
-               spacingFootprint.LeftX - horizontalGap < placedSpacing.RightX - AA_EDGE_TOLERANCE_MM And _
-               spacingFootprint.TopY + verticalGap > placedSpacing.BottomY + AA_EDGE_TOLERANCE_MM And _
-               spacingFootprint.BottomY - verticalGap < placedSpacing.TopY - AA_EDGE_TOLERANCE_MM Then
+            If spacingFootprint.rightX + horizontalGap > placedSpacing.leftX + AA_EDGE_TOLERANCE_MM And _
+               spacingFootprint.leftX - horizontalGap < placedSpacing.rightX - AA_EDGE_TOLERANCE_MM And _
+               spacingFootprint.topY + verticalGap > placedSpacing.bottomY + AA_EDGE_TOLERANCE_MM And _
+               spacingFootprint.bottomY - verticalGap < placedSpacing.topY - AA_EDGE_TOLERANCE_MM Then
                 AADebugRejectSlot "gap"
                 Exit Function
             End If
@@ -1019,22 +1022,22 @@ Private Function CenterOffsets(ByVal plan As AALayoutPlan, _
 
     Set bounds = CreateObject("Scripting.Dictionary")
     Set result = CreateObject("Scripting.Dictionary")
-    For Each placement In plan.Placements
-        key = CStr(placement.AreaIndex)
-        Set footprint = placement.Footprint
+    For Each placement In plan.placements
+        key = CStr(placement.areaIndex)
+        Set footprint = placement.footprint
         If bounds.Exists(key) Then
             box = bounds(key)
-            If footprint.LeftX < box(0) Then box(0) = footprint.LeftX
-            If footprint.BottomY < box(1) Then box(1) = footprint.BottomY
-            If footprint.RightX > box(2) Then box(2) = footprint.RightX
-            If footprint.TopY > box(3) Then box(3) = footprint.TopY
+            If footprint.leftX < box(0) Then box(0) = footprint.leftX
+            If footprint.bottomY < box(1) Then box(1) = footprint.bottomY
+            If footprint.rightX > box(2) Then box(2) = footprint.rightX
+            If footprint.topY > box(3) Then box(3) = footprint.topY
             bounds(key) = box
         Else
-            bounds.Add key, Array(footprint.LeftX, footprint.BottomY, _
-                footprint.RightX, footprint.TopY)
+            bounds.Add key, Array(footprint.leftX, footprint.bottomY, _
+                footprint.rightX, footprint.topY)
         End If
     Next placement
-    For Each key In bounds.Keys
+    For Each key In bounds.keys
         box = bounds(key)
         result.Add key, Array((settings.AreaWidthMM - CDbl(box(0)) - _
             CDbl(box(2))) / 2#, (settings.AreaHeightMM - CDbl(box(1)) - _
@@ -1059,18 +1062,18 @@ Private Function FindSafeOffsets(ByVal plan As AALayoutPlan, ByVal offsets As Ob
     Dim markCache As Object
 
     allSafe = True
-    For Each key In offsets.Keys
+    For Each key In offsets.keys
         Set markCache = Nothing
         Set footprints = New Collection
         Set markFootprints = New Collection
-        For Each placement In plan.Placements
-            If CStr(placement.AreaIndex) = CStr(key) Then
+        For Each placement In plan.placements
+            If CStr(placement.areaIndex) = CStr(key) Then
                 Set footprint = ShiftedFootprint(placement, offsets)
                 footprints.Add footprint
                 shift = offsets(key)
-                Set footprint = placement.ForbiddenFootprint.Placed( _
-                    placement.ForbiddenFootprint.LeftX + CDbl(shift(0)), _
-                    placement.ForbiddenFootprint.TopY + CDbl(shift(1)))
+                Set footprint = placement.ForbiddenFootprint.placed( _
+                    placement.ForbiddenFootprint.leftX + CDbl(shift(0)), _
+                    placement.ForbiddenFootprint.topY + CDbl(shift(1)))
                 markFootprints.Add footprint
             End If
         Next placement
@@ -1095,8 +1098,8 @@ Private Function FindSafeOffsets(ByVal plan As AALayoutPlan, ByVal offsets As Ob
         Else
             allSafe = False
         End If
-        For Each placement In plan.Placements
-            If CStr(placement.AreaIndex) = CStr(key) Then placement.SetMarkAreaAllowance extended
+        For Each placement In plan.placements
+            If CStr(placement.areaIndex) = CStr(key) Then placement.SetMarkAreaAllowance extended
         Next placement
         If AADebugEnabled Then AADebugWrite "Mark shift", "area=" & CStr(key) & _
             "; found=" & CStr(found) & "; full mark=" & CStr(fullMark) & _
@@ -1129,15 +1132,15 @@ Private Function FindAreaShift(ByVal footprints As Collection, _
         GoTo SearchFinished
     End If
     Set footprint = footprints(1)
-    leftX = footprint.LeftX
-    bottomY = footprint.BottomY
-    rightX = footprint.RightX
-    topY = footprint.TopY
+    leftX = footprint.leftX
+    bottomY = footprint.bottomY
+    rightX = footprint.rightX
+    topY = footprint.topY
     For Each footprint In footprints
-        If footprint.LeftX < leftX Then leftX = footprint.LeftX
-        If footprint.BottomY < bottomY Then bottomY = footprint.BottomY
-        If footprint.RightX > rightX Then rightX = footprint.RightX
-        If footprint.TopY > topY Then topY = footprint.TopY
+        If footprint.leftX < leftX Then leftX = footprint.leftX
+        If footprint.bottomY < bottomY Then bottomY = footprint.bottomY
+        If footprint.rightX > rightX Then rightX = footprint.rightX
+        If footprint.topY > topY Then topY = footprint.topY
     Next footprint
     ' Ruang ini hanya untuk translasi: ukuran kelompok sendiri wajib muat
     ' di area nominal, sehingga allowance tidak membuka kapasitas baru.
@@ -1166,7 +1169,7 @@ Private Function FindAreaShift(ByVal footprints As Collection, _
 SearchFinished:
     FindAreaShift = found
     If AADebugEnabled Then AADebugWrite "Mark search", "allowance=" & CStr(areaAllowance) & _
-        "; objects=" & CStr(footprints.Count) & "; marks=" & CStr(forbidden.Count) & _
+        "; objects=" & CStr(footprints.count) & "; marks=" & CStr(forbidden.count) & _
         "; probes=" & CStr(probes) & "; found=" & CStr(found) & _
         "; cache=" & CStr(Not markCache Is Nothing) & _
         "; hits=" & CStr(ShiftMarkCacheHits(markCache) - cacheHitsBefore)
@@ -1225,10 +1228,10 @@ Private Function AreaShiftFits(ByVal footprints As Collection, _
     Dim footprint As AAGeometry
 
     For Each footprint In footprints
-        If footprint.LeftX + dx < -areaAllowance - AA_EDGE_TOLERANCE_MM Or _
-           footprint.BottomY + dy < -areaAllowance - AA_EDGE_TOLERANCE_MM Or _
-           footprint.RightX + dx > settings.AreaWidthMM + areaAllowance + AA_EDGE_TOLERANCE_MM Or _
-           footprint.TopY + dy > settings.AreaHeightMM + areaAllowance + AA_EDGE_TOLERANCE_MM Then Exit Function
+        If footprint.leftX + dx < -areaAllowance - AA_EDGE_TOLERANCE_MM Or _
+           footprint.bottomY + dy < -areaAllowance - AA_EDGE_TOLERANCE_MM Or _
+           footprint.rightX + dx > settings.AreaWidthMM + areaAllowance + AA_EDGE_TOLERANCE_MM Or _
+           footprint.topY + dy > settings.AreaHeightMM + areaAllowance + AA_EDGE_TOLERANCE_MM Then Exit Function
     Next footprint
     ' Batas area selalu diperiksa ulang: allowance tidak menjadi bagian cache mark.
     AreaShiftFits = ShiftMarksFit(markFootprints, dx, dy, forbidden, markCache)
@@ -1239,14 +1242,14 @@ Private Function NewShiftMarkCache() As Object
     On Error Resume Next
     Set result = CreateObject("Scripting.Dictionary")
     result.Add "hits", 0&
-    If Err.Number <> 0 Then Set result = Nothing
+    If Err.number <> 0 Then Set result = Nothing
     Err.Clear
     Set NewShiftMarkCache = result
 End Function
 
 Private Function ShiftMarkCacheHits(ByVal cache As Object) As Long
     On Error Resume Next
-    If Not cache Is Nothing Then ShiftMarkCacheHits = CLng(cache.Item("hits"))
+    If Not cache Is Nothing Then ShiftMarkCacheHits = CLng(cache.item("hits"))
     Err.Clear
 End Function
 
@@ -1262,12 +1265,12 @@ Private Function ShiftMarksFit(ByVal markFootprints As Collection, _
         key = CStr(dx) & "|" & CStr(dy)
         ' Kegagalan cache kembali ke predicate; error geometri tidak ditelan.
         On Error Resume Next
-        If cache.Exists(key) Then entry = cache.Item(key)
+        If cache.Exists(key) Then entry = cache.item(key)
         If IsArray(entry) Then
             cachedX = CDbl(entry(0)): cachedY = CDbl(entry(1)): cachedResult = CBool(entry(2))
-            If Err.Number = 0 Then hit = (cachedX = dx And cachedY = dy)
+            If Err.number = 0 Then hit = (cachedX = dx And cachedY = dy)
         End If
-        If hit Then cache.Item("hits") = ShiftMarkCacheHits(cache) + 1
+        If hit Then cache.item("hits") = ShiftMarkCacheHits(cache) + 1
         Err.Clear
         On Error GoTo 0
         If hit Then
@@ -1285,8 +1288,8 @@ Private Function ShiftMarksFit(ByVal markFootprints As Collection, _
     If Not cache Is Nothing Then
         On Error Resume Next
         ' Termasuk satu entry statistik; penuh tetap melayani hit yang ada.
-        If cache.Exists(key) Or cache.Count <= AA_MAX_SHIFT_CACHE_ENTRIES Then _
-            cache.Item(key) = Array(dx, dy, result)
+        If cache.Exists(key) Or cache.count <= AA_MAX_SHIFT_CACHE_ENTRIES Then _
+            cache.item(key) = Array(dx, dy, result)
         Err.Clear
         On Error GoTo 0
     End If
@@ -1298,13 +1301,13 @@ Private Function ShiftedFootprint(ByVal placement As AAPlacement, _
     Dim shift As Variant
     Dim result As AAGeometry
     Dim footprint As AAGeometry
-    shift = offsets(CStr(placement.AreaIndex))
-    Set footprint = placement.Footprint
+    shift = offsets(CStr(placement.areaIndex))
+    Set footprint = placement.footprint
     Set result = New AAGeometry
     ' Pemusatan/batas area hanya memerlukan angka, bukan salinan kurva.
-    result.AddBounds footprint.LeftX + CDbl(shift(0)), _
-        footprint.BottomY + CDbl(shift(1)), footprint.RightX + CDbl(shift(0)), _
-        footprint.TopY + CDbl(shift(1))
+    result.AddBounds footprint.leftX + CDbl(shift(0)), _
+        footprint.bottomY + CDbl(shift(1)), footprint.rightX + CDbl(shift(0)), _
+        footprint.topY + CDbl(shift(1))
     Set ShiftedFootprint = result
 End Function
 
@@ -1315,28 +1318,28 @@ Private Function CenteredPlanFits(ByVal plan As AALayoutPlan, ByVal offsets As O
     Dim footprint As AAGeometry
     Dim allowance As Double, bounds As Object, box As Variant, key As Variant
     Set bounds = CreateObject("Scripting.Dictionary")
-    For Each placement In plan.Placements
+    For Each placement In plan.placements
         Set footprint = ShiftedFootprint(placement, offsets)
         allowance = 0#
         If placement.UsesMarkAreaAllowance Then allowance = settings.MarkShiftAllowanceMM
-        If footprint.LeftX < -allowance - AA_EDGE_TOLERANCE_MM Or _
-           footprint.BottomY < -allowance - AA_EDGE_TOLERANCE_MM Or _
-           footprint.RightX > settings.AreaWidthMM + allowance + AA_EDGE_TOLERANCE_MM Or _
-           footprint.TopY > settings.AreaHeightMM + allowance + AA_EDGE_TOLERANCE_MM Then Exit Function
+        If footprint.leftX < -allowance - AA_EDGE_TOLERANCE_MM Or _
+           footprint.bottomY < -allowance - AA_EDGE_TOLERANCE_MM Or _
+           footprint.rightX > settings.AreaWidthMM + allowance + AA_EDGE_TOLERANCE_MM Or _
+           footprint.topY > settings.AreaHeightMM + allowance + AA_EDGE_TOLERANCE_MM Then Exit Function
         If Not PlacementMarksFit(placement, offsets, forbidden) Then Exit Function
-        key = CStr(placement.AreaIndex)
+        key = CStr(placement.areaIndex)
         If bounds.Exists(key) Then
             box = bounds(key)
-            If footprint.LeftX < box(0) Then box(0) = footprint.LeftX
-            If footprint.BottomY < box(1) Then box(1) = footprint.BottomY
-            If footprint.RightX > box(2) Then box(2) = footprint.RightX
-            If footprint.TopY > box(3) Then box(3) = footprint.TopY
+            If footprint.leftX < box(0) Then box(0) = footprint.leftX
+            If footprint.bottomY < box(1) Then box(1) = footprint.bottomY
+            If footprint.rightX > box(2) Then box(2) = footprint.rightX
+            If footprint.topY > box(3) Then box(3) = footprint.topY
             bounds(key) = box
         Else
-            bounds.Add key, Array(footprint.LeftX, footprint.BottomY, footprint.RightX, footprint.TopY)
+            bounds.Add key, Array(footprint.leftX, footprint.bottomY, footprint.rightX, footprint.topY)
         End If
     Next placement
-    For Each key In bounds.Keys
+    For Each key In bounds.keys
         box = bounds(key)
         If CDbl(box(2)) - CDbl(box(0)) > settings.AreaWidthMM + 2# * AA_EDGE_TOLERANCE_MM Or _
            CDbl(box(3)) - CDbl(box(1)) > settings.AreaHeightMM + 2# * AA_EDGE_TOLERANCE_MM Then Exit Function
@@ -1349,10 +1352,10 @@ Private Function PlacementMarksFit(ByVal placement As AAPlacement, _
                                     ByVal forbidden As Collection, _
                                     Optional ByVal traceLabel As String = vbNullString) As Boolean
     Dim shift As Variant
-    shift = offsets(CStr(placement.AreaIndex))
+    shift = offsets(CStr(placement.areaIndex))
     If Len(traceLabel) > 0 And AADebugDetailsEnabled Then
-        traceLabel = traceLabel & "; design=" & CStr(placement.DesignIndex) & _
-            "; area=" & CStr(placement.AreaIndex)
+        traceLabel = traceLabel & "; design=" & CStr(placement.designIndex) & _
+            "; area=" & CStr(placement.areaIndex)
     Else
         traceLabel = vbNullString
     End If
@@ -1370,12 +1373,12 @@ Private Function MarksFit(ByVal footprint As AAGeometry, _
     For Each obstacle In forbidden
         markIndex = markIndex + 1
         ' Salin kurva hanya jika bounding box dekat dengan salah satu mark.
-        If footprint.LeftX + dx < obstacle.RightX - AA_EDGE_TOLERANCE_MM And _
-           footprint.RightX + dx > obstacle.LeftX + AA_EDGE_TOLERANCE_MM And _
-           footprint.BottomY + dy < obstacle.TopY - AA_EDGE_TOLERANCE_MM And _
-           footprint.TopY + dy > obstacle.BottomY + AA_EDGE_TOLERANCE_MM Then
-            If moved Is Nothing Then Set moved = footprint.Placed( _
-                footprint.LeftX + dx, footprint.TopY + dy)
+        If footprint.leftX + dx < obstacle.rightX - AA_EDGE_TOLERANCE_MM And _
+           footprint.rightX + dx > obstacle.leftX + AA_EDGE_TOLERANCE_MM And _
+           footprint.bottomY + dy < obstacle.topY - AA_EDGE_TOLERANCE_MM And _
+           footprint.topY + dy > obstacle.bottomY + AA_EDGE_TOLERANCE_MM Then
+            If moved Is Nothing Then Set moved = footprint.placed( _
+                footprint.leftX + dx, footprint.topY + dy)
             If moved.Overlaps(obstacle) Then
                 If Len(traceLabel) > 0 Then AADebugMarkRejected traceLabel, footprint, moved, obstacle, dx, dy, markIndex
                 Exit Function
@@ -1389,14 +1392,16 @@ Private Function BuildForbidden(ByVal settings As AASettings, _
                                 ByVal sourceDocument As Document, _
                                 Optional ByVal markTolerance As Double = AA_MARK_TOLERANCE_MM) As Collection
     Dim result As New Collection
-    Select Case settings.ModelMode
+    Dim markLayer As Layer
+    Select Case settings.modelMode
         Case AA_MODEL_CUSTOM
             Set result = settings.CustomForbidden
         Case AA_MODEL_KISS_A
-            AddMark result, 6#, 10#, 10#, settings, sourceDocument, False, markTolerance
-            AddMark result, 6#, 475#, 10#, settings, sourceDocument, False, markTolerance
-            AddMark result, 319#, 10#, 10#, settings, sourceDocument, False, markTolerance
-            AddMark result, 319#, 475#, 10#, settings, sourceDocument, False, markTolerance
+            Set markLayer = KissMarkLayer(sourceDocument)
+            AddKissCorner result, 6#, 10#, settings, sourceDocument, markLayer, markTolerance
+            AddKissCorner result, 6#, 475#, settings, sourceDocument, markLayer, markTolerance
+            AddKissCorner result, 319#, 10#, settings, sourceDocument, markLayer, markTolerance
+            AddKissCorner result, 319#, 475#, settings, sourceDocument, markLayer, markTolerance
             AddMark result, 162.5, 11.5, 12#, settings, sourceDocument, False, markTolerance
         Case AA_MODEL_DIE_A
             AddMark result, 11#, 11#, 11#, settings, sourceDocument, True, markTolerance
@@ -1406,6 +1411,51 @@ Private Function BuildForbidden(ByVal settings As AASettings, _
     End Select
     Set BuildForbidden = result
 End Function
+
+Private Function KissMarkLayer(ByVal sourceDocument As Document) As Layer
+    Dim candidate As Layer, found As Layer
+    If sourceDocument Is Nothing Then Exit Function
+    For Each candidate In sourceDocument.ActivePage.Layers
+        AAProgressPulse
+        If StrComp(candidate.name, "scpro2_regmarks", vbTextCompare) = 0 Then
+            ' Lebih dari satu layer sama-sama ambigu: gunakan pusat bawaan.
+            If Not found Is Nothing Then Exit Function
+            Set found = candidate
+        End If
+    Next candidate
+    Set KissMarkLayer = found
+End Function
+
+Private Sub AddKissCorner(ByVal result As Collection, ByVal nominalX As Double, ByVal nominalY As Double, _
+                          ByVal settings As AASettings, ByVal sourceDocument As Document, _
+                          ByVal markLayer As Layer, ByVal markTolerance As Double)
+    Dim candidate As Shape, sourcePage As page, count As Long
+    Dim originX As Double, originY As Double, x As Double, y As Double, halfSearch As Double
+    Dim foundX As Double, foundY As Double, centerX As Double, centerY As Double
+    x = nominalX: y = nominalY
+    If Not markLayer Is Nothing Then
+        Set sourcePage = sourceDocument.ActivePage
+        originX = sourcePage.centerX - settings.PresetPageWidthMM / 2#
+        originY = sourcePage.centerY - settings.PresetPageHeightMM / 2#
+        halfSearch = AA_KISS_ANCHOR_SEARCH_MM / 2# + AA_KISS_ANCHOR_TOLERANCE_MM
+        ' Seperti WhiteSpace AutoSensor: objek langsung saja, group dihitung
+        ' satu kandidat, tanpa filter nama atau penelusuran anggota group.
+        For Each candidate In markLayer.shapes
+            AAProgressPulse
+            centerX = candidate.centerX: centerY = candidate.centerY
+            If Abs(centerX - originX - nominalX) <= halfSearch And _
+               Abs(centerY - originY - nominalY) <= halfSearch Then
+                count = count + 1
+                foundX = centerX - originX: foundY = centerY - originY
+            End If
+        Next candidate
+        If count = 1 Then x = foundX: y = foundY
+    End If
+    If AADebugDetailsEnabled Then AADebugWrite "Kiss corner", _
+        "nominal X/Y=" & CStr(nominalX) & "/" & CStr(nominalY) & "; candidates=" & CStr(count) & _
+        "; anchor=" & CStr(count = 1) & "; center X/Y=" & CStr(x) & "/" & CStr(y)
+    AddMark result, x, y, AA_KISS_CORNER_DIAMETER_MM, settings, sourceDocument, True, markTolerance
+End Sub
 
 Private Sub AddMark(ByVal result As Collection, ByVal centerX As Double, _
                     ByVal centerY As Double, ByVal sizeMM As Double, _

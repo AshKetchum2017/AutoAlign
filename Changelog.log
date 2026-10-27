@@ -309,3 +309,8 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 2026-10-26
 [Campuran standalone dan pasangan pada Process]
 + Minimum/Medium menerima Design standalone bersama Design berpasangan, termasuk dalam kelompok Quantity /n yang sama. Setiap anggota memakai acuannya sendiri; template dan irisan rotasi Cut bersama tidak diterapkan ke standalone.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-27
+[Forbidden mark sudut KissA]
+~ Empat zona sudut memakai lingkaran diameter nominal 7 mm pada pusat mark aktual di scpro2_regmarks, dengan fallback per sudut ke koordinat KissA bila anchor tidak pasti. Zona tengah 12 x 12 mm tetap; perubahan hanya pada perhitungan forbidden.
