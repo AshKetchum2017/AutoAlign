@@ -20,6 +20,7 @@ Private Const AA_MAX_MINIMUM_REFILL_PROBES As Long = 1024
 Private Const AA_MAX_MINIMUM_REFILL_TARGETS As Long = 16
 Private Const AA_MINIMUM_REFILL_ALIGNMENT_MM As Double = 0.01
 Private Const AA_KISS_CORNER_DIAMETER_MM As Double = 7#
+Private Const AA_KISS_CORNER_FALLBACK_MM As Double = 10#
 Private Const AA_KISS_ANCHOR_SEARCH_MM As Double = 10#
 Private Const AA_KISS_ANCHOR_TOLERANCE_MM As Double = 0.000001
 
@@ -1454,7 +1455,11 @@ Private Sub AddKissCorner(ByVal result As Collection, ByVal nominalX As Double, 
     If AADebugDetailsEnabled Then AADebugWrite "Kiss corner", _
         "nominal X/Y=" & CStr(nominalX) & "/" & CStr(nominalY) & "; candidates=" & CStr(count) & _
         "; anchor=" & CStr(count = 1) & "; center X/Y=" & CStr(x) & "/" & CStr(y)
-    AddMark result, x, y, AA_KISS_CORNER_DIAMETER_MM, settings, sourceDocument, True, markTolerance
+    If count = 1 Then
+        AddMark result, x, y, AA_KISS_CORNER_DIAMETER_MM, settings, sourceDocument, True, markTolerance
+    Else
+        AddMark result, nominalX, nominalY, AA_KISS_CORNER_FALLBACK_MM, settings, sourceDocument, False, markTolerance
+    End If
 End Sub
 
 Private Sub AddMark(ByVal result As Collection, ByVal centerX As Double, _

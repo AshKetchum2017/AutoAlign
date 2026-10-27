@@ -167,11 +167,11 @@ Zona mark preset menjadi area yang dihindari saat menyusun objek:
 
 | Model | Bentuk dan ukuran zona | Pusat zona pada sheet preset, dalam mm |
 | --- | --- | --- |
-| KissA | Empat lingkaran **diameter 7 mm** | Pusat mark aktual; fallback `(6; 10)`, `(6; 475)`, `(319; 10)`, `(319; 475)` |
+| KissA | Per sudut: lingkaran **diameter 7 mm** jika anchor unik, atau persegi **10 × 10 mm** sebagai fallback | Pusat mark aktual; pusat fallback `(6; 10)`, `(6; 475)`, `(319; 10)`, `(319; 475)` |
 | KissA | Satu persegi **12 × 12 mm** | `(162,5; 11,5)` |
 | DieA | Empat ellipse **11 × 11 mm** | `(11; 11)`, `(11; 474)`, `(314; 11)`, `(314; 474)` |
 
-Pusat sudut KissA mengikuti objek langsung pada layer `scpro2_regmarks` di halaman sumber, dengan metode pencarian seperti WhiteSpace AutoSensor. Tiap sudut mencari tepat satu pusat objek dalam persegi **10 × 10 mm** di sekitar koordinat fallback; group dihitung satu kandidat tanpa menelusuri anggotanya. Jika layer tidak ada/ambigu atau kandidat suatu sudut tidak tepat satu, sudut tersebut memakai pusat fallback. Ukuran pencarian 10 × 10 mm berbeda dari zona forbidden lingkaran 7 mm. Zona tengah 12 × 12 mm memakai pusat tetap pada tabel.
+Pusat sudut KissA mengikuti objek langsung pada layer `scpro2_regmarks` di halaman sumber, dengan metode pencarian seperti WhiteSpace AutoSensor. Tiap sudut mencari tepat satu pusat objek dalam persegi **10 × 10 mm** di sekitar koordinat fallback; group dihitung satu kandidat tanpa menelusuri anggotanya. Jika layer tidak ada/ambigu atau kandidat suatu sudut tidak tepat satu, sudut tersebut memakai **zona persegi 10 × 10 mm pada pusat fallback**, sementara sudut yang valid memakai lingkaran 7 mm pada anchor aktual. Ukuran jendela pencarian terpisah dari ukuran zona forbidden. Zona tengah 12 × 12 mm memakai pusat tetap pada tabel.
 
 Koordinat pusat zona diukur dari **kiri bawah sheet preset**. Pada **Process KissA**, pergeseran seluruh kelompok mengutamakan zona mark penuh, termasuk zona tengah 12 × 12 mm. Pencarian mencoba posisi di dalam area nominal dahulu. Jika belum menemukan posisi yang aman, kelompok boleh digeser hingga **0,6 mm melewati setiap sisi area** untuk menghindari mark penuh. Lebar dan tinggi kelompok sendiri harus tetap muat dalam ukuran area nominal; kelonggaran ini tidak dipakai untuk mencari slot atau menambah kapasitas area.
 
