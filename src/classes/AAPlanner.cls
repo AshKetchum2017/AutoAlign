@@ -19,6 +19,11 @@ Private Const AA_MINIMUM_MARK_FINE_STEPS As Long = 10
 Private Const AA_MAX_MINIMUM_REFILL_PROBES As Long = 1024
 Private Const AA_MAX_MINIMUM_REFILL_TARGETS As Long = 16
 Private Const AA_MINIMUM_REFILL_ALIGNMENT_MM As Double = 0.01
+Private Const AA_GROUP_REFILL_PROBES As Long = 2048
+Private Const AA_GROUP_REFILL_ADDITIONS As Long = 16
+Private Const AA_GROUP_LOCAL_SLOTS As Long = 32
+Private Const AA_GROUP_LOCAL_STEPS As Long = 16
+Private Const AA_GROUP_LOCAL_RADIUS As Double = 0.2
 Private Const AA_KISS_CORNER_DIAMETER_MM As Double = 7#
 Private Const AA_KISS_CORNER_FALLBACK_MM As Double = 10#
 Private Const AA_KISS_ANCHOR_SEARCH_MM As Double = 10#
@@ -197,6 +202,410 @@ Private Sub MinimumLocalSlot(ByVal anchor As AAGeometry, ByVal site As Long, ByV
         Case 7: x = x - sx / 2#: y = y - zy
     End Select
 End Sub
+
+' Medium membandingkan keluarga blok 0 derajat di luar trial kapasitas.
+' Preset yang tidak mengizinkan 0 tetap memakai hasil planner Medium semula.
+Friend Function ImproveMediumGroup(ByVal seed As AALayoutPlan, ByRef models() As AAModel, _
+                                   ByRef indexes() As Long, ByVal count As Long, _
+                                   ByRef cuts() As Long, ByVal cutCount As Long, _
+                                   ByVal difference As Long, ByVal settings As AASettings, _
+                                   ByVal doc As Document) As AALayoutPlan
+    Dim i As Long, candidate As AALayoutPlan, proposed As AALayoutPlan, adapter As AAMediumPlanner
+    Set ImproveMediumGroup = seed
+    For i = 0 To count - 1
+        AAProgressPulse
+        If Not models(indexes(i)).AllowsRotation(0#) Then
+            AADebugWrite "Medium blocks", "skipped: zero rotation is not allowed for all Designs"
+            Exit Function
+        End If
+    Next i
+    Set proposed = ImproveMinimumGroup(seed, models, indexes, count, cuts, cutCount, difference, settings, doc)
+    If proposed Is seed Then Exit Function
+    ' Gunakan metadata placement Medium agar sumber/Cut yang dipakai ulang
+    ' kembali ke sudut sumber, termasuk setelah group sebelumnya diputar.
+    Set adapter = New AAMediumPlanner
+    Set candidate = adapter.AdaptMinimum(proposed, models)
+    candidate.SetRegularPattern proposed.HasRegularPattern
+    For i = 1 To proposed.DesignCount
+        If Not proposed.Placements(i).CreatesCutLine Then candidate.Placements(i).SuppressCutLine
+    Next i
+    If Not MinimumGroupValid(candidate, settings, doc) Then
+        AADebugWrite "Medium blocks", "rejected after Medium placement adaptation"
+        Exit Function
+    End If
+    AADebugWrite "Medium blocks", "zero-angle candidate; before=" & CStr(seed.DesignCount) & _
+        "; selected=" & CStr(candidate.DesignCount)
+    Set ImproveMediumGroup = candidate
+End Function
+
+' Keluarga blok Minimum untuk kelompok /n bebas; juga kandidat tambahan Medium.
+' Tidak dipanggil oleh trial kuota.
+Friend Function ImproveMinimumGroup(ByVal seed As AALayoutPlan, ByRef models() As AAModel, _
+                                    ByRef indexes() As Long, ByVal count As Long, _
+                                    ByRef cuts() As Long, ByVal cutCount As Long, _
+                                    ByVal difference As Long, ByVal settings As AASettings, _
+                                    ByVal doc As Document) As AALayoutPlan
+    Dim best As AALayoutPlan, candidate As AALayoutPlan, allocation() As Long
+    Dim placed As AAPlacement, pattern As Long, bestPattern As Long, score As Double, bestScore As Double
+    Dim started As Double, orderer As AAMediumPlanner, totalLimit As Long, zeroSeed As Boolean
+    Dim i As Long, cut As Long, previousCut As Long, hasSharedCut As Boolean, blockMode As Long, joinGrid As Boolean
+    Set ImproveMinimumGroup = seed
+    If seed.AreaCount <> 1 Or count < 2 Or difference < 0 Then Exit Function
+    zeroSeed = True
+    ReDim allocation(0 To UBound(models))
+    For Each placed In seed.Placements
+        If placed.RotationDelta <> 0# Then zeroSeed = False
+        allocation(placed.DesignIndex) = allocation(placed.DesignIndex) + 1
+    Next placed
+    previousCut = -1
+    For i = 0 To count - 1
+        If allocation(indexes(i)) > 0 Then
+            cut = -1
+            If cutCount = 1 Then cut = cuts(0)
+            If cutCount > 1 Then cut = cuts(i)
+            If cut >= 0 And cut = previousCut Then hasSharedCut = True
+            previousCut = cut
+        End If
+    Next i
+    totalLimit = 2147483647
+    If cutCount = 1 Then totalLimit = AA_MAX_OBJECTS_PER_SOURCE
+    started = AADebugPerfBegin()
+    Set best = seed: bestScore = MinimumGroupAlignment(seed)
+    For pattern = AA_MODE_STRAIGHT To AA_MODE_ZIGZAG + 3
+        AAProgressPulse
+        Set candidate = Nothing
+        blockMode = pattern: joinGrid = True
+        If pattern <= AA_MODE_ZIGZAG Then
+            Set candidate = MinimumBlockSeed(models, indexes, count, cuts, cutCount, _
+                allocation, blockMode, settings, doc, seed, joinGrid)
+        ElseIf pattern = AA_MODE_ZIGZAG + 1 Then
+            ' Perbaikan lokal pada hasil lama juga dibandingkan; seed tidak dimutasi.
+            If zeroSeed Then Set candidate = seed
+        ElseIf hasSharedCut Then
+            ' Pertahankan kandidat band terpisah sebagai pembanding jumlah.
+            blockMode = pattern - 3: joinGrid = False
+            Set candidate = MinimumBlockSeed(models, indexes, count, cuts, cutCount, _
+                allocation, blockMode, settings, doc, seed, joinGrid)
+        End If
+        If Not candidate Is Nothing Then
+            Set candidate = MinimumGroupRefill(candidate, models, indexes, count, difference, totalLimit, settings, doc)
+            score = MinimumGroupAlignment(candidate)
+            If candidate.DesignCount > best.DesignCount Or _
+               (candidate.DesignCount = best.DesignCount And score > bestScore) Then
+                Set best = candidate: bestScore = score: bestPattern = pattern
+            ElseIf candidate.DesignCount = best.DesignCount And score = bestScore Then
+                If BetterPlan(candidate, best) Then Set best = candidate: bestPattern = pattern
+            End If
+            AADebugWrite "Minimum blocks", "pattern=" & CStr(pattern) & "; objects=" & _
+                CStr(candidate.DesignCount) & "; alignment=" & CStr(score)
+        Else
+            AADebugWrite "Minimum blocks", "pattern=" & CStr(pattern) & "; unavailable"
+        End If
+    Next pattern
+    If Not best Is seed Then
+        Set orderer = New AAMediumPlanner
+        Set best = orderer.OrderRefilledPattern(best)
+    End If
+    AADebugWrite "Minimum blocks", "before=" & CStr(seed.DesignCount) & "; selected=" & CStr(best.DesignCount) & _
+        "; selected pattern=" & CStr(bestPattern)
+    AADebugStageEnd "Minimum group blocks + refill", started
+    Set ImproveMinimumGroup = best
+End Function
+
+Private Function MinimumBlockSeed(ByRef models() As AAModel, ByRef indexes() As Long, _
+                                  ByVal count As Long, ByRef cuts() As Long, ByVal cutCount As Long, _
+                                  ByRef allocation() As Long, ByVal pattern As Long, _
+                                  ByVal settings As AASettings, ByVal doc As Document, _
+                                  ByVal reference As AALayoutPlan, ByVal continueSharedCut As Boolean) As AALayoutPlan
+    Dim result As AALayoutPlan, occupied As New Collection, forbidden As New Collection
+    Dim placed As AAPlacement, model As AAModel, i As Long, index As Long, cut As Long
+    Dim row As Long, added As Long, probes As Long, mode As Long, hasBlock As Boolean
+    Dim topY As Double, bottomY As Double, x As Double, y As Double, sx As Double, sy As Double
+    Dim h As Double, v As Double, previousV As Double
+    Dim previousH As Double, previousSX As Double, previousSY As Double
+    Dim previousIndex As Long, previousCut As Long, previousMode As Long, sameGrid As Boolean
+    Dim cutPolicies As Object, policyCounts() As Long, key As String
+    Set result = New AALayoutPlan: result.Configure pattern
+    Set cutPolicies = CreateObject("Scripting.Dictionary")
+    ReDim policyCounts(0 To UBound(models))
+    If Not reference Is Nothing Then
+        For Each placed In reference.Placements
+            AAProgressPulse
+            index = placed.DesignIndex: policyCounts(index) = policyCounts(index) + 1
+            cutPolicies.Add CStr(index) & "|" & CStr(policyCounts(index)), placed.CreatesCutLine
+        Next placed
+    End If
+    topY = settings.AreaHeightMM
+    For i = 0 To count - 1
+        AAProgressPulse
+        index = indexes(i): Set model = models(index)
+        If allocation(index) > 0 Then
+            cut = -1
+            If cutCount = 1 Then cut = cuts(0)
+            If cutCount > 1 Then cut = cuts(i)
+            mode = pattern
+            If model.IsRectangle Then mode = AA_MODE_STRAIGHT
+            model.GetMinimumSteps mode, sx, sy
+            model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+            If sx <= AA_EDGE_TOLERANCE_MM Or sy <= AA_EDGE_TOLERANCE_MM Then Exit Function
+            sameGrid = False
+            If continueSharedCut And hasBlock And cut >= 0 And cut = previousCut And mode = previousMode Then
+                If Abs(sx - previousSX) <= AA_EDGE_TOLERANCE_MM And _
+                   Abs(sy - previousSY) <= AA_EDGE_TOLERANCE_MM And _
+                   Abs(h - previousH) <= AA_EDGE_TOLERANCE_MM And _
+                   Abs(v - previousV) <= AA_EDGE_TOLERANCE_MM And _
+                   Abs(model.FootprintWidth - models(previousIndex).FootprintWidth) <= AA_EDGE_TOLERANCE_MM And _
+                   Abs(model.FootprintHeight - models(previousIndex).FootprintHeight) <= AA_EDGE_TOLERANCE_MM Then _
+                    sameGrid = models(previousIndex).CanShareCutWith(model)
+            End If
+            If sameGrid Then
+                AADebugWrite "Group block grid", "design=" & CStr(index) & "; continues design=" & _
+                    CStr(previousIndex) & "; Cut=" & CStr(cut)
+            Else
+                If hasBlock Then
+                    If previousV > v Then topY = bottomY - previousV Else topY = bottomY - v
+                End If
+                row = 0: bottomY = topY: y = topY: x = 0#
+            End If
+            added = 0
+            Do While y - model.FootprintHeight >= -AA_EDGE_TOLERANCE_MM And added < allocation(index)
+                Do While x + model.FootprintWidth <= settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM _
+                         And added < allocation(index)
+                    AAProgressPulse
+                    probes = probes + 1
+                    If probes > AA_MAX_CANDIDATES_PER_AREA Then Exit Function
+                    Set placed = model.MakePlacement(index, cut, 0, x + model.DesignInsetX, y - model.DesignInsetY)
+                    If CandidateFits(placed, occupied, forbidden, settings, Nothing, h, v) Then
+                        key = CStr(index) & "|" & CStr(added + 1)
+                        If cutPolicies.Exists(key) Then
+                            If Not CBool(cutPolicies(key)) Then placed.SuppressCutLine
+                        End If
+                        result.Add placed: occupied.Add placed: added = added + 1
+                        If placed.Footprint.BottomY < bottomY Then bottomY = placed.Footprint.BottomY
+                    End If
+                    x = x + sx
+                Loop
+                If added < allocation(index) Then
+                    row = row + 1: y = topY - row * sy: x = 0#
+                    If mode = AA_MODE_ZIGZAG And row Mod 2 = 1 Then x = sx / 2#
+                End If
+            Loop
+            If added <> allocation(index) Then Exit Function
+            previousV = v: hasBlock = True
+            previousH = h: previousSX = sx: previousSY = sy
+            previousIndex = index: previousCut = cut: previousMode = mode
+        End If
+    Next i
+    ' Tiap sumber berada di band kotaknya sendiri. Setelah itu hanya kontur
+    ' asli yang menjadi obstacle, dan common shift tetap diperiksa terhadap mark.
+    If Not FinalizeMedium(result, settings, doc) Then Exit Function
+    If MinimumGroupValid(result, settings, doc) Then Set MinimumBlockSeed = result
+End Function
+
+Private Function MinimumGroupRefill(ByVal seed As AALayoutPlan, ByRef models() As AAModel, _
+                                    ByRef indexes() As Long, ByVal count As Long, ByVal difference As Long, _
+                                    ByVal totalLimit As Long, _
+                                    ByVal settings As AASettings, ByVal doc As Document) As AALayoutPlan
+    Dim result As AALayoutPlan, candidate As AALayoutPlan, placed As AAPlacement
+    Dim allocation() As Long, tried As Object, forbidden As Collection, offsets As Object
+    Dim i As Long, j As Long, index As Long, bestIndex As Long, least As Long, minimum As Long, maximum As Long
+    Dim probes As Long, additions As Long, round As Long
+    Set result = seed
+    Set forbidden = ForbiddenFor(settings, doc)
+    If settings.ModelMode = AA_MODEL_KISS_A Then Set forbidden = NominalForbiddenFor(settings, doc)
+    Set offsets = CreateObject("Scripting.Dictionary"): offsets.Add "0", Array(0#, 0#)
+    Do While additions < AA_GROUP_REFILL_ADDITIONS And probes < AA_GROUP_REFILL_PROBES And result.DesignCount < totalLimit
+        ReDim allocation(0 To UBound(models))
+        For Each placed In result.Placements
+            allocation(placed.DesignIndex) = allocation(placed.DesignIndex) + 1
+        Next placed
+        Set tried = CreateObject("Scripting.Dictionary")
+        Set candidate = Nothing
+        For round = 1 To count
+            bestIndex = -1: least = AA_MAX_OBJECTS_PER_SOURCE + 1
+            For i = 0 To count - 1
+                index = indexes(i)
+                If Not tried.Exists(CStr(index)) And allocation(index) < least Then
+                    bestIndex = index: least = allocation(index)
+                End If
+            Next i
+            If bestIndex < 0 Then Exit For
+            tried.Add CStr(bestIndex), True
+            minimum = AA_MAX_OBJECTS_PER_SOURCE: maximum = 0
+            For j = 0 To count - 1
+                index = indexes(j): i = allocation(index)
+                If index = bestIndex Then i = i + 1
+                If i < minimum Then minimum = i
+                If i > maximum Then maximum = i
+            Next j
+            If maximum - minimum <= difference And least < AA_MAX_OBJECTS_PER_SOURCE Then
+                Set candidate = MinimumGroupBonus(result, models, bestIndex, forbidden, offsets, settings, doc, probes)
+                If Not candidate Is Nothing Then Exit For
+            End If
+            If probes >= AA_GROUP_REFILL_PROBES Then Exit For
+        Next round
+        If candidate Is Nothing Then Exit Do
+        Set result = candidate: additions = additions + 1
+        AADebugWrite "Minimum block refill", "design=" & CStr(bestIndex) & "; allocated=" & _
+            CStr(least + 1) & "; total=" & CStr(result.DesignCount)
+    Loop
+    AADebugWrite "Minimum block refill", "added=" & CStr(additions) & "; probes=" & CStr(probes) & _
+        "/" & CStr(AA_GROUP_REFILL_PROBES)
+    Set MinimumGroupRefill = result
+End Function
+
+Private Function MinimumGroupBonus(ByVal seed As AALayoutPlan, ByRef models() As AAModel, _
+                                   ByVal index As Long, ByVal forbidden As Collection, ByVal offsets As Object, _
+                                   ByVal settings As AASettings, ByVal doc As Document, ByRef probes As Long) As AALayoutPlan
+    Dim model As AAModel, placed As AAPlacement, bonus As AAPlacement, origin As AAPlacement
+    Dim candidate As AALayoutPlan, slots As New Collection, localSlots As New Collection, unique As Object
+    Dim sx As Double, sy As Double, zx As Double, zy As Double, h As Double, v As Double, x As Double, y As Double
+    Dim site As Long, i As Long, slot As Variant, key As String
+    Set model = models(index)
+    model.GetMinimumSteps AA_MODE_STRAIGHT, sx, sy
+    model.GetMinimumSteps AA_MODE_ZIGZAG, zx, zy
+    model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+    Set unique = CreateObject("Scripting.Dictionary")
+    For Each placed In seed.Placements
+        If placed.DesignIndex = index Then Set origin = placed
+        unique(CStr(Round(placed.Footprint.LeftX, 4)) & "|" & CStr(Round(placed.Footprint.TopY, 4))) = True
+    Next placed
+    If origin Is Nothing Then Exit Function
+    For Each placed In seed.Placements
+        AAProgressPulse
+        For site = 0 To 7
+            MinimumLocalSlot placed.Footprint, site, sx, sy, zy, x, y
+            key = CStr(Round(x, 4)) & "|" & CStr(Round(y, 4))
+            If Not unique.Exists(key) Then
+                unique.Add key, True: slots.Add Array(x, y)
+            End If
+        Next site
+    Next placed
+    ' Duluan seluruh tambahan langsung; jangan habiskan budget gerak lokal
+    ' pada slot awal yang tertutup sementara masih ada slot bebas di bawah.
+    For i = 1 To slots.Count
+        AAProgressPulse
+        slot = slots(i)
+        If probes >= AA_GROUP_REFILL_PROBES Then Exit Function
+        Set bonus = model.MakePlacement(index, origin.CutIndex, 0, _
+            CDbl(slot(0)) + model.DesignInsetX, CDbl(slot(1)) - model.DesignInsetY)
+        If Not origin.CreatesCutLine Then bonus.SuppressCutLine
+        probes = probes + 1
+        If CandidateFits(bonus, seed.Placements, forbidden, settings, offsets, h, v) Then
+            Set candidate = MinimumGroupAdded(seed, Nothing, Nothing, bonus, settings, doc)
+            If Not candidate Is Nothing Then Set MinimumGroupBonus = candidate: Exit Function
+        ElseIf localSlots.Count < AA_GROUP_LOCAL_SLOTS Then
+            If bonus.Footprint.LeftX >= 0# And bonus.Footprint.BottomY >= 0# And _
+               bonus.Footprint.RightX <= settings.AreaWidthMM And bonus.Footprint.TopY <= settings.AreaHeightMM Then _
+                localSlots.Add bonus
+        End If
+    Next i
+    For Each bonus In localSlots
+        Set candidate = MinimumGroupRelocate(seed, bonus, forbidden, offsets, settings, doc, probes)
+        If Not candidate Is Nothing Then Set MinimumGroupBonus = candidate: Exit Function
+        If probes >= AA_GROUP_REFILL_PROBES Then Exit Function
+    Next bonus
+End Function
+
+Private Function MinimumGroupRelocate(ByVal seed As AALayoutPlan, ByVal bonus As AAPlacement, _
+                                      ByVal forbidden As Collection, ByVal offsets As Object, _
+                                      ByVal settings As AASettings, ByVal doc As Document, _
+                                      ByRef probes As Long) As AALayoutPlan
+    Dim original As AAPlacement, placed As AAPlacement, moved As AAPlacement
+    Dim occupied As Collection, candidate As AALayoutPlan, localStep As Long, direction As Long
+    Dim dx As Double, dy As Double, rx As Double, ry As Double
+    For Each original In seed.Placements
+        AAProgressPulse
+        rx = (original.Footprint.RightX - original.Footprint.LeftX) * AA_GROUP_LOCAL_RADIUS
+        ry = (original.Footprint.TopY - original.Footprint.BottomY) * AA_GROUP_LOCAL_RADIUS
+        If bonus.Footprint.LeftX < original.Footprint.RightX + rx And _
+           bonus.Footprint.RightX > original.Footprint.LeftX - rx And _
+           bonus.Footprint.BottomY < original.Footprint.TopY + ry And _
+           bonus.Footprint.TopY > original.Footprint.BottomY - ry Then
+            Set occupied = New Collection
+            For Each placed In seed.Placements
+                If Not placed Is original Then occupied.Add placed
+            Next placed
+            If probes >= AA_GROUP_REFILL_PROBES Then Exit Function
+            probes = probes + 1
+            If CandidateFits(bonus, occupied, forbidden, settings, offsets, bonus.GapH, bonus.GapV) Then
+                occupied.Add bonus
+                For localStep = 1 To AA_GROUP_LOCAL_STEPS
+                    For direction = 0 To 7
+                        If probes >= AA_GROUP_REFILL_PROBES Then Exit Function
+                        dx = 0#: dy = 0#
+                        Select Case direction
+                            Case 0, 4, 6: dx = rx * localStep / AA_GROUP_LOCAL_STEPS
+                            Case 1, 5, 7: dx = -rx * localStep / AA_GROUP_LOCAL_STEPS
+                        End Select
+                        Select Case direction
+                            Case 2, 4, 5: dy = ry * localStep / AA_GROUP_LOCAL_STEPS
+                            Case 3, 6, 7: dy = -ry * localStep / AA_GROUP_LOCAL_STEPS
+                        End Select
+                        Set moved = original.CopyForPlan(): moved.Translate dx, dy
+                        probes = probes + 1: AAProgressPulse
+                        If CandidateFits(moved, occupied, forbidden, settings, offsets, moved.GapH, moved.GapV) Then
+                            Set candidate = MinimumGroupAdded(seed, original, moved, bonus, settings, doc)
+                            If Not candidate Is Nothing Then
+                                AADebugWrite "Minimum block move", "design=" & CStr(original.DesignIndex) & _
+                                    "; dx/dy=" & Format$(dx, "0.000000") & "/" & Format$(dy, "0.000000")
+                                Set MinimumGroupRelocate = candidate: Exit Function
+                            End If
+                        End If
+                    Next direction
+                Next localStep
+            End If
+        End If
+    Next original
+End Function
+
+Private Function MinimumGroupAdded(ByVal seed As AALayoutPlan, ByVal original As AAPlacement, _
+                                   ByVal moved As AAPlacement, ByVal bonus As AAPlacement, _
+                                   ByVal settings As AASettings, ByVal doc As Document) As AALayoutPlan
+    Dim result As New AALayoutPlan, placed As AAPlacement
+    result.Configure seed.LayoutMode: result.SetRegularPattern False
+    For Each placed In seed.Placements
+        AAProgressPulse
+        If placed Is original Then result.Add moved.CopyForPlan() Else result.Add placed.CopyForPlan()
+    Next placed
+    result.Add bonus
+    If MinimumGroupValid(result, settings, doc) Then
+        AADebugWrite "Minimum block bonus", "design=" & CStr(bonus.DesignIndex) & _
+            "; x/y=" & Format$(bonus.Footprint.LeftX, "0.000000") & "/" & Format$(bonus.Footprint.TopY, "0.000000")
+        Set MinimumGroupAdded = result
+    End If
+End Function
+
+Private Function MinimumGroupValid(ByVal plan As AALayoutPlan, ByVal settings As AASettings, _
+                                    ByVal doc As Document) As Boolean
+    Dim occupied As New Collection, forbidden As Collection, offsets As Object, placed As AAPlacement
+    Set forbidden = ForbiddenFor(settings, doc)
+    Set offsets = CreateObject("Scripting.Dictionary"): offsets.Add "0", Array(0#, 0#)
+    For Each placed In plan.Placements
+        AAProgressPulse
+        If Not CandidateFits(placed, occupied, forbidden, settings, offsets, placed.GapH, placed.GapV) Then Exit Function
+        occupied.Add placed
+    Next placed
+    MinimumGroupValid = FinalPlanFits(plan, settings, doc)
+End Function
+
+Private Function MinimumGroupAlignment(ByVal plan As AALayoutPlan) As Double
+    Dim bins As Object, placed As AAPlacement, key As String, axis As Long, value As Double
+    Set bins = CreateObject("Scripting.Dictionary")
+    For Each placed In plan.Placements
+        AAProgressPulse
+        For axis = 0 To 1
+            If axis = 0 Then value = placed.Footprint.LeftX Else value = placed.Footprint.TopY
+            key = CStr(placed.DesignIndex) & ":" & CStr(axis) & ":" & CStr(Round(value, 2))
+            If bins.Exists(key) Then
+                MinimumGroupAlignment = MinimumGroupAlignment + CLng(bins(key))
+                bins(key) = CLng(bins(key)) + 1
+            Else
+                bins.Add key, 1
+            End If
+        Next axis
+    Next placed
+End Function
 
 Friend Function ForbiddenFor(ByVal settings As AASettings, _
                              ByVal sourceDocument As Document) As Collection

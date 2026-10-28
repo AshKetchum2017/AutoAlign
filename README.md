@@ -114,6 +114,12 @@ Dalam satu area, Design yang berbagi ID Cut Line melanjutkan grid susunan Cut Li
 
 Pada kelompok Quantity dengan satu jenis filler berbeda acuan, Minimum mencoba pengisian lokal sesudah alokasi final. Pencarian dapat menambah satu filler langsung atau menggeser satu filler untuk membuka slot tambahan. Jumlah diutamakan; kandidat dengan jumlah sama dibandingkan menurut tambahan sambungan baris dan kolom filler terhadap pola yang ada. Pergeseran hanya diterapkan bila jumlah bertambah; Design lain tetap, rotasi relatif tetap 0°, dan penempatan harus memenuhi gap, area serta mark. Pencarian ini terbatas dan tidak menjamin setiap celah terisi.
 
+Untuk kelompok `/n` yang seluruh anggotanya tanpa target angka dan tidak memakai satu template bersama, Minimum membandingkan hasil kuota dengan kandidat blok per Design. Blok disusun dari atas ke bawah dengan pola internal Straight atau ZigZag; batas kotak hanya membatasi tahap awal. Sesudah pemusatan, celah boleh diisi silang oleh Design dalam kelompok yang sama, dengan prioritas jumlah terpasang paling sedikit dan urutan ListBox saat seri. Prioritas dihitung ulang setiap tambahan, dengan selisih jumlah maksimal dua.
+
+Design berurutan yang memakai Cut Line yang sama dapat melanjutkan grid Cut bersama, termasuk sisa kolom dan fase ZigZag, bila kontur, footprint, pitch, dan gap kompatibel. Batas antar-Design mengikuti gap kontur tanpa sela band tambahan. Design standalone dan Cut Line berbeda tetap mempunyai blok awal masing-masing. Kandidat band terpisah juga dipertahankan sebagai pembanding jumlah.
+
+Pengisian blok dapat menggeser satu objek secara lokal bila menghasilkan tambahan yang lolos pemeriksaan gap, area, dan mark. Jumlah anggota lain serta rotasi 0° dipertahankan. Jumlah hasil lama tidak dikurangi; jika jumlah sama, keteraturan baris/kolom lalu skor bounds digunakan untuk memilih kandidat. Hasil terpilih mengikuti urutan baris atas-ke-bawah dan kiri-ke-kanan. Pencarian berbatas dan tidak menjamin semua celah terisi.
+
 Untuk Quantity berupa angka dengan beberapa Design berbeda dalam satu container, Minimum juga mencoba posisi tambahan berdasarkan tepi dan alignment tetangga pada **rotasi 0°** sebelum membuka container baru. Pencarian tambahan ini tetap dibatasi dan harus memenuhi gap, batas area, serta zona mark.
 
 ### Medium
@@ -133,6 +139,8 @@ Jika lebar dan tinggi susunan acuan collision pada **setiap area** setara dalam 
 Pada satu Design rectangle dengan Quantity kosong dan satu area, Medium juga mencoba mengisi celah yang aman setelah pemusatan. Penambahan ini mempertahankan posisi objek yang sudah tersusun dan tidak memperbesar susunan.
 
 Pada satu Design non-rectangle dengan Quantity kosong dan satu area, Medium mencoba pengisian celah pola setelah pemusatan, perapatan, dan penyelarasan akhir. Tambahan mengikuti baris/kolom tetangga dengan rotasi yang sudah digunakan, tanpa menggeser objek lama atau memperbesar bounds susunan. Tambahan harus memenuhi gap, batas area, dan mark; pada KissA, objek tambahan menghindari zona mark nominal penuh. Pencarian terbatas dan dapat menyisakan celah.
+
+Untuk kelompok `/n` tanpa target angka yang tidak memakai satu template bersama, Medium juga membandingkan keluarga blok **0°** bila sudut tersebut diizinkan untuk semua Design. Kandidat ini memakai pembentukan blok dan pengisian seimbang yang dijelaskan pada Minimum, sekali setelah kuota akhir. Kandidat harus lolos pemeriksaan ulang sebagai placement Medium; hasil lama tetap dipertahankan jika kandidat kalah jumlah atau tidak valid. Pilihan yang tidak mengizinkan 0°, seperti 90 / 270, tetap memakai pencarian Medium sesuai presetnya tanpa keluarga blok ini.
 
 Hasil yang mendapat refill diurutkan per baris dari atas ke bawah, lalu kiri ke kanan dalam urutan Z anggota group yang dipakai AA. Baris memakai pusat Y dengan toleransi 1 mm terhadap objek tertinggi pada awal baris. Urutan ini tidak mengubah posisi atau rotasi objek.
 

@@ -421,6 +421,15 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
             AADebugWrite "Quantity", "final optimization rejected; retained capacity plan"
         End If
     End If
+    If layoutMode = AA_MODE_MINIMUM Then
+        Set result = planner.ImproveMinimumGroup(result, models, designIndexes, designCount, _
+            cutIndexes, cutCount, AA_QUANTITY_MAX_DIFFERENCE, settings, sourceDocument)
+        CountAllocation result, quantities
+    ElseIf layoutMode = AA_MODE_MEDIUM Then
+        Set result = planner.ImproveMediumGroup(result, models, designIndexes, designCount, _
+            cutIndexes, cutCount, AA_QUANTITY_MAX_DIFFERENCE, settings, sourceDocument)
+        CountAllocation result, quantities
+    End If
     For i = 0 To designCount - 1
         AADebugWrite "Quantity", "Design=" & CStr(designIndexes(i)) & "; allocated=" & _
             CStr(quantities(designIndexes(i)))

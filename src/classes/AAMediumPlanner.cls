@@ -744,7 +744,7 @@ Private Function RefillCenteredPattern(ByVal plan As AALayoutPlan, ByVal model A
     End If
 End Function
 
-Private Function OrderRefilledPattern(ByVal plan As AALayoutPlan) As AALayoutPlan
+Friend Function OrderRefilledPattern(ByVal plan As AALayoutPlan) As AALayoutPlan
     Dim order() As Long, leftX() As Double, centerY() As Double
     Dim placed As AAPlacement, result As AALayoutPlan
     Dim count As Long, i As Long, j As Long, candidate As Long
@@ -1123,7 +1123,7 @@ Private Function RepairCentered(ByVal plan As AALayoutPlan, ByRef models() As AA
     AADebugWrite "Repair", "moved=" & CStr(moved) & "; regular=" & CStr(result.HasRegularPattern)
 End Function
 
-Private Function AdaptMinimum(ByVal source As AALayoutPlan, _
+Friend Function AdaptMinimum(ByVal source As AALayoutPlan, _
                               ByRef models() As AAModel) As AALayoutPlan
     Dim result As AALayoutPlan, placed As AAPlacement, adapted As AAPlacement
     Dim orientation As AARotationVariant
