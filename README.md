@@ -132,6 +132,10 @@ Jika lebar dan tinggi susunan acuan collision pada **setiap area** setara dalam 
 
 Pada satu Design rectangle dengan Quantity kosong dan satu area, Medium juga mencoba mengisi celah yang aman setelah pemusatan. Penambahan ini mempertahankan posisi objek yang sudah tersusun dan tidak memperbesar susunan.
 
+Pada satu Design non-rectangle dengan Quantity kosong dan satu area, Medium mencoba pengisian celah pola setelah pemusatan, perapatan, dan penyelarasan akhir. Tambahan mengikuti baris/kolom tetangga dengan rotasi yang sudah digunakan, tanpa menggeser objek lama atau memperbesar bounds susunan. Tambahan harus memenuhi gap, batas area, dan mark; pada KissA, objek tambahan menghindari zona mark nominal penuh. Pencarian terbatas dan dapat menyisakan celah.
+
+Hasil yang mendapat refill diurutkan per baris dari atas ke bawah, lalu kiri ke kanan dalam urutan Z anggota group yang dipakai AA. Baris memakai pusat Y dengan toleransi 1 mm terhadap objek tertinggi pada awal baris. Urutan ini tidak mengubah posisi atau rotasi objek.
+
 Pencarian pasangan kurva kompleks menerima estimasi grid bounding box sampai **128 sel**. Sampai 32 sel, AA mencoba hingga tiga fase vertikal dengan maksimal 12 kandidat. Di atas 32 sel, AA memakai fase vertikal nol dengan maksimal empat kandidat dari dua keluarga rotasi dan dua offset baris. Pilihan rotasi Design tetap membatasi keluarga yang dicoba. Pembentukan setiap pola dibatasi 128 probe; estimasi grid tidak menentukan jumlah hasil akhirnya.
 
 Pada satu Design custom dengan Quantity kosong, kandidat pasangan kompleks kecil yang gagal dipusatkan atau diperbaiki dapat menyisakan slot aman dalam satu area. Slot yang gagal pemeriksaan dikeluarkan, lalu seluruh hasil diperiksa kembali tanpa menggeser ulang polanya. Pada KissA, kandidat cadangan ini memakai zona mark nominal penuh. Hasil tetap dibandingkan dengan kandidat lain berdasarkan jumlah dan aturan pemilihan yang sama.

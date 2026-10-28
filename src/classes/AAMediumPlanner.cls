@@ -16,6 +16,8 @@ Private Const AA_MAX_COMPACTION_PROBES_PER_AREA As Long = 4096
 Private Const AA_COMPACTION_PASSES As Long = 2
 Private Const AA_MAX_ALIGNMENT_PROBES_PER_AREA As Long = 256
 Private Const AA_ALIGNMENT_PASSES As Long = 2
+Private Const AA_MAX_FINAL_REFILL_PROBES As Long = 512
+Private Const AA_REFILL_ROW_TOLERANCE_MM As Double = 1#
 Private Const AA_MAX_FILLER_GRID_CANDIDATES As Long = 144
 Private Const AA_MAX_FILLER_GRID_PROBES As Long = 32768
 Private Const AA_MAX_PAIR_CONTOUR_EDGES As Long = 32
@@ -282,7 +284,7 @@ Public Function Build(ByRef models() As AAModel, ByRef designIndexes() As Long, 
                       Optional ByVal singleAreaOnly As Boolean = False, _
                       Optional ByVal capacityTarget As Long = -1) As AALayoutPlan
     Dim best As AALayoutPlan, minimum As AALayoutPlan, candidate As AALayoutPlan
-    Dim forbidden As Collection, angles As Collection, angle As Variant
+    Dim forbidden As Collection, refillForbidden As Collection, angles As Collection, angle As Variant
     Dim firstVariant As AARotationVariant
     Dim firstIndex As Long, i As Long, pattern As Long, lastError As String
     Dim pairAngle As Long, rowMode As Long, patternMode As Long, pairCutIndex As Long
@@ -463,8 +465,8 @@ NextPairAngle:
                 sourceDocument, sharedPlanner, candidateLabel)
             If designCount = 1 Then
                 If quantities(firstIndex) < 0 And models(firstIndex).IsRectangle Then
-                    Set candidate = RefillCenteredRectangle(candidate, models(firstIndex), _
-                        forbidden, settings, candidateLabel)
+                    Set candidate = RefillCenteredPattern(candidate, models(firstIndex), _
+                        forbidden, settings, candidateLabel, forbidden, 0)
                 End If
             End If
             ConsiderCandidate candidate, best, candidateLabel, bestLabel, sharedPlanner
@@ -546,6 +548,32 @@ NextPairAngle:
             End If
         End If
     End If
+    ' Sekali pada hasil akhir, bukan setiap kandidat/trial kapasitas.
+    ' Slot yang semula terkena mark dapat terbuka sesudah common shift/Compact.
+    If capacityTarget < 0 And designCount = 1 Then
+        firstIndex = designIndexes(0)
+        If quantities(firstIndex) < 0 And Not models(firstIndex).IsRectangle Then
+            Set refillForbidden = forbidden
+            If settings.ModelMode = AA_MODEL_KISS_A Then _
+                Set refillForbidden = sharedPlanner.NominalForbiddenFor(settings, sourceDocument)
+            candidateLabel = "Final refill " & bestLabel
+            AAProgressCandidate
+            AADebugCandidateStart candidateLabel
+            AAProgressStage "Mengisi celah pola"
+            Set candidate = RefillCenteredPattern(best, models(firstIndex), forbidden, _
+                settings, candidateLabel, refillForbidden, AA_MAX_FINAL_REFILL_PROBES)
+            AADebugCandidateEnd
+            ' Refill tidak memusatkan ulang seed dan tidak melonggarkan mark bonus.
+            If candidate.DesignCount > best.DesignCount Then
+                If sharedPlanner.FinalPlanFits(candidate, settings, sourceDocument) Then
+                    Set best = candidate: bestLabel = candidateLabel
+                    AADebugWrite "Refill", "accepted after final validation"
+                Else
+                    AADebugWrite "Refill", "rejected: final validation"
+                End If
+            End If
+        End If
+    End If
 BuildComplete:
     If capacityTarget > 0 Then
         If best.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget) Then
@@ -620,15 +648,16 @@ Private Function FinalizeCandidate(ByVal candidate As AALayoutPlan, ByRef models
     Set FinalizeCandidate = candidate
 End Function
 
-Private Function RefillCenteredRectangle(ByVal plan As AALayoutPlan, ByVal model As AAModel, _
+Private Function RefillCenteredPattern(ByVal plan As AALayoutPlan, ByVal model As AAModel, _
                                          ByVal forbidden As Collection, ByVal settings As AASettings, _
-                                         ByVal label As String) As AALayoutPlan
+                                         ByVal label As String, ByVal slotForbidden As Collection, _
+                                         ByVal probeLimit As Long) As AALayoutPlan
     Dim result As AALayoutPlan, occupied As Collection, slots As Collection, unique As Object
     Dim placed As AAPlacement, seed As AAPlacement, candidate As AAPlacement
     Dim orientation As AARotationVariant, angles As Collection, angle As Variant, slot As Variant
     Dim leftX As Double, rightX As Double, topY As Double, bottomY As Double, h As Double, v As Double
     Dim i As Long, added As Long, probes As Long
-    Set RefillCenteredRectangle = plan
+    Set RefillCenteredPattern = plan
     If plan Is Nothing Then Exit Function
     If plan.AreaCount <> 1 Or plan.DesignCount = 0 Or _
        plan.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit Function
@@ -638,6 +667,7 @@ Private Function RefillCenteredRectangle(ByVal plan As AALayoutPlan, ByVal model
     result.SetRegularPattern plan.HasRegularPattern
     Set occupied = New Collection
     For Each placed In plan.Placements
+        AAProgressPulse
         result.Add placed
         occupied.Add placed
         If occupied.Count = 1 Then
@@ -660,6 +690,7 @@ Private Function RefillCenteredRectangle(ByVal plan As AALayoutPlan, ByVal model
         Set unique = CreateObject("Scripting.Dictionary")
         Set seed = Nothing
         For Each placed In occupied
+            AAProgressPulse
             If Abs(placed.RotationDelta - CDbl(angle)) <= AA_EDGE_TOLERANCE_MM Then
                 Set seed = placed
                 unique(CStr(Round(placed.Footprint.LeftX, 4)) & "|" & _
@@ -668,6 +699,7 @@ Private Function RefillCenteredRectangle(ByVal plan As AALayoutPlan, ByVal model
         Next placed
         If Not seed Is Nothing Then
             For Each placed In occupied
+                AAProgressPulse
                 If Abs(placed.RotationDelta - CDbl(angle)) <= AA_EDGE_TOLERANCE_MM Then
                     SeedNeighbors slots, unique, placed, orientation, h, v, False
                     AddSlot slots, unique, placed.Footprint.LeftX, placed.CollisionFootprint.TopY + _
@@ -683,9 +715,10 @@ Private Function RefillCenteredRectangle(ByVal plan As AALayoutPlan, ByVal model
                    CDbl(slot(0)) + orientation.Width <= rightX + AA_EDGE_TOLERANCE_MM And _
                    CDbl(slot(1)) <= topY + AA_EDGE_TOLERANCE_MM And _
                    CDbl(slot(1)) - orientation.Height >= bottomY - AA_EDGE_TOLERANCE_MM Then
+                    If probeLimit > 0 And probes >= probeLimit Then Exit Do
                     probes = probes + 1
                     Set candidate = TryExactSlot(orientation, seed.DesignIndex, seed.CutIndex, _
-                        seed.AreaIndex, CDbl(slot(0)), CDbl(slot(1)), occupied, forbidden, settings, h, v)
+                        seed.AreaIndex, CDbl(slot(0)), CDbl(slot(1)), occupied, slotForbidden, settings, h, v)
                     If Not candidate Is Nothing Then
                         If Not seed.CreatesCutLine Then candidate.SuppressCutLine
                         result.Add candidate: occupied.Add candidate: added = added + 1
@@ -701,11 +734,72 @@ Private Function RefillCenteredRectangle(ByVal plan As AALayoutPlan, ByVal model
             Loop
         End If
         If result.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit For
+        If probeLimit > 0 And probes >= probeLimit Then Exit For
     Next angle
-    AADebugWrite "Refill", label & "; added=" & CStr(added) & "; probes=" & CStr(probes)
+    AADebugWrite "Refill", label & "; added=" & CStr(added) & "; probes=" & CStr(probes) & _
+        "; limit=" & CStr(probeLimit)
     If added > 0 Then
-        If ValidPlan(result, forbidden, settings, label & " refill") Then Set RefillCenteredRectangle = result
+        If ValidPlan(result, forbidden, settings, label & " refill") Then _
+            Set RefillCenteredPattern = OrderRefilledPattern(result)
     End If
+End Function
+
+Private Function OrderRefilledPattern(ByVal plan As AALayoutPlan) As AALayoutPlan
+    Dim order() As Long, leftX() As Double, centerY() As Double
+    Dim placed As AAPlacement, result As AALayoutPlan
+    Dim count As Long, i As Long, j As Long, candidate As Long
+    Dim firstInRow As Long, lastInRow As Long, rowY As Double
+    count = plan.DesignCount
+    ReDim order(1 To count)
+    ReDim leftX(1 To count)
+    ReDim centerY(1 To count)
+    For i = 1 To count
+        AAProgressPulse
+        Set placed = plan.Placements(i)
+        order(i) = i
+        leftX(i) = placed.Footprint.LeftX
+        centerY(i) = (placed.Footprint.TopY + placed.Footprint.BottomY) / 2#
+    Next i
+    ' Sama seperti pendaftaran: pusat Y tertinggi menetapkan awal baris.
+    ' Tie mempertahankan urutan lama. Toleransi tidak dirantai antar tetangga.
+    For i = 2 To count
+        candidate = order(i): j = i - 1
+        Do While j >= 1
+            AAProgressPulse
+            If centerY(order(j)) >= centerY(candidate) Then Exit Do
+            order(j + 1) = order(j): j = j - 1
+        Loop
+        order(j + 1) = candidate
+    Next i
+    firstInRow = 1
+    Do While firstInRow <= count
+        rowY = centerY(order(firstInRow))
+        lastInRow = firstInRow
+        Do While lastInRow < count
+            If rowY - centerY(order(lastInRow + 1)) > _
+                AA_REFILL_ROW_TOLERANCE_MM + 0.000000001 Then Exit Do
+            lastInRow = lastInRow + 1
+        Loop
+        For i = firstInRow + 1 To lastInRow
+            candidate = order(i): j = i - 1
+            Do While j >= firstInRow
+                AAProgressPulse
+                If leftX(order(j)) <= leftX(candidate) Then Exit Do
+                order(j + 1) = order(j): j = j - 1
+            Loop
+            order(j + 1) = candidate
+        Next i
+        firstInRow = lastInRow + 1
+    Loop
+    Set result = New AALayoutPlan
+    result.Configure plan.LayoutMode
+    result.SetRegularPattern plan.HasRegularPattern
+    For i = 1 To count
+        AAProgressPulse
+        result.Add plan.Placements(order(i))
+    Next i
+    AADebugWrite "Refill", "ordered top-to-bottom / left-to-right; objects=" & CStr(count)
+    Set OrderRefilledPattern = result
 End Function
 
 Private Function CompactPlan(ByVal plan As AALayoutPlan, ByRef models() As AAModel, _
