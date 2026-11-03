@@ -559,6 +559,8 @@ AADebugOff
 
 - Process menyediakan mode **Minimum** dan **Medium**. `optMaximum` dinonaktifkan. Optimize bersifat eksperimental; periksa hasil pemadatannya sebelum digunakan.
 - Rencana pengembangan Maximum dan pemilihan kandidat tersimpan dalam [Roadmap Maximum](ROADMAP-Maximum.md). Dokumen tersebut menjelaskan scope yang direncanakan, bukan fitur yang sudah tersedia.
+- Arah pengukuran dan optimasi performa Medium beserta helper bersama tersimpan dalam [Roadmap Optimasi](ROADMAP-Optimization.md). Prioritas dan tahapannya dapat direvisi mengikuti hasil pengukuran serta perubahan planner.
+- Rencana pengembangan tombol Optimize dan Refill container tersimpan dalam [Roadmap Optimize](ROADMAP-Optimize.md), mencakup ZigZag Minimum, pengukuran biaya Medium, serta dependensi Maximum. Dokumen tersebut menjelaskan rencana, bukan fitur Refill yang sudah tersedia.
 - Perencanaan dibatasi hingga **5000 objek per sumber**; satu Cut Line bersama juga mempunyai batas jumlah terkait.
 - Sumber harus mempunyai ukuran yang valid dan kurva yang dapat dibaca. Pada group yang perlu dibaca geometrinya, anggota tanpa kurva dapat menyebabkan validasi gagal.
 - Daftar mempertahankan ID sumber. Jika sumber dihapus, dipindah, atau berubah struktur, pulihkan sumber atau daftarkan ulang sebelum Process.
