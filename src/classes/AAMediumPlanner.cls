@@ -468,6 +468,9 @@ NextPairAngle:
                     Set candidate = RefillCenteredPattern(candidate, models(firstIndex), _
                         forbidden, settings, candidateLabel, forbidden, 0)
                 End If
+            ElseIf Not singleAreaOnly And capacityTarget < 0 Then
+                Set candidate = RefillIndependentAreas(candidate, models, quantities, cutCount, _
+                    forbidden, settings, sourceDocument, sharedPlanner, candidateLabel, True)
             End If
             ConsiderCandidate candidate, best, candidateLabel, bestLabel, sharedPlanner
             If capacityTarget > 0 Then
@@ -574,6 +577,10 @@ NextPairAngle:
             End If
         End If
     End If
+    If designCount > 1 And Not singleAreaOnly And capacityTarget < 0 Then
+        Set best = RefillIndependentAreas(best, models, quantities, cutCount, forbidden, _
+            settings, sourceDocument, sharedPlanner, "Final refill " & bestLabel, False)
+    End If
 BuildComplete:
     If capacityTarget > 0 Then
         If best.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget) Then
@@ -646,6 +653,95 @@ Private Function FinalizeCandidate(ByVal candidate As AALayoutPlan, ByRef models
     End If
     AADebugStageEnd "finalize: " & label, perfStarted
     Set FinalizeCandidate = candidate
+End Function
+
+' Container homogen saja: bukan pengisian silang atau trial quota /n.
+' Normalisasi AreaIndex pada snapshot, bukan pada placement seed milik caller.
+Private Function RefillIndependentAreas(ByVal plan As AALayoutPlan, ByRef models() As AAModel, _
+                                        ByRef quantities() As Long, ByVal cutCount As Long, _
+                                        ByVal forbidden As Collection, ByVal settings As AASettings, _
+                                        ByVal sourceDocument As Document, ByVal sharedPlanner As AAPlanner, _
+                                        ByVal label As String, ByVal rectangles As Boolean) As AALayoutPlan
+    Dim result As AALayoutPlan, part As AALayoutPlan, filled As AALayoutPlan
+    Dim placed As AAPlacement, copied As AAPlacement, seed As AAPlacement
+    Dim slotForbidden As Collection, sourceCounts As Object
+    Dim areaIndex As Long, sourceIndex As Long, probes As Long, added As Long
+    Dim homogeneous As Boolean, areaLabel As String, key As String
+    Set RefillIndependentAreas = plan
+    If plan Is Nothing Then Exit Function
+    If plan.AreaCount < 2 Then Exit Function
+    Set sourceCounts = CreateObject("Scripting.Dictionary")
+    For Each placed In plan.Placements
+        AAProgressPulse
+        key = CStr(placed.DesignIndex)
+        If Not sourceCounts.Exists(key) Then sourceCounts.Add key, 0&
+        sourceCounts(key) = CLng(sourceCounts(key)) + 1
+    Next placed
+    Set result = New AALayoutPlan
+    result.Configure plan.LayoutMode
+    result.SetRegularPattern plan.HasRegularPattern
+    Set slotForbidden = forbidden
+    If Not rectangles And settings.ModelMode = AA_MODEL_KISS_A Then _
+        Set slotForbidden = sharedPlanner.NominalForbiddenFor(settings, sourceDocument)
+    For areaIndex = 0 To plan.AreaCount - 1
+        AAProgressPulse
+        Set part = New AALayoutPlan
+        part.Configure plan.LayoutMode
+        part.SetRegularPattern plan.HasRegularPattern
+        Set seed = Nothing: homogeneous = True
+        For Each placed In plan.Placements
+            AAProgressPulse
+            If placed.AreaIndex = areaIndex Then
+                If seed Is Nothing Then Set seed = placed
+                If placed.DesignIndex <> seed.DesignIndex Or placed.CutIndex <> seed.CutIndex Or _
+                   placed.CreatesCutLine <> seed.CreatesCutLine Then homogeneous = False
+                Set copied = placed.CopyForPlan()
+                copied.SetAreaIndex 0
+                part.Add copied
+            End If
+        Next placed
+        Set filled = part
+        If Not seed Is Nothing And homogeneous Then
+            sourceIndex = seed.DesignIndex
+            ' Sumber yang tersebar di beberapa area tidak mendapat quota baru.
+            If quantities(sourceIndex) < 0 And _
+               CLng(sourceCounts(CStr(sourceIndex))) = part.DesignCount Then
+                If models(sourceIndex).IsRectangle = rectangles Then
+                    probes = AA_MAX_FINAL_REFILL_PROBES
+                    If rectangles Then probes = 0
+                    areaLabel = label & "; area=" & CStr(areaIndex) & "; design=" & CStr(sourceIndex)
+                    Set filled = RefillCenteredPattern(part, models(sourceIndex), forbidden, _
+                        settings, areaLabel, slotForbidden, probes)
+                    If cutCount = 1 Then
+                        If plan.DesignCount + added + filled.DesignCount - part.DesignCount > _
+                           AA_MAX_OBJECTS_PER_SOURCE Then Set filled = part
+                    End If
+                End If
+            End If
+        End If
+        If filled.DesignCount > part.DesignCount Then
+            added = added + filled.DesignCount - part.DesignCount
+            For Each placed In filled.Placements
+                AAProgressPulse
+                Set copied = placed.CopyForPlan()
+                copied.SetAreaIndex areaIndex
+                result.Add copied
+            Next placed
+        Else
+            For Each placed In plan.Placements
+                AAProgressPulse
+                If placed.AreaIndex = areaIndex Then result.Add placed
+            Next placed
+        End If
+    Next areaIndex
+    If added > 0 Then
+        If ValidPlan(result, forbidden, settings, label & " areas refill") Then
+            If sharedPlanner.FinalPlanFits(result, settings, sourceDocument) Then
+                Set RefillIndependentAreas = result
+                AADebugWrite "Refill", label & "; independent areas added=" & CStr(added)
+            End If
+        End If
+    End If
 End Function
 
 Private Function RefillCenteredPattern(ByVal plan As AALayoutPlan, ByVal model As AAModel, _
