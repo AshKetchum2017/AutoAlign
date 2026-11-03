@@ -14,6 +14,9 @@ Private mRotationDelta As Double
 Private mCenterX As Double, mCenterY As Double
 Private mUsesCenter As Boolean
 Private mContour As AAContour
+Private mContourDeltaX As Double, mContourDeltaY As Double
+Private mContourGeometry As AAGeometry
+Private mContourVerified As Boolean
 Private mGapH As Double, mGapV As Double
 Private mSlotLeft As Double, mSlotTop As Double
 Private mUsesContourGap As Boolean
@@ -57,6 +60,7 @@ End Sub
 
 Public Sub SetCollisionFootprint(ByVal geometry As AAGeometry)
     Set mCollisionFootprint = geometry
+    mContourVerified = False
 End Sub
 
 Public Sub SetForbiddenFootprint(ByVal geometry As AAGeometry)
@@ -79,6 +83,8 @@ Public Sub SetMediumData(ByVal angle As Double, ByVal centerX As Double, _
     mCenterX = centerX: mCenterY = centerY
     mUsesCenter = True
     Set mContour = contour
+    SetContourPose centerX, centerY
+    Set mContourGeometry = Nothing
     mGapH = gapH: mGapV = gapV
     mSlotLeft = mFootprint.LeftX: mSlotTop = mFootprint.TopY
 End Sub
@@ -90,9 +96,65 @@ End Sub
 Public Sub SetContourData(ByVal contour As AAContour, ByVal gapH As Double, _
                           ByVal gapV As Double, Optional ByVal useContourGap As Boolean = True)
     Set mContour = contour
+    Set mContourGeometry = Nothing
     mGapH = gapH: mGapV = gapV
     mUsesContourGap = useContourGap
     mSlotLeft = mFootprint.LeftX: mSlotTop = mFootprint.TopY
+    ' Capture inspeksi dapat memakai kurva aktual pada posisi semula.
+    If Not contour Is Nothing Then SetContourPose _
+        mCollisionFootprint.LeftX - contour.LeftX, mCollisionFootprint.TopY - contour.TopY
+End Sub
+
+' Pose relatif terhadap kurva saat Capture; jangan diturunkan lagi dari bbox copy.
+Friend Sub SetContourPose(ByVal deltaX As Double, ByVal deltaY As Double)
+    mContourDeltaX = deltaX: mContourDeltaY = deltaY
+    mContourVerified = False
+End Sub
+
+Friend Sub SetContourGeometry(ByVal geometry As AAGeometry)
+    Set mContourGeometry = geometry
+    mContourVerified = False
+End Sub
+
+Friend Property Get ContourGeometry() As AAGeometry
+    VerifyContourGeometry
+    Set ContourGeometry = mContourGeometry
+End Property
+
+' Bbox saja dapat membulat, tetapi deformasi node/control harus diperiksa aktual.
+' Dikerjakan sekali ketika kontur diperlukan; Translate membatalkan hasilnya.
+Private Sub VerifyContourGeometry()
+    Dim dx As Double, dy As Double, perfStarted As Double
+    If mContourVerified Then Exit Sub
+    If AADebugProfiling Then perfStarted = AADebugPerfBegin()
+    If Not mContourGeometry Is Nothing Then
+        dx = mContourDeltaX: dy = mContourDeltaY
+        If mCollisionFootprint.TryTranslationOf(mContourGeometry, dx, dy) Then
+            mContourDeltaX = dx: mContourDeltaY = dy
+        Else
+            Set mContour = New AAContour
+            mContour.Capture mCollisionFootprint
+            Set mContourGeometry = mCollisionFootprint
+            mContourDeltaX = 0#: mContourDeltaY = 0#
+        End If
+    End If
+    mContourVerified = True
+    If AADebugProfiling Then AADebugPerfEnd AA_PERF_CONTOUR_POSE, perfStarted
+End Sub
+
+Friend Property Get ContourDeltaX() As Double
+    VerifyContourGeometry
+    ContourDeltaX = mContourDeltaX
+End Property
+
+Friend Property Get ContourDeltaY() As Double
+    VerifyContourGeometry
+    ContourDeltaY = mContourDeltaY
+End Property
+
+Friend Sub PreserveSourceRotation()
+    mUsesCenter = False
+    mRotationDelta = 0#
 End Sub
 
 Public Property Get UsesContourGap() As Boolean
@@ -108,18 +170,24 @@ Public Property Get SlotTop() As Double
 End Property
 
 Public Function HasClearance(ByVal other As AAPlacement) As Boolean
-    Dim h As Double, v As Double
+    Dim h As Double, v As Double, gap As Double
     h = mGapH: v = mGapV
     If other.GapH > h Then h = other.GapH
     If other.GapV > v Then v = other.GapV
+    gap = h: If v > gap Then gap = v
+    ' Bbox kurva aktual dapat berbeda tipis dari bbox kontur varian tersimpan.
+    ' Max(H,V) membuat bukti ini konservatif untuk semua arah tetangga.
+    If mCollisionFootprint.BoundsHaveGap(other.CollisionFootprint, gap, 0#, 0#) Then
+        HasClearance = True
+        Exit Function
+    End If
+    VerifyContourGeometry
     HasClearance = mContour.ClearOf(other.Contour, _
-        mCollisionFootprint.LeftX - mContour.LeftX, _
-        mCollisionFootprint.TopY - mContour.TopY, _
-        other.CollisionFootprint.LeftX - other.Contour.LeftX, _
-        other.CollisionFootprint.TopY - other.Contour.TopY, h, v)
+        mContourDeltaX, mContourDeltaY, other.ContourDeltaX, other.ContourDeltaY, h, v)
 End Function
 
 Friend Property Get Contour() As AAContour
+    VerifyContourGeometry
     Set Contour = mContour
 End Property
 
@@ -165,6 +233,9 @@ Public Sub Translate(ByVal deltaX As Double, ByVal deltaY As Double)
     mCutTop = mCutTop + deltaY
     mCenterX = mCenterX + deltaX
     mCenterY = mCenterY + deltaY
+    mContourDeltaX = mContourDeltaX + deltaX
+    mContourDeltaY = mContourDeltaY + deltaY
+    mContourVerified = False
     mSlotLeft = mSlotLeft + deltaX
     mSlotTop = mSlotTop + deltaY
 End Sub
@@ -181,6 +252,8 @@ Friend Function CopyForPlan() As AAPlacement
     If mUsesCenter Then result.SetMediumData mRotationDelta, mCenterX, mCenterY, _
         mContour, mGapH, mGapV
     result.SetContourData mContour, mGapH, mGapV, mUsesContourGap
+    result.SetContourPose mContourDeltaX, mContourDeltaY
+    result.SetContourGeometry mContourGeometry
     result.SetShiftOrigin mSlotLeft, mSlotTop
     result.SetMarkAreaAllowance mUsesMarkAreaAllowance
     If mSuppressCutLine Then result.SuppressCutLine

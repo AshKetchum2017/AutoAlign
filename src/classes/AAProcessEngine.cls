@@ -892,8 +892,8 @@ Private Function CopySharedCutPlacement(ByVal source As AAPlacement, _
 
     If source.UsesCenter Then
         Set orientation = model.RotationVariant(source.RotationDelta)
-        leftX = source.CollisionFootprint.LeftX - orientation.InsetX
-        topY = source.CollisionFootprint.TopY + orientation.InsetY
+        leftX = source.CutLeft - orientation.InsetX
+        topY = source.CutTop + orientation.InsetY
         Set result = orientation.MakePlacement(designIndex, _
             source.CutIndex, areaIndex, leftX, topY, source.GapH, source.GapV)
     Else
@@ -902,6 +902,10 @@ Private Function CopySharedCutPlacement(ByVal source As AAPlacement, _
         Set result = model.MakePlacement(designIndex, _
             source.CutIndex, areaIndex, leftX, topY)
     End If
+    result.SetCollisionFootprint source.CollisionFootprint
+    result.SetContourData source.Contour, source.GapH, source.GapV, source.UsesContourGap
+    result.SetContourPose source.ContourDeltaX, source.ContourDeltaY
+    result.SetContourGeometry source.ContourGeometry
     result.SetMarkAreaAllowance source.UsesMarkAreaAllowance
     Set CopySharedCutPlacement = result
 End Function

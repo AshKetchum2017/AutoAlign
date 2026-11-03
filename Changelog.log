@@ -340,3 +340,8 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 [Partial ZigZag tepi Medium]
 + Process Medium untuk satu Design bebas, termasuk rectangle tajam dan membulat, membandingkan tambahan pada baris atas/bawah yang seragam melalui pemusatan horizontal terhadap baris tetangga. Kandidat mempertahankan Y, rotasi, bagian tengah dan bounds, dengan gap sesuai model/input serta pemeriksaan pasangan, mark dan area.
 ~ Kandidat baris tepi juga diperiksa per area homogen pada hasil multi-container dan pada template bebas /n sebelum distribusi. Pembagian tetap seimbang; template dasar dipertahankan jika tambahan tidak valid bagi artwork anggota lain.
+
+[Pemeriksaan gap geometri penempatan]
+~ Memakai batas jarak bbox kurva aktual sebelum pemeriksaan kontur, serta memeriksa ulang gap kandidat Medium setelah penyalinan kurva agar penolakan slot dan validasi akhir mengikuti geometri penempatan. Gap, toleransi kontur, area dan mark tetap mengikuti pengaturan yang berlaku.
+~ Kandidat Medium dekat batas gap dapat dilanjutkan dari precheck ke pemeriksaan copy aktual; kandidat tetap harus memenuhi gap, collision, area dan mark sebelum diterima. Cadangan clearance tambahan tetap diperiksa.
+~ Menyamakan basis penempatan Minimum dengan perhitungan langkah serta mempertahankan translasi kontur saat pemusatan, cache, dan pemakaian template Cut bersama. Pembulatan bbox tidak dijadikan pergeseran kontur; node/control hasil copy diverifikasi dan perubahan bentuk memakai kontur aktual.

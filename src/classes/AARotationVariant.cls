@@ -44,6 +44,7 @@ Public Function MakePlacement(ByVal designIndex As Long, ByVal cutIndex As Long,
     If Not mForbidden Is Nothing Then result.SetForbiddenFootprint _
         mForbidden.Placed(mForbidden.LeftX + dx, mForbidden.TopY + dy)
     result.SetMediumData mAngle, dx, dy, mContour, gapH, gapV
+    result.SetContourGeometry mCollision
     Set MakePlacement = result
     If AADebugProfiling Then AADebugPerfEnd AA_PERF_PLACEMENT, perfStarted
 End Function
@@ -91,6 +92,20 @@ Public Function HasClearanceAt(ByVal leftX As Double, ByVal topY As Double, _
     If other.GapV > v Then v = other.GapV
     HasClearanceAt = mContour.ClearOf(other.Contour, _
         leftX - mBounds.LeftX, topY - mBounds.TopY, _
-        other.CollisionFootprint.LeftX - other.Contour.LeftX, _
-        other.CollisionFootprint.TopY - other.Contour.TopY, h, v)
+        other.ContourDeltaX, other.ContourDeltaY, h, v)
+End Function
+
+' Near-contact numerik perlu diperiksa lagi pada copy kurva aktual.
+' True hanya mengizinkan materialisasi kandidat, bukan menerima placement.
+Friend Function NearGapAt(ByVal leftX As Double, ByVal topY As Double, _
+                          ByVal other As AAPlacement, ByVal h As Double, _
+                          ByVal v As Double, ByVal bandMM As Double) As Boolean
+    Dim gap As Double
+    If other.GapH > h Then h = other.GapH
+    If other.GapV > v Then v = other.GapV
+    gap = h
+    If gap <= 0# Or (v > 0# And v < gap) Then gap = v
+    If gap <= bandMM Then Exit Function
+    NearGapAt = mCollision.BoundsHaveGap(other.CollisionFootprint, gap - bandMM, _
+        leftX - mBounds.LeftX, topY - mBounds.TopY)
 End Function

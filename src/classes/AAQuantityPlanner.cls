@@ -566,6 +566,8 @@ Private Function CopySlot(ByVal source As AAPlacement, ByVal model As AAModel, _
     ' Geometry tidak dimutasi; AAPlacement.Translate mengganti referensinya.
     result.SetCollisionFootprint source.CollisionFootprint
     result.SetContourData source.Contour, source.GapH, source.GapV, source.UsesContourGap
+    result.SetContourPose source.ContourDeltaX, source.ContourDeltaY
+    result.SetContourGeometry source.ContourGeometry
     result.SetMarkAreaAllowance source.UsesMarkAreaAllowance
     Set CopySlot = result
 End Function

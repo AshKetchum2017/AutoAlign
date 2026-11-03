@@ -4,6 +4,7 @@ Option Explicit
 Private Const AA_GEOMETRY_TOLERANCE_MM As Double = 0.0001
 Private Const AA_AREA_TOLERANCE_MM2 As Double = 0.000001
 Private Const AA_RECTANGLE_DIRECTION_TOLERANCE As Double = 0.000001
+Private Const AA_TRANSLATION_ROUNDOFF_MM As Double = 0.0000000001
 
 Private mCurves As Collection
 Private mLeft As Double
@@ -438,6 +439,67 @@ Public Function Rotated(ByVal angle As Double, ByVal centerX As Double, _
         Next i
     End If
     Set Rotated = result
+End Function
+
+' Batas bawah jarak kurva memakai bbox geometri ini, termasuk pembulatan copy.
+' Delta hanya untuk precheck varian; placement memakai delta nol. Tidak memakai
+' toleransi tambahan: jika kotak belum membuktikan gap, caller menguji kontur.
+Friend Function BoundsHaveGap(ByVal other As AAGeometry, ByVal gap As Double, _
+                             ByVal deltaX As Double, ByVal deltaY As Double) As Boolean
+    Dim separationX As Double, separationY As Double
+    If Not mHasBounds Then Exit Function
+    separationX = other.LeftX - (mRight + deltaX)
+    If mLeft + deltaX - other.RightX > separationX Then _
+        separationX = mLeft + deltaX - other.RightX
+    separationY = other.BottomY - (mTop + deltaY)
+    If mBottom + deltaY - other.TopY > separationY Then _
+        separationY = mBottom + deltaY - other.TopY
+    If separationX < 0# Then separationX = 0#
+    If separationY < 0# Then separationY = 0#
+    If gap <= 0# Then
+        BoundsHaveGap = True
+    Else
+        BoundsHaveGap = (separationX * separationX + separationY * separationY >= gap * gap)
+    End If
+End Function
+
+' Ambil translasi aktual dari node, lalu buktikan seluruh kurva tetap rigid.
+' Perubahan bentuk 0,0001 mm tidak lolos pemakaian ulang kontur.
+' Ambang ini hanya untuk roundoff aritmetika transform, bukan toleransi gap.
+Friend Function TryTranslationOf(ByVal source As AAGeometry, ByRef dx As Double, _
+                                 ByRef dy As Double) As Boolean
+    Dim a As Curve, b As Curve, an As Node, bn As Node
+    Dim ae As Segment, be As Segment, i As Long, j As Long
+    Dim actualX As Double, actualY As Double
+    If CurveCount <> source.CurveCount Then Exit Function
+    actualX = dx: actualY = dy
+    If CurveCount > 0 Then
+        Set a = CurveAt(1): Set b = source.CurveAt(1)
+        If a.Nodes.Count = 0 Or b.Nodes.Count = 0 Then Exit Function
+        actualX = a.Nodes(1).PositionX - b.Nodes(1).PositionX
+        actualY = a.Nodes(1).PositionY - b.Nodes(1).PositionY
+    End If
+    For i = 1 To CurveCount
+        Set a = CurveAt(i): Set b = source.CurveAt(i)
+        If a.Nodes.Count <> b.Nodes.Count Or a.Segments.Count <> b.Segments.Count Then Exit Function
+        For j = 1 To a.Nodes.Count
+            Set an = a.Nodes(j): Set bn = b.Nodes(j)
+            If Abs(an.PositionX - (bn.PositionX + actualX)) > AA_TRANSLATION_ROUNDOFF_MM Or _
+               Abs(an.PositionY - (bn.PositionY + actualY)) > AA_TRANSLATION_ROUNDOFF_MM Then Exit Function
+        Next j
+        For j = 1 To a.Segments.Count
+            Set ae = a.Segments(j): Set be = b.Segments(j)
+            If ae.Type <> be.Type Then Exit Function
+            If ae.Type <> cdrLineSegment Then
+                If Abs(ae.StartingControlPointX - (be.StartingControlPointX + actualX)) > AA_TRANSLATION_ROUNDOFF_MM Or _
+                   Abs(ae.StartingControlPointY - (be.StartingControlPointY + actualY)) > AA_TRANSLATION_ROUNDOFF_MM Or _
+                   Abs(ae.EndingControlPointX - (be.EndingControlPointX + actualX)) > AA_TRANSLATION_ROUNDOFF_MM Or _
+                   Abs(ae.EndingControlPointY - (be.EndingControlPointY + actualY)) > AA_TRANSLATION_ROUNDOFF_MM Then Exit Function
+            End If
+        Next j
+    Next i
+    dx = actualX: dy = actualY
+    TryTranslationOf = True
 End Function
 
 Public Function Overlaps(ByVal other As AAGeometry) As Boolean

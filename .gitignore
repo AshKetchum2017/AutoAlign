@@ -1,4 +1,6 @@
 # Ignore all of this files in the project directory
+test/
+tests/
 *.env
 *.exe
 *.log

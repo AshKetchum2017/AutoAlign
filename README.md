@@ -229,6 +229,10 @@ Objek acuan adalah Cut Line pada pasangan, atau Design pada standalone. Pemiliha
 
 Gap diperiksa terhadap kontur acuan sesuai arah tetangga pada tabel. Gap `0` memperbolehkan objek bersinggungan, dengan pemeriksaan collision tetap aktif. Pada Minimum, langkah Straight dan ZigZag mengikuti kontur serta gap yang diminta.
 
+Jarak antar-bounding box kurva dipakai sebagai batas bawah jarak kontur. Jika batas itu belum membuktikan gap aman, pemeriksaan kontur tetap dijalankan. Medium memeriksa ulang gap pada geometri kandidat setelah kurva disalin ke posisi penempatan, sebelum memasukkannya ke susunan.
+
+Minimum dan Medium mempertahankan acuan kontur saat penempatan, pemusatan, serta pemakaian template Cut Line bersama. Posisi kontur diverifikasi terhadap node dan control point kurva hasil salinan; perubahan bentuk memerlukan pembacaan ulang kontur aktual. Pemeriksaan ini mengikuti gap, area, dan zona mark yang berlaku.
+
 Input gap Minimum dan Medium disimpan terpisah saat berpindah mode. Pada kunjungan pertama ke Medium, input mm dari Minimum diteruskan sebagai nilai awal. Angka abu-abu pada kolom kosong adalah placeholder, bukan nilai manual.
 
 ### Quantity
@@ -519,6 +523,8 @@ AADebugOff          ' Matikan debug dan tutup file log
 ```
 
 Debug menyediakan informasi kandidat, waktu tahap Process, pemeriksaan gap/overlap, penempatan, dan snapshot memori proses CorelDRAW. `AADebugFileOn` juga menerima path file dan menambahkan log ke isi yang sudah ada.
+
+`contour pose verification` mencatat jumlah serta waktu verifikasi posisi kontur pada kurva penempatan. Pemeriksaan dijalankan ketika kontur diperlukan dan diulang setelah translasi atau penggantian geometri. Waktunya termasuk dalam tahap pemanggil dan dapat mencakup pembacaan ulang kontur; jangan menjumlahkan counter bertingkat sebagai waktu total.
 
 `Mark search` mencatat allowance, jumlah objek/mark, probe pencarian, hasil, dan pemakaian cache. `hits` menghitung hasil pemeriksaan mark pada koordinat yang persis sama yang dipakai ulang dalam pencarian tersebut. Pada finalisasi dan pembentukan baseline Minimum untuk Medium KissA, cache berlaku per area untuk pencarian mark nominal tanpa/dengan allowance; batas area tetap diperiksa ulang. Process mode Minimum tetap memakai jalur tanpa cache ini. Cache tidak diteruskan ke mark bertoleransi atau area berikutnya. Waktu `Mark shift search` sudah termasuk dalam tahap pemanggilnya, sehingga tidak dijumlahkan lagi dengan waktu finalisasi atau Process. Profil baseline merinci `Minimum raw build`, `Minimum center search`, `Minimum center validation`, dan `Minimum mark recovery`; `layout=2` berarti Straight, `layout=3` ZigZag, dan `pass` menunjukkan iterasi susun ulang. Recovery termasuk dalam raw build, sedangkan pencarian mark termasuk dalam center search.
 

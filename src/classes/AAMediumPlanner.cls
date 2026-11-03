@@ -3,6 +3,7 @@ Option Explicit
 Private Const AA_SHIFT_FACTOR As Double = 0.2
 Private Const AA_SHIFT_STEP_MM As Double = 1#
 Private Const AA_EDGE_TOLERANCE_MM As Double = 0.0001
+Private Const AA_PRECISION_GAP_BAND_MM As Double = 0.001
 Private Const AA_MAX_OBJECTS_PER_SOURCE As Long = 5000
 Private Const AA_MAX_PROBES_PER_AREA As Long = 50000
 Private Const AA_MAX_SLOTS_PER_AREA As Long = 50000
@@ -2358,8 +2359,8 @@ Private Function TryExactSlot(ByVal orientation As AARotationVariant, ByVal desi
     If Not HasClearanceAt(orientation, x, y, occupied, _
         h + clearanceReserve, v + clearanceReserve) Then Exit Function
     Set candidate = orientation.MakePlacement(designIndex, cutIndex, areaIndex, x, y, h, v)
-    ' Compact memeriksa ulang gap pada bounds kurva yang sudah disalin/dibulatkan.
-    If Fits(candidate, occupied, forbidden, settings, clearanceReserve = 0#) Then _
+    ' Precheck belum melihat pembulatan copy; periksa lagi geometri placement.
+    If Fits(candidate, occupied, forbidden, settings, False) Then _
         Set TryExactSlot = candidate
 End Function
 
@@ -2413,6 +2414,10 @@ Private Function HasClearanceAt(ByVal orientation As AARotationVariant, ByVal x 
             Else
                 clear = QuotaClearanceAt(orientation, x, y, placed, h, v)
             End If
+            ' Gap dekat batas belum konklusif sebelum copy. TryExactSlot/TrySlot
+            ' selalu memeriksa ulang HasClearance pada placement lewat Fits.
+            If Not clear And h <= placed.GapH And v <= placed.GapV Then _
+                clear = orientation.NearGapAt(x, y, placed, h, v, AA_PRECISION_GAP_BAND_MM)
             If Not clear Then
                 If rejectSlot >= 0 Then
                     If mRejectOrientations(rejectSlot) Is Nothing Then
@@ -2479,13 +2484,12 @@ Private Function QuotaClearanceAt(ByVal orientation As AARotationVariant, _
                                   ByVal x As Double, ByVal y As Double, _
                                   ByVal placed As AAPlacement, ByVal h As Double, _
                                   ByVal v As Double) As Boolean
-    Dim other As AAContour, box As AAGeometry, slot As Long
+    Dim other As AAContour, slot As Long
     Dim firstSlot As Long, emptySlot As Long, bucket As Long
     Dim gapH As Double, gapV As Double, clear As Boolean
     Set other = placed.Contour
-    Set box = placed.CollisionFootprint
     gapH = MaxValue(h, placed.GapH): gapV = MaxValue(v, placed.GapV)
-    firstSlot = QuotaGapSlot(x, y, box.LeftX, box.TopY, gapH, gapV, _
+    firstSlot = QuotaGapSlot(x, y, placed.ContourDeltaX, placed.ContourDeltaY, gapH, gapV, _
         orientation.Angle, placed.RotationDelta)
     If firstSlot < 0 Then
         mGapBypasses = mGapBypasses + 1#
@@ -2508,7 +2512,7 @@ Private Function QuotaClearanceAt(ByVal orientation As AARotationVariant, _
         End If
         If mGapOrientations(slot) Is orientation And mGapOthers(slot) Is other Then
             If mGapKeys(0, slot) = x And mGapKeys(1, slot) = y And _
-               mGapKeys(2, slot) = box.LeftX And mGapKeys(3, slot) = box.TopY And _
+               mGapKeys(2, slot) = placed.ContourDeltaX And mGapKeys(3, slot) = placed.ContourDeltaY And _
                mGapKeys(4, slot) = gapH And mGapKeys(5, slot) = gapV Then
                 mGapHits = mGapHits + 1#
                 QuotaClearanceAt = mGapResults(slot)
@@ -2530,7 +2534,7 @@ Private Function QuotaClearanceAt(ByVal orientation As AARotationVariant, _
     If mGapOrientations(slot) Is Nothing Then mGapStored = mGapStored + 1
     Set mGapOrientations(slot) = orientation: Set mGapOthers(slot) = other
     mGapKeys(0, slot) = x: mGapKeys(1, slot) = y
-    mGapKeys(2, slot) = box.LeftX: mGapKeys(3, slot) = box.TopY
+    mGapKeys(2, slot) = placed.ContourDeltaX: mGapKeys(3, slot) = placed.ContourDeltaY
     mGapKeys(4, slot) = gapH: mGapKeys(5, slot) = gapV
     mGapResults(slot) = clear
     ' Penggantian bergilir hanya sesudah predicate sukses; hit/error tidak
@@ -2708,8 +2712,8 @@ Private Sub SeedNeighbors(ByVal slots As Collection, ByVal unique As Object, _
         For j = 1 To ownAnchors.Count
             If j > AA_MAX_CONTACT_ANCHORS Then Exit For
             b = ownAnchors(j)
-            x = box.LeftX + CDbl(a(0)) - orientation.InsetX - CDbl(b(0))
-            y = box.TopY - CDbl(a(1)) + orientation.InsetY + CDbl(b(1))
+            x = placed.Contour.LeftX + placed.ContourDeltaX + CDbl(a(0)) - orientation.InsetX - CDbl(b(0))
+            y = placed.Contour.TopY + placed.ContourDeltaY - CDbl(a(1)) + orientation.InsetY + CDbl(b(1))
             For sx = -1 To 1
                 For sy = -1 To 1
                     AddSlot slots, unique, x + sx * gapH, y + sy * gapV
@@ -2839,7 +2843,7 @@ Private Function TrySlot(ByVal orientation As AARotationVariant, ByVal designInd
             Set candidate = orientation.MakePlacement(designIndex, cutIndex, areaIndex, _
                 x + xs(i), y + ys(j), h, v)
             candidate.SetShiftOrigin x, y
-            If Fits(candidate, occupied, forbidden, settings, True) Then
+            If Fits(candidate, occupied, forbidden, settings, False) Then
                 Set best = candidate
                 bestDistance = distance
                 If distance = 0# Then GoTo Finished

@@ -227,36 +227,15 @@ Public Function MakePlacement(ByVal designIndex As Long, ByVal cutIndex As Long,
                               ByVal areaIndex As Long, ByVal leftX As Double, _
                               ByVal topY As Double) As AAPlacement
     Dim result As AAPlacement
-    Dim footprint As AAGeometry
-    Dim cutLeft As Double
-    Dim cutTop As Double
     Dim h As Double, v As Double, orientation As AARotationVariant
-    Dim perfStarted As Double
-    If AADebugProfiling Then perfStarted = AADebugPerfBegin()
-
-    Set footprint = New AAGeometry
-    footprint.AddPlaced mDesignGeometry, leftX, topY
-    If Not mCutGeometry Is Nothing Then
-        cutLeft = leftX + (DesignWidth - CutWidth) / 2#
-        cutTop = topY - (DesignHeight - CutHeight) / 2#
-        footprint.AddBounds cutLeft, cutTop - CutHeight, cutLeft + CutWidth, cutTop
-    End If
-    Set result = New AAPlacement
-    result.Configure designIndex, cutIndex, areaIndex, leftX, topY, _
-        cutLeft, cutTop, footprint
-    If Not mCutGeometry Is Nothing Then _
-        result.SetCollisionFootprint mCutGeometry.Placed(cutLeft, cutTop)
-    If mSettings.IncludeDesignZones Then
-        Set footprint = New AAGeometry
-        footprint.AddPlaced mDesignGeometry, leftX, topY
-        If Not mCutGeometry Is Nothing Then footprint.AddPlaced mCutGeometry, cutLeft, cutTop
-        result.SetForbiddenFootprint footprint
-    End If
     GetBoundaryGaps AA_MODE_STRAIGHT, h, v
     Set orientation = RotationVariant(0#)
-    result.SetContourData orientation.Contour, h, v, True
+    ' Basis yang sama dengan GetMinimumSteps, termasuk kontur dan zona Design.
+    ' Parameter masuk tetap sudut kiri atas Design, bukan bounds gabungan.
+    Set result = orientation.MakePlacement(designIndex, cutIndex, areaIndex, _
+        leftX - DesignInsetX, topY + DesignInsetY, h, v)
+    result.PreserveSourceRotation
     Set MakePlacement = result
-    If AADebugProfiling Then AADebugPerfEnd AA_PERF_PLACEMENT, perfStarted
 End Function
 
 Public Function SameDesignGeometry(ByVal other As AAModel) As Boolean

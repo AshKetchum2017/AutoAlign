@@ -18,7 +18,8 @@ Public Const AA_PERF_WELD As Long = 5
 Public Const AA_PERF_SLOT_PREP As Long = 6
 Public Const AA_PERF_SHIFT_PREP As Long = 7
 Public Const AA_PERF_SLOT_SORT As Long = 8
-Private Const AA_PERF_KIND_COUNT As Long = 8
+Public Const AA_PERF_CONTOUR_POSE As Long = 9
+Private Const AA_PERF_KIND_COUNT As Long = 9
 ' Flag dibaca langsung oleh fungsi geometri yang sering dipanggil.
 Public AADebugProfiling As Boolean
 ' Aktif hanya saat replay diagnostik sinkron; tidak memengaruhi keputusan gap.
@@ -360,6 +361,7 @@ Public Sub AADebugPerfDelta(ByVal label As String, ByVal snapshot As Variant)
             Case AA_PERF_SLOT_PREP: counterLabel = "slot prep"
             Case AA_PERF_SHIFT_PREP: counterLabel = "shift prep"
             Case AA_PERF_SLOT_SORT: counterLabel = "slot sort"
+            Case AA_PERF_CONTOUR_POSE: counterLabel = "contour pose"
         End Select
         message = message & "; " & counterLabel & " calls=" & _
             Format$(mPerfCalls(i) - CDbl(snapshot((i - 1) * 2)), "0")
@@ -420,6 +422,7 @@ Public Sub AADebugPerfFinish(ByVal status As String)
             Case AA_PERF_SLOT_PREP: label = "initial slot preparation"
             Case AA_PERF_SHIFT_PREP: label = "refinement shift preparation"
             Case AA_PERF_SLOT_SORT: label = "initial slot sorting (inside preparation)"
+            Case AA_PERF_CONTOUR_POSE: label = "contour pose verification"
         End Select
         If i = AA_PERF_WELD Then
             AADebugWrite "Perf", label & ": calls=" & Format$(mPerfCalls(i), "0")
@@ -599,6 +602,10 @@ Public Sub AADebugGapRejected(ByVal orientation As AARotationVariant, _
         "; curve shift error=" & Format$(candidate.CollisionFootprint.LeftX - _
             x - orientation.InsetX, "0.000000000") & "/" & _
         Format$(candidate.CollisionFootprint.TopY - y + orientation.InsetY, "0.000000000")
+    If mGapRejected = 1 Then
+        AADebugValidationPlacement "slot candidate", candidate
+        AADebugValidationPlacement "slot blocker", blocker
+    End If
 TraceFailed:
     Err.Clear
 End Sub
@@ -651,9 +658,15 @@ Private Sub AADebugValidationPlacement(ByVal role As String, ByVal placed As AAP
     AADebugWrite "Validate", role & "; slot X/Y=" & _
         Format$(placed.SlotLeft, "0.000000000") & "/" & Format$(placed.SlotTop, "0.000000000") & _
         "; gap H/V=" & Format$(placed.GapH, "0.000000000") & "/" & Format$(placed.GapV, "0.000000000")
-    If placed.UsesCenter Then
-        shiftErrorX = collision.LeftX - placed.Contour.LeftX - placed.CenterX
-        shiftErrorY = collision.TopY - placed.Contour.TopY - placed.CenterY
+    ' Footprint di atas dapat mencakup artwork; ini bbox collision yang aktual.
+    AADebugWrite "Validate", role & "; collision L/B/R/T=" & _
+        Format$(collision.LeftX, "0.000000000") & "/" & Format$(collision.BottomY, "0.000000000") & "/" & _
+        Format$(collision.RightX, "0.000000000") & "/" & Format$(collision.TopY, "0.000000000")
+    If placed.UsesContourGap Then
+        shiftErrorX = collision.LeftX - placed.Contour.LeftX - placed.ContourDeltaX
+        shiftErrorY = collision.TopY - placed.Contour.TopY - placed.ContourDeltaY
+        AADebugWrite "Validate", role & "; contour delta X/Y=" & _
+            Format$(placed.ContourDeltaX, "0.000000000") & "/" & Format$(placed.ContourDeltaY, "0.000000000")
         AADebugWrite "Validate", role & "; curve shift error X/Y=" & _
             Format$(shiftErrorX, "0.000000000") & "/" & Format$(shiftErrorY, "0.000000000")
     End If
