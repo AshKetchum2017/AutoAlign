@@ -338,4 +338,5 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 + Menyediakan ROADMAP-Optimize.md untuk baseline dan tahapan pengembangan ZigZag Minimum, biaya Optimize Medium, Refill container serta dependensi Optimize Maximum; ditautkan dari README. Dokumen perencanaan tidak mengaktifkan fitur baru.
 
 [Partial ZigZag tepi Medium]
-+ Process Medium untuk satu Design bebas non-rectangle membandingkan tambahan pada baris atas/bawah yang seragam melalui pemusatan horizontal terhadap baris tetangga. Kandidat mempertahankan Y, rotasi, bagian tengah dan bounds, dengan pemeriksaan gap, pasangan, mark dan area.
++ Process Medium untuk satu Design bebas, termasuk rectangle tajam dan membulat, membandingkan tambahan pada baris atas/bawah yang seragam melalui pemusatan horizontal terhadap baris tetangga. Kandidat mempertahankan Y, rotasi, bagian tengah dan bounds, dengan gap sesuai model/input serta pemeriksaan pasangan, mark dan area.
+~ Kandidat baris tepi juga diperiksa per area homogen pada hasil multi-container dan pada template bebas /n sebelum distribusi. Pembagian tetap seimbang; template dasar dipertahankan jika tambahan tidak valid bagi artwork anggota lain.

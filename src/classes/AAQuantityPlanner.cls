@@ -285,6 +285,7 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
                            ByVal planner As AAPlanner) As AALayoutPlan
     Dim quantities() As Long, oneDesign(0 To 0) As Long, oneCut(0 To 0) As Long
     Dim template As AALayoutPlan, result As AALayoutPlan, candidate As AALayoutPlan
+    Dim baselineTemplate As AALayoutPlan, edgePlanner As AAMediumPlanner, templateValid As Boolean
     Dim low As Long, high As Long, middle As Long, i As Long, index As Long
     Dim expected As Long, pass As Long, failedAtTotal() As Long
     Dim hint As Long, consecutiveHints As Long
@@ -312,9 +313,26 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
                 mTemplateRotationMask = models(oneDesign(0)).RotationMask
             End If
         End If
+        ' Simpan baseline cache: AllocateTemplate finite juga memakai cache ini.
+        Set baselineTemplate = template
+        If layoutMode = AA_MODE_MEDIUM Then
+            Set edgePlanner = New AAMediumPlanner
+            Set template = edgePlanner.RefillFreeTemplate(template, models(oneDesign(0)), _
+                settings, sourceDocument, planner)
+        End If
         Set result = DistributeTemplate(template, models, designIndexes, designCount, _
             cutIndexes, cutCount)
-        If TemplateFits(result, planner, settings, sourceDocument) Then
+        templateValid = TemplateFits(result, planner, settings, sourceDocument)
+        If Not templateValid Then
+            If Not (template Is baselineTemplate) Then
+                ' Artwork anggota lain dapat lebih besar dari artwork sumber template.
+                Set template = baselineTemplate
+                Set result = DistributeTemplate(template, models, designIndexes, designCount, cutIndexes, cutCount)
+                templateValid = TemplateFits(result, planner, settings, sourceDocument)
+                AADebugWrite "Quantity", "edge template rejected after distribution; restored baseline template"
+            End If
+        End If
+        If templateValid Then
             AADebugPlan "Quantity balanced template", result
             Set BuildGroup = result
             Exit Function

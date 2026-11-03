@@ -18,6 +18,9 @@ Private Const AA_MAX_ALIGNMENT_PROBES_PER_AREA As Long = 256
 Private Const AA_ALIGNMENT_PASSES As Long = 2
 Private Const AA_MAX_FINAL_REFILL_PROBES As Long = 512
 Private Const AA_REFILL_ROW_TOLERANCE_MM As Double = 1#
+Private Const AA_REFILL_RECTANGLES As Long = 0
+Private Const AA_REFILL_CURVES As Long = 1
+Private Const AA_REFILL_EDGES As Long = 2
 Private Const AA_EDGE_ROW_TOLERANCE_MM As Double = 0.01
 Private Const AA_EDGE_ROW_PITCH_TOLERANCE_MM As Double = 0.01
 Private Const AA_MAX_EDGE_ROW_OBJECTS As Long = 128
@@ -473,7 +476,7 @@ NextPairAngle:
                 End If
             ElseIf Not singleAreaOnly And capacityTarget < 0 Then
                 Set candidate = RefillIndependentAreas(candidate, models, quantities, cutCount, _
-                    forbidden, settings, sourceDocument, sharedPlanner, candidateLabel, True)
+                    forbidden, settings, sourceDocument, sharedPlanner, candidateLabel, AA_REFILL_RECTANGLES)
             End If
             ConsiderCandidate candidate, best, candidateLabel, bestLabel, sharedPlanner
             If capacityTarget > 0 Then
@@ -582,12 +585,22 @@ NextPairAngle:
     End If
     If designCount > 1 And Not singleAreaOnly And capacityTarget < 0 Then
         Set best = RefillIndependentAreas(best, models, quantities, cutCount, forbidden, _
-            settings, sourceDocument, sharedPlanner, "Final refill " & bestLabel, False)
+            settings, sourceDocument, sharedPlanner, "Final refill " & bestLabel, AA_REFILL_CURVES)
+        candidateLabel = "Edge refill areas " & bestLabel
+        AAProgressCandidate
+        AAProgressStage "Mengisi baris tepi"
+        AADebugCandidateStart candidateLabel
+        Set candidate = RefillIndependentAreas(best, models, quantities, cutCount, forbidden, _
+            settings, sourceDocument, sharedPlanner, candidateLabel, AA_REFILL_EDGES)
+        AADebugCandidateEnd
+        If candidate.DesignCount > best.DesignCount Then
+            Set best = candidate: bestLabel = candidateLabel
+        End If
     End If
     ' Kandidat baris tepi hanya pada hasil bebas satu sumber, di luar trial /n.
     If designCount = 1 And Not singleAreaOnly And capacityTarget < 0 Then
         firstIndex = designIndexes(0)
-        If quantities(firstIndex) < 0 And Not models(firstIndex).IsRectangle Then
+        If quantities(firstIndex) < 0 Then
             Set refillForbidden = forbidden
             If settings.ModelMode = AA_MODEL_KISS_A Then _
                 Set refillForbidden = sharedPlanner.NominalForbiddenFor(settings, sourceDocument)
@@ -683,7 +696,7 @@ Private Function RefillIndependentAreas(ByVal plan As AALayoutPlan, ByRef models
                                         ByRef quantities() As Long, ByVal cutCount As Long, _
                                         ByVal forbidden As Collection, ByVal settings As AASettings, _
                                         ByVal sourceDocument As Document, ByVal sharedPlanner As AAPlanner, _
-                                        ByVal label As String, ByVal rectangles As Boolean) As AALayoutPlan
+                                        ByVal label As String, ByVal phase As Long) As AALayoutPlan
     Dim result As AALayoutPlan, part As AALayoutPlan, filled As AALayoutPlan
     Dim placed As AAPlacement, copied As AAPlacement, seed As AAPlacement
     Dim slotForbidden As Collection, sourceCounts As Object
@@ -703,7 +716,7 @@ Private Function RefillIndependentAreas(ByVal plan As AALayoutPlan, ByRef models
     result.Configure plan.LayoutMode
     result.SetRegularPattern plan.HasRegularPattern
     Set slotForbidden = forbidden
-    If Not rectangles And settings.ModelMode = AA_MODEL_KISS_A Then _
+    If phase <> AA_REFILL_RECTANGLES And settings.ModelMode = AA_MODEL_KISS_A Then _
         Set slotForbidden = sharedPlanner.NominalForbiddenFor(settings, sourceDocument)
     For areaIndex = 0 To plan.AreaCount - 1
         AAProgressPulse
@@ -728,16 +741,19 @@ Private Function RefillIndependentAreas(ByVal plan As AALayoutPlan, ByRef models
             ' Sumber yang tersebar di beberapa area tidak mendapat quota baru.
             If quantities(sourceIndex) < 0 And _
                CLng(sourceCounts(CStr(sourceIndex))) = part.DesignCount Then
-                If models(sourceIndex).IsRectangle = rectangles Then
+                areaLabel = label & "; area=" & CStr(areaIndex) & "; design=" & CStr(sourceIndex)
+                If phase = AA_REFILL_EDGES Then
+                    Set filled = RefillEdgeRows(part, models(sourceIndex), forbidden, slotForbidden, _
+                        settings, sourceDocument, sharedPlanner, areaLabel)
+                ElseIf models(sourceIndex).IsRectangle = (phase = AA_REFILL_RECTANGLES) Then
                     probes = AA_MAX_FINAL_REFILL_PROBES
-                    If rectangles Then probes = 0
-                    areaLabel = label & "; area=" & CStr(areaIndex) & "; design=" & CStr(sourceIndex)
+                    If phase = AA_REFILL_RECTANGLES Then probes = 0
                     Set filled = RefillCenteredPattern(part, models(sourceIndex), forbidden, _
                         settings, areaLabel, slotForbidden, probes)
-                    If cutCount = 1 Then
-                        If plan.DesignCount + added + filled.DesignCount - part.DesignCount > _
-                           AA_MAX_OBJECTS_PER_SOURCE Then Set filled = part
-                    End If
+                End If
+                If cutCount = 1 Then
+                    If plan.DesignCount + added + filled.DesignCount - part.DesignCount > _
+                       AA_MAX_OBJECTS_PER_SOURCE Then Set filled = part
                 End If
             End If
         End If
@@ -764,6 +780,27 @@ Private Function RefillIndependentAreas(ByVal plan As AALayoutPlan, ByRef models
             End If
         End If
     End If
+End Function
+
+' Hanya dipanggil allocator pada template BEBAS sebelum distribusi /n.
+' Cache template dasar tetap utuh karena juga dipakai jalur target finite.
+Friend Function RefillFreeTemplate(ByVal plan As AALayoutPlan, ByVal model As AAModel, _
+                                   ByVal settings As AASettings, ByVal sourceDocument As Document, _
+                                   ByVal sharedPlanner As AAPlanner) As AALayoutPlan
+    Dim forbidden As Collection, slotForbidden As Collection
+    Set RefillFreeTemplate = plan
+    If plan Is Nothing Then Exit Function
+    If plan.LayoutMode <> AA_MODE_MEDIUM Then Exit Function
+    Set forbidden = sharedPlanner.ForbiddenFor(settings, sourceDocument)
+    Set slotForbidden = forbidden
+    If settings.ModelMode = AA_MODEL_KISS_A Then _
+        Set slotForbidden = sharedPlanner.NominalForbiddenFor(settings, sourceDocument)
+    AAProgressCandidate
+    AAProgressStage "Mengisi baris tepi template"
+    AADebugCandidateStart "Free template edge refill"
+    Set RefillFreeTemplate = RefillEdgeRows(plan, model, forbidden, slotForbidden, settings, _
+        sourceDocument, sharedPlanner, "Free template edge refill")
+    AADebugCandidateEnd
 End Function
 
 Private Function RefillEdgeRows(ByVal plan As AALayoutPlan, ByVal model As AAModel, _
