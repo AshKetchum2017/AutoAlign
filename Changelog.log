@@ -330,3 +330,12 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 2026-11-03
 [Refill beberapa container Medium]
 ~ Container homogen milik Design dengan Quantity bebas pada Process beberapa Design tanpa /n mendapat pemeriksaan refill per area. Tambahan mengikuti model, gap dan rotasi sumber masing-masing, tanpa menggeser objek lama atau mencampur isi antar-container.
+
+[Roadmap optimasi performa]
++ Menyediakan ROADMAP-Optimization.md sebagai panduan dinamis untuk baseline, prioritas eksperimen, dan kriteria penerimaan optimasi Medium/helper bersama; ditautkan dari README.
+
+[Roadmap Optimize dan Refill]
++ Menyediakan ROADMAP-Optimize.md untuk baseline dan tahapan pengembangan ZigZag Minimum, biaya Optimize Medium, Refill container serta dependensi Optimize Maximum; ditautkan dari README. Dokumen perencanaan tidak mengaktifkan fitur baru.
+
+[Partial ZigZag tepi Medium]
++ Process Medium untuk satu Design bebas non-rectangle membandingkan tambahan pada baris atas/bawah yang seragam melalui pemusatan horizontal terhadap baris tetangga. Kandidat mempertahankan Y, rotasi, bagian tengah dan bounds, dengan pemeriksaan gap, pasangan, mark dan area.

@@ -18,6 +18,9 @@ Private Const AA_MAX_ALIGNMENT_PROBES_PER_AREA As Long = 256
 Private Const AA_ALIGNMENT_PASSES As Long = 2
 Private Const AA_MAX_FINAL_REFILL_PROBES As Long = 512
 Private Const AA_REFILL_ROW_TOLERANCE_MM As Double = 1#
+Private Const AA_EDGE_ROW_TOLERANCE_MM As Double = 0.01
+Private Const AA_EDGE_ROW_PITCH_TOLERANCE_MM As Double = 0.01
+Private Const AA_MAX_EDGE_ROW_OBJECTS As Long = 128
 Private Const AA_MAX_FILLER_GRID_CANDIDATES As Long = 144
 Private Const AA_MAX_FILLER_GRID_PROBES As Long = 32768
 Private Const AA_MAX_PAIR_CONTOUR_EDGES As Long = 32
@@ -581,6 +584,25 @@ NextPairAngle:
         Set best = RefillIndependentAreas(best, models, quantities, cutCount, forbidden, _
             settings, sourceDocument, sharedPlanner, "Final refill " & bestLabel, False)
     End If
+    ' Kandidat baris tepi hanya pada hasil bebas satu sumber, di luar trial /n.
+    If designCount = 1 And Not singleAreaOnly And capacityTarget < 0 Then
+        firstIndex = designIndexes(0)
+        If quantities(firstIndex) < 0 And Not models(firstIndex).IsRectangle Then
+            Set refillForbidden = forbidden
+            If settings.ModelMode = AA_MODEL_KISS_A Then _
+                Set refillForbidden = sharedPlanner.NominalForbiddenFor(settings, sourceDocument)
+            candidateLabel = "Edge refill " & bestLabel
+            AAProgressCandidate
+            AAProgressStage "Mengisi baris tepi"
+            AADebugCandidateStart candidateLabel
+            Set candidate = RefillEdgeRows(best, models(firstIndex), forbidden, refillForbidden, _
+                settings, sourceDocument, sharedPlanner, candidateLabel)
+            AADebugCandidateEnd
+            If candidate.DesignCount > best.DesignCount Then
+                Set best = candidate: bestLabel = candidateLabel
+            End If
+        End If
+    End If
 BuildComplete:
     If capacityTarget > 0 Then
         If best.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget) Then
@@ -742,6 +764,166 @@ Private Function RefillIndependentAreas(ByVal plan As AALayoutPlan, ByRef models
             End If
         End If
     End If
+End Function
+
+Private Function RefillEdgeRows(ByVal plan As AALayoutPlan, ByVal model As AAModel, _
+                               ByVal forbidden As Collection, ByVal slotForbidden As Collection, _
+                               ByVal settings As AASettings, ByVal sourceDocument As Document, _
+                               ByVal sharedPlanner As AAPlanner, ByVal label As String) As AALayoutPlan
+    Dim best As AALayoutPlan, candidate As AALayoutPlan, edge As Long
+    Set RefillEdgeRows = plan
+    If plan Is Nothing Then Exit Function
+    If plan.AreaCount <> 1 Or plan.DesignCount < 4 Or _
+       plan.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit Function
+    Set best = plan
+    ' Maksimal satu tambahan per tepi; tidak mencoba fase seluruh container.
+    For edge = 0 To 1
+        AAProgressPulse
+        If best.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit For
+        Set candidate = ExtendedEdgeRow(best, model, forbidden, slotForbidden, settings, edge = 0, label)
+        If Not candidate Is Nothing Then
+            If sharedPlanner.FinalPlanFits(candidate, settings, sourceDocument) Then
+                Set best = candidate
+                AADebugWrite "Edge row", label & "; accepted edge=" & IIf(edge = 0, "top", "bottom") & _
+                    "; objects=" & CStr(best.DesignCount)
+            Else
+                AADebugWrite "Edge row", label & "; rejected: final bounds/mark validation"
+            End If
+        Else
+            AADebugWrite "Edge row", label & "; edge=" & IIf(edge = 0, "top", "bottom") & _
+                "; no valid extension"
+        End If
+    Next edge
+    If best.DesignCount > plan.DesignCount Then Set RefillEdgeRows = OrderRefilledPattern(best)
+End Function
+
+Private Function ExtendedEdgeRow(ByVal plan As AALayoutPlan, ByVal model As AAModel, _
+                                 ByVal forbidden As Collection, ByVal slotForbidden As Collection, _
+                                 ByVal settings As AASettings, ByVal topEdge As Boolean, _
+                                 ByVal label As String) As AALayoutPlan
+    Dim members() As AAPlacement, placed As AAPlacement, seed As AAPlacement, copied As AAPlacement
+    Dim orientation As AARotationVariant, occupied As Collection, result As AALayoutPlan
+    Dim edgeY As Double, referenceY As Double, y As Double, pitch As Double, dx As Double
+    Dim rowLeft As Double, rowRight As Double, referenceLeft As Double, referenceRight As Double
+    Dim leftX As Double, rightX As Double, topY As Double, bottomY As Double
+    Dim count As Long, referenceCount As Long, i As Long, j As Long, h As Double, v As Double
+    Set ExtendedEdgeRow = Nothing
+    Set seed = plan.Placements(1)
+    leftX = seed.Footprint.LeftX: rightX = seed.Footprint.RightX
+    topY = seed.Footprint.TopY: bottomY = seed.Footprint.BottomY
+    edgeY = (seed.CollisionFootprint.TopY + seed.CollisionFootprint.BottomY) / 2#
+    For Each placed In plan.Placements
+        AAProgressPulse
+        If placed.DesignIndex <> seed.DesignIndex Or placed.CutIndex <> seed.CutIndex Or _
+           placed.CreatesCutLine <> seed.CreatesCutLine Or placed.AreaIndex <> 0 Then Exit Function
+        leftX = MinValue(leftX, placed.Footprint.LeftX): rightX = MaxValue(rightX, placed.Footprint.RightX)
+        topY = MaxValue(topY, placed.Footprint.TopY): bottomY = MinValue(bottomY, placed.Footprint.BottomY)
+        y = (placed.CollisionFootprint.TopY + placed.CollisionFootprint.BottomY) / 2#
+        If topEdge Then edgeY = MaxValue(edgeY, y) Else edgeY = MinValue(edgeY, y)
+    Next placed
+    ReDim members(1 To AA_MAX_EDGE_ROW_OBJECTS)
+    referenceY = 0#: referenceCount = 0
+    For Each placed In plan.Placements
+        AAProgressPulse
+        y = (placed.CollisionFootprint.TopY + placed.CollisionFootprint.BottomY) / 2#
+        If Abs(y - edgeY) <= AA_EDGE_ROW_TOLERANCE_MM Then
+            count = count + 1
+            If count > AA_MAX_EDGE_ROW_OBJECTS Then Exit Function
+            Set members(count) = placed
+        ElseIf referenceCount = 0 Then
+            referenceY = y: referenceCount = 1
+        ElseIf topEdge Then
+            referenceY = MaxValue(referenceY, y)
+        Else
+            referenceY = MinValue(referenceY, y)
+        End If
+    Next placed
+    If count < 2 Or referenceCount = 0 Then Exit Function
+    ' Urutan kiri-ke-kanan hanya untuk baris kecil yang akan diubah.
+    For i = 2 To count
+        Set copied = members(i): j = i - 1
+        Do While j >= 1
+            AAProgressPulse
+            If members(j).CollisionFootprint.LeftX <= copied.CollisionFootprint.LeftX Then Exit Do
+            Set members(j + 1) = members(j): j = j - 1
+        Loop
+        Set members(j + 1) = copied
+    Next i
+    Set seed = members(1)
+    If Not model.AllowsRotation(seed.RotationDelta) Then Exit Function
+    pitch = (members(count).CollisionFootprint.LeftX - seed.CollisionFootprint.LeftX) / (count - 1)
+    If pitch <= AA_EDGE_TOLERANCE_MM Then Exit Function
+    For i = 1 To count
+        AAProgressPulse
+        Set placed = members(i)
+        If Abs(placed.RotationDelta - seed.RotationDelta) > AA_EDGE_TOLERANCE_MM Or _
+           Abs(placed.Footprint.TopY - seed.Footprint.TopY) > AA_EDGE_ROW_TOLERANCE_MM Or _
+           Abs(placed.CollisionFootprint.Width - seed.CollisionFootprint.Width) > AA_EDGE_ROW_PITCH_TOLERANCE_MM Or _
+           Abs(placed.Footprint.Width - seed.Footprint.Width) > AA_EDGE_ROW_PITCH_TOLERANCE_MM Or _
+           Abs(placed.Footprint.Height - seed.Footprint.Height) > AA_EDGE_ROW_PITCH_TOLERANCE_MM Then Exit Function
+        If i > 1 Then
+            If Abs(placed.CollisionFootprint.LeftX - members(i - 1).CollisionFootprint.LeftX - pitch) > _
+               AA_EDGE_ROW_PITCH_TOLERANCE_MM Then Exit Function
+        End If
+    Next i
+    referenceCount = 0
+    For Each placed In plan.Placements
+        AAProgressPulse
+        y = (placed.CollisionFootprint.TopY + placed.CollisionFootprint.BottomY) / 2#
+        If Abs(y - referenceY) <= AA_EDGE_ROW_TOLERANCE_MM Then
+            referenceCount = referenceCount + 1
+            If referenceCount = 1 Then
+                referenceLeft = placed.CollisionFootprint.LeftX: referenceRight = placed.CollisionFootprint.RightX
+            Else
+                referenceLeft = MinValue(referenceLeft, placed.CollisionFootprint.LeftX)
+                referenceRight = MaxValue(referenceRight, placed.CollisionFootprint.RightX)
+            End If
+        End If
+    Next placed
+    If referenceCount < 2 Then Exit Function
+    rowLeft = seed.CollisionFootprint.LeftX - pitch
+    rowRight = members(count).CollisionFootprint.RightX
+    ' Baris baru tetap dalam envelope X baris acuan; Y tidak berubah.
+    If rowRight - rowLeft > referenceRight - referenceLeft + AA_EDGE_ROW_PITCH_TOLERANCE_MM Then Exit Function
+    dx = (referenceLeft + referenceRight - rowLeft - rowRight) / 2#
+    If Abs(dx) > pitch / 2# + AA_EDGE_ROW_PITCH_TOLERANCE_MM Then Exit Function
+    Set occupied = New Collection: Set result = New AALayoutPlan
+    result.Configure plan.LayoutMode
+    result.SetRegularPattern False
+    For Each placed In plan.Placements
+        AAProgressPulse
+        y = (placed.CollisionFootprint.TopY + placed.CollisionFootprint.BottomY) / 2#
+        If Abs(y - edgeY) > AA_EDGE_ROW_TOLERANCE_MM Then
+            occupied.Add placed: result.Add placed
+        End If
+    Next placed
+    For i = 1 To count
+        AAProgressPulse
+        Set copied = members(i).CopyForPlan()
+        copied.Translate dx, 0#
+        copied.SetMarkAreaAllowance False
+        If Not Fits(copied, occupied, slotForbidden, settings, False, label & " moved edge") Then Exit Function
+        occupied.Add copied: result.Add copied
+    Next i
+    model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+    Set orientation = model.RotationVariant(seed.RotationDelta)
+    Set copied = TryExactSlot(orientation, seed.DesignIndex, seed.CutIndex, seed.AreaIndex, _
+        seed.Footprint.LeftX - pitch + dx, seed.Footprint.TopY, occupied, slotForbidden, settings, h, v)
+    If copied Is Nothing Then Exit Function
+    If Not seed.CreatesCutLine Then copied.SuppressCutLine
+    result.Add copied
+    For Each placed In result.Placements
+        AAProgressPulse
+        If placed.Footprint.LeftX < leftX - AA_EDGE_TOLERANCE_MM Or _
+           placed.Footprint.RightX > rightX + AA_EDGE_TOLERANCE_MM Or _
+           placed.Footprint.TopY > topY + AA_EDGE_TOLERANCE_MM Or _
+           placed.Footprint.BottomY < bottomY - AA_EDGE_TOLERANCE_MM Then Exit Function
+    Next placed
+    AADebugWrite "Edge row", label & "; edge=" & IIf(topEdge, "top", "bottom") & _
+        "; members=" & CStr(count) & "; pitch=" & Format$(pitch, "0.000000") & _
+        "; shift X=" & Format$(dx, "0.000000") & "; bonus X/Y=" & _
+        Format$(copied.CenterX, "0.000000") & "/" & Format$(copied.CenterY, "0.000000")
+    If ValidPlan(result, forbidden, settings, label & " edge row") Then Set ExtendedEdgeRow = result
 End Function
 
 Private Function RefillCenteredPattern(ByVal plan As AALayoutPlan, ByVal model As AAModel, _
