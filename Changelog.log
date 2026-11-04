@@ -357,3 +357,6 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Debug ringkas dan detail]
 ~ Log per capture kontur hanya tampil pada mode detail. Mode ringkas mempertahankan ringkasan profiling dan diagnostik refill tanpa ribuan baris capture berulang.
+
+[Roadmap optimasi Medium]
+~ Memusatkan rencana pengukuran pada biaya trial kuota dan kontribusi tiap strategi refill, dengan pemisahan tambahan dari seed, peningkatan atas kandidat terbaik, serta perbaikan kerapatan. Penjadwalan adaptif direncanakan setelah atribusi biaya dan kualitas tersedia; belum mengubah algoritme atau budget pencarian.
