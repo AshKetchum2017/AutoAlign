@@ -19,6 +19,7 @@ Private Const AA_MINIMUM_MARK_FINE_STEPS As Long = 10
 Private Const AA_MAX_MINIMUM_REFILL_PROBES As Long = 1024
 Private Const AA_MAX_MINIMUM_REFILL_TARGETS As Long = 16
 Private Const AA_MINIMUM_REFILL_ALIGNMENT_MM As Double = 0.01
+Private Const AA_MAX_MINIMUM_EDGE_ROW_OBJECTS As Long = 128
 Private Const AA_GROUP_REFILL_PROBES As Long = 2048
 Private Const AA_GROUP_SIDE_PROBES As Long = 512
 Private Const AA_GROUP_SIDE_COLUMNS As Long = 4
@@ -1348,6 +1349,12 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
     Err.Clear
     On Error GoTo 0
     AAProgressCheckCancelled
+    If Not straightPlan Is Nothing Then
+        If designCount = 1 Then
+            If quantities(designIndexes(0)) < 0 Then Set straightPlan = MinimumPartialEdges( _
+                straightPlan, models(designIndexes(0)), settings, sourceDocument)
+        End If
+    End If
     AADebugCandidateEnd
     AADebugPlan "Minimum Straight", straightPlan
     AAProgressCandidate
@@ -1384,6 +1391,157 @@ Public Function BuildMinimum(ByRef models() As AAModel, _
     Else
         Set BuildMinimum = straightPlan
     End If
+End Function
+
+Private Function MinimumPartialEdges(ByVal seed As AALayoutPlan, ByVal model As AAModel, _
+                                     ByVal settings As AASettings, ByVal doc As Document) As AALayoutPlan
+    Dim best As AALayoutPlan, candidate As AALayoutPlan, orderer As AAMediumPlanner
+    Dim forbidden As Collection, offsets As Object, edge As Long, started As Double
+    Set MinimumPartialEdges = seed
+    If seed.AreaCount <> 1 Or seed.DesignCount < 4 Or _
+       seed.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit Function
+    If Not model.AllowsRotation(0#) Then Exit Function
+    Set forbidden = ForbiddenFor(settings, doc)
+    If settings.ModelMode = AA_MODEL_KISS_A Then Set forbidden = NominalForbiddenFor(settings, doc)
+    Set offsets = CreateObject("Scripting.Dictionary"): offsets.Add "0", Array(0#, 0#)
+    Set best = seed: started = AADebugPerfBegin()
+    For edge = 0 To 1
+        AAProgressPulse
+        Set candidate = MinimumEdgePhases(best, forbidden, offsets, settings, edge = 0)
+        If candidate.DesignCount > best.DesignCount Then
+            If MinimumGroupValid(candidate, settings, doc) Then
+                Set best = candidate
+                AADebugWrite "Minimum partial", "accepted edge=" & IIf(edge = 0, "top", "bottom") & _
+                    "; objects=" & CStr(best.DesignCount)
+            End If
+        End If
+    Next edge
+    If best.DesignCount > seed.DesignCount Then
+        Set orderer = New AAMediumPlanner
+        Set best = orderer.OrderRefilledPattern(best)
+    End If
+    Set MinimumPartialEdges = best
+    AADebugWrite "Minimum partial", "before=" & CStr(seed.DesignCount) & "; selected=" & CStr(best.DesignCount)
+    AADebugStageEnd "Minimum partial edge rows", started
+End Function
+
+' Coba dua fase grid pada baris paling atas/bawah saja. Slot yang mengenai
+' mark dilewati; kegagalan gap/collision menolak seluruh kandidat fase.
+Private Function MinimumEdgePhases(ByVal seed As AALayoutPlan, ByVal forbidden As Collection, _
+                                   ByVal offsets As Object, ByVal settings As AASettings, _
+                                   ByVal topEdge As Boolean) As AALayoutPlan
+    Dim reference() As AAPlacement, placed As AAPlacement, first As AAPlacement, copied As AAPlacement
+    Dim candidate As AALayoutPlan, best As AALayoutPlan, occupied As Collection
+    Dim leftX As Double, rightX As Double, topY As Double, bottomY As Double
+    Dim edgeY As Double, referenceY As Double, pitch As Double, dx As Double, dy As Double
+    Dim count As Long, edgeCount As Long, phase As Long, i As Long, j As Long, added As Long
+    Dim inside As Boolean, valid As Boolean, foundReference As Boolean
+    Set MinimumEdgePhases = seed: Set best = seed
+    Set first = seed.Placements(1)
+    leftX = first.Footprint.LeftX: rightX = first.Footprint.RightX
+    topY = first.Footprint.TopY: bottomY = first.Footprint.BottomY
+    edgeY = first.Footprint.TopY
+    For Each placed In seed.Placements
+        AAProgressPulse
+        If placed.DesignIndex <> first.DesignIndex Or placed.CutIndex <> first.CutIndex Or _
+           placed.CreatesCutLine <> first.CreatesCutLine Or placed.AreaIndex <> 0 Or _
+           placed.RotationDelta <> 0# Then Exit Function
+        If placed.Footprint.LeftX < leftX Then leftX = placed.Footprint.LeftX
+        If placed.Footprint.RightX > rightX Then rightX = placed.Footprint.RightX
+        If placed.Footprint.TopY > topY Then topY = placed.Footprint.TopY
+        If placed.Footprint.BottomY < bottomY Then bottomY = placed.Footprint.BottomY
+        If topEdge Then
+            If placed.Footprint.TopY > edgeY Then edgeY = placed.Footprint.TopY
+        Else
+            If placed.Footprint.TopY < edgeY Then edgeY = placed.Footprint.TopY
+        End If
+    Next placed
+    For Each placed In seed.Placements
+        If Abs(placed.Footprint.TopY - edgeY) <= AA_MINIMUM_REFILL_ALIGNMENT_MM Then
+            edgeCount = edgeCount + 1
+        ElseIf Not foundReference Then
+            referenceY = placed.Footprint.TopY: foundReference = True
+        ElseIf topEdge Then
+            If placed.Footprint.TopY > referenceY Then referenceY = placed.Footprint.TopY
+        Else
+            If placed.Footprint.TopY < referenceY Then referenceY = placed.Footprint.TopY
+        End If
+    Next placed
+    If Not foundReference Or edgeCount = 0 Or edgeCount > AA_MAX_MINIMUM_EDGE_ROW_OBJECTS Then Exit Function
+    ' Acuan wajib baris interior; jangan mengubah dua baris yang saling menjadi acuan.
+    If referenceY >= topY - AA_MINIMUM_REFILL_ALIGNMENT_MM Or _
+       referenceY - first.Footprint.Height <= bottomY + AA_MINIMUM_REFILL_ALIGNMENT_MM Then Exit Function
+    ReDim reference(1 To AA_MAX_MINIMUM_EDGE_ROW_OBJECTS)
+    For Each placed In seed.Placements
+        AAProgressPulse
+        If Abs(placed.Footprint.TopY - referenceY) <= AA_MINIMUM_REFILL_ALIGNMENT_MM Then
+            count = count + 1
+            If count > AA_MAX_MINIMUM_EDGE_ROW_OBJECTS Then Exit Function
+            Set reference(count) = placed
+        End If
+    Next placed
+    If count < 2 Then Exit Function
+    For i = 2 To count
+        Set copied = reference(i): j = i - 1
+        Do While j >= 1
+            If reference(j).Footprint.LeftX <= copied.Footprint.LeftX Then Exit Do
+            Set reference(j + 1) = reference(j): j = j - 1
+        Loop
+        Set reference(j + 1) = copied
+    Next i
+    Set first = reference(1)
+    pitch = (reference(count).Footprint.LeftX - first.Footprint.LeftX) / (count - 1)
+    If pitch <= AA_EDGE_TOLERANCE_MM Then Exit Function
+    For i = 1 To count
+        Set placed = reference(i)
+        If Abs(placed.Footprint.Width - first.Footprint.Width) > AA_MINIMUM_REFILL_ALIGNMENT_MM Or _
+           Abs(placed.Footprint.Height - first.Footprint.Height) > AA_MINIMUM_REFILL_ALIGNMENT_MM Or _
+           Abs(placed.CollisionFootprint.Width - first.CollisionFootprint.Width) > AA_MINIMUM_REFILL_ALIGNMENT_MM Or _
+           Abs(placed.CollisionFootprint.Height - first.CollisionFootprint.Height) > AA_MINIMUM_REFILL_ALIGNMENT_MM Then Exit Function
+        If i > 1 Then
+            If Abs(placed.Footprint.LeftX - reference(i - 1).Footprint.LeftX - pitch) > _
+               AA_MINIMUM_REFILL_ALIGNMENT_MM Then Exit Function
+        End If
+    Next i
+    dy = edgeY - referenceY
+    For phase = 0 To 1
+        AAProgressPulse
+        Set candidate = New AALayoutPlan: candidate.Configure seed.LayoutMode: candidate.SetRegularPattern False
+        Set occupied = New Collection
+        For Each placed In seed.Placements
+            AAProgressPulse
+            If Abs(placed.Footprint.TopY - edgeY) > AA_MINIMUM_REFILL_ALIGNMENT_MM Then
+                candidate.Add placed: occupied.Add placed
+            End If
+        Next placed
+        dx = phase * pitch / 2#: valid = True: added = 0
+        For i = 1 To count
+            AAProgressPulse
+            Set copied = reference(i).CopyForPlan(): copied.Translate dx, dy
+            copied.SetMarkAreaAllowance False
+            inside = (copied.Footprint.LeftX >= leftX - AA_EDGE_TOLERANCE_MM And _
+                copied.Footprint.RightX <= rightX + AA_EDGE_TOLERANCE_MM And _
+                copied.Footprint.TopY <= topY + AA_EDGE_TOLERANCE_MM And _
+                copied.Footprint.BottomY >= bottomY - AA_EDGE_TOLERANCE_MM)
+            If inside Then
+                If PlacementMarksFit(copied, offsets, forbidden) Then
+                    If Not CandidateFits(copied, occupied, forbidden, settings, offsets, copied.GapH, copied.GapV) Then
+                        valid = False: Exit For
+                    End If
+                    candidate.Add copied: occupied.Add copied: added = added + 1
+                End If
+            End If
+        Next i
+        If valid And candidate.DesignCount <= AA_MAX_OBJECTS_PER_SOURCE Then
+            If candidate.DesignCount > best.DesignCount Then
+                Set best = candidate
+                AADebugWrite "Minimum partial", "candidate edge=" & IIf(topEdge, "top", "bottom") & _
+                    "; phase=" & CStr(phase) & "; row=" & CStr(edgeCount) & "->" & CStr(added) & _
+                    "; shift X=" & Format$(dx, "0.000000") & "; objects=" & CStr(best.DesignCount)
+            End If
+        End If
+    Next phase
+    Set MinimumEdgePhases = best
 End Function
 
 Private Function AllActiveRectangles(ByRef models() As AAModel, _

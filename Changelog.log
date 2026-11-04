@@ -360,3 +360,9 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 
 [Roadmap optimasi Medium]
 ~ Memusatkan rencana pengukuran pada biaya trial kuota dan kontribusi tiap strategi refill, dengan pemisahan tambahan dari seed, peningkatan atas kandidat terbaik, serta perbaikan kerapatan. Penjadwalan adaptif direncanakan setelah atribusi biaya dan kualitas tersedia; belum mengubah algoritme atau budget pencarian.
+
+[Translasi geometri planner]
+~ Menggeser salinan kurva dengan transform seluruh kurva untuk mencegah perubahan bentuk akibat perpindahan node berurutan. Matrix diikat ke dokumen sebelum nilai translasi diisi agar satuan pergeseran mengikuti konteks AA. Pemeriksaan geometri aktual, gap, collision, mark dan area tetap berlaku.
+
+[Partial ZigZag Minimum]
++ Kandidat Straight satu Design non-rectangle dengan Quantity kosong mencoba fase baris atas/bawah dari grid interior. Slot yang mengenai mark dilewati; Y, rotasi, bagian tengah dan footprint dipertahankan. Hasil yang menambah objek tetap melalui validasi dan dibandingkan menurut prioritas jumlah.

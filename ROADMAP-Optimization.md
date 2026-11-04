@@ -58,6 +58,12 @@ Counter global gap **198,766 s**, overlap native **179,024 s**, contour capture 
 
 Urutan perbaikan aktif: **O0 pengukuran → O4 trial/redundansi → O3 geometri/early rejection → O2 cache terisolasi sesuai bukti → O6 penjadwalan strategi**. O1 tetap tersedia bila profil baru menunjukkan biaya transfer/sort yang layak didahulukan. Pilih satu perubahan mekanis per eksperimen agar penyebab perbaikan atau regresinya dapat ditelusuri.
 
+**Prasyarat correctness, 4 November — selesai pada scope Case_05:** deformasi free curve pada translasi node berurutan di `AAGeometry.AddPlaced` diperbaiki dengan transform seluruh kurva, binding identitas ke dokumen sebelum `TranslateBy`, serta proof pose/validator tetap. Pembanding partial baris tepi Straight Minimum juga tersedia. Penerimaan dan batas cakupan pengujian dicatat di Development.log. Scope berikutnya dimulai dari O0; tidak otomatis mengubah algoritme/budget optimasi. Angka Case_07 sebelum primitive translasi diperbaiki adalah referensi historis, bukan baseline performa aktif.
+
+Retest berikutnya pada `AA-Debug-Geometry-Fix.txt` memuat lima Process selesai: Case_05 Minimum/Medium, Case_01 Minimum/Medium dan Case_07 Medium. Case_07 tetap 316 (105/105/106) dengan perapatan sama; observasi planning/Process **312,247/315,401 s**, trial kapasitas **221,399 s**, side inclusive **41,018 s**, capture **24/0,034 s** dan overlap **33296/150,656 s**. Ini calon acuan sesudah transform, belum seri A/B berulang; profil lama di atas bersifat historis. Pada versi sebelum partial Minimum, Straight Case_05 memperoleh 434 versus ZigZag 437. Status compile/penerimaan serta bukti runtime dicatat di Development.log, tanpa menganggap keberhasilan run sebagai penerimaan semua jalur.
+
+Pembanding fase tepi Straight Minimum untuk satu Design non-rectangle bebas/satu area mempertahankan prioritas jumlah dan envelope: acuan Case_05 **437 dalam 304,5 × 461,5 mm**. Catatan penerimaan tetap di Development.log. Stage `Minimum partial edge rows` perlu dimasukkan dalam profil keluarga strategi. Run Case_01/Case_07 di Geometry-Fix mendahului patch partial terakhir; tetap bedakan observasi revisi tersebut dengan baseline berulang yang akan diambil sesudah instrumentasi O0.
+
 ## Prioritas awal yang dapat direvisi
 
 ID dipakai untuk merujuk eksperimen, bukan menentukan urutan wajib.
@@ -205,3 +211,4 @@ Pisahkan pemeriksaan statis, harness adaptasi/mock, compile VBE, runtime CorelDR
 | --- | --- |
 | 2026-11-03 | Roadmap dibuat sebagai dokumen dinamis. Fokus awal Medium/helper bersama; prioritas pertama baseline source terbaru, lalu pilih eksperimen dari biaya yang terukur. |
 | 2026-11-04 | Case_07 sesudah refill menjadi sasaran awal. O0 diperluas menjadi atribusi vector trial dan produktivitas mentah/marginal/final tiap strategi; O4/O3 didahulukan terhadap sort berdasarkan biaya trial. O6 menunda alokasi adaptif sampai data, efek urutan dan kontrak kualitas diketahui. Belum mengubah source algoritme atau budget. |
+| 2026-11-04 | Prasyarat perbaikan primitive translasi dan partial Minimum ditutup pada scope teruji. Profil Case_07 sesudah transform dipakai sebagai acuan awal O0; baseline/instrumentasi baru tetap diperlukan sebelum klaim penghematan. |

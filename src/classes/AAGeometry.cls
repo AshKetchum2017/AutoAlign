@@ -385,7 +385,7 @@ Public Sub AddPlaced(ByVal source As AAGeometry, ByVal leftX As Double, _
                      ByVal topY As Double)
     Dim part As Curve
     Dim moved As Curve
-    Dim vertex As Node
+    Dim translation As TransformMatrix
     Dim deltaX As Double
     Dim deltaY As Double
     Dim i As Long
@@ -396,12 +396,17 @@ Public Sub AddPlaced(ByVal source As AAGeometry, ByVal leftX As Double, _
         AddBounds leftX, topY - source.Height, leftX + source.Width, topY
         Exit Sub
     End If
+    ' Matrix bebas memakai inch. Ikat identitas sebelum mengisi delta agar
+    ' satuannya sama dengan kurva/dokumen aktif (mm selama Process AA).
+    Set translation = Application.Math.CreateTranslationTransformMatrix(0#, 0#)
+    translation.BindToDocument Application.ActiveDocument
+    translation.TranslateBy deltaX, deltaY
     For i = 1 To source.CurveCount
         Set part = source.CurveAt(i)
         Set moved = part.GetCopy
-        For Each vertex In moved.Nodes
-            vertex.Move deltaX, deltaY
-        Next vertex
+        ' Node.Move berurutan dapat mengubah handles pada kurva dengan node
+        ' berimpit. Transform seluruh salinan menjaga bentuk saat translasi.
+        moved.ApplyTransformMatrix translation
         AddCurve moved
     Next i
 End Sub
