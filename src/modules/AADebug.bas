@@ -376,6 +376,7 @@ End Sub
 
 Public Sub AADebugContourCaptured(ByVal nodes As Long, ByVal edges As Long, ByVal flatnessMM As Double)
     If Not AADebugProfiling Then Exit Sub
+    If Not AADebugDetailsEnabled Then Exit Sub
     AADebugWrite "Contour", "nodes=" & CStr(nodes) & "; edges=" & CStr(edges) & _
         "; flatness=" & CStr(flatnessMM) & " mm"
 End Sub

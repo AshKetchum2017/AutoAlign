@@ -1,4 +1,4 @@
-Option Explicit
+﻿Option Explicit
 
 Private Const AA_EDGE_TOLERANCE_MM As Double = 0.0001
 Private Const AA_PLAN_BOUNDS_TOLERANCE_MM As Double = 0.001
@@ -20,6 +20,17 @@ Private Const AA_MAX_MINIMUM_REFILL_PROBES As Long = 1024
 Private Const AA_MAX_MINIMUM_REFILL_TARGETS As Long = 16
 Private Const AA_MINIMUM_REFILL_ALIGNMENT_MM As Double = 0.01
 Private Const AA_GROUP_REFILL_PROBES As Long = 2048
+Private Const AA_GROUP_SIDE_PROBES As Long = 512
+Private Const AA_GROUP_SIDE_COLUMNS As Long = 4
+Private Const AA_GROUP_SIDE_ROW_PROBES As Long = 128
+Private Const AA_GROUP_SIDE_ROWS As Long = 16
+Private Const AA_GROUP_SIDE_GROUP_PROBES As Long = 32
+Private Const AA_GROUP_SIDE_GROUP_STEP_MM As Double = 8#
+Private Const AA_GROUP_SIDE_GROUP_TOLERANCE_MM As Double = 0.001
+Private Const AA_GROUP_SIDE_ADDITIONS As Long = 32
+Private Const AA_GROUP_SIDE_CONTACT_PROBES As Long = 8
+Private Const AA_GROUP_SIDE_CONTACT_MM As Double = 8#
+Private Const AA_GROUP_SIDE_CONTACT_TOLERANCE_MM As Double = 0.05
 Private Const AA_GROUP_REFILL_ADDITIONS As Long = 16
 Private Const AA_GROUP_LOCAL_SLOTS As Long = 32
 Private Const AA_GROUP_LOCAL_STEPS As Long = 16
@@ -203,39 +214,74 @@ Private Sub MinimumLocalSlot(ByVal anchor As AAGeometry, ByVal site As Long, ByV
     End Select
 End Sub
 
-' Medium membandingkan keluarga blok 0 derajat di luar trial kapasitas.
-' Preset yang tidak mengizinkan 0 tetap memakai hasil planner Medium semula.
+' Keluarga blok 0 derajat dan kolom samping dijalankan setelah kuota akhir.
 Friend Function ImproveMediumGroup(ByVal seed As AALayoutPlan, ByRef models() As AAModel, _
                                    ByRef indexes() As Long, ByVal count As Long, _
                                    ByRef cuts() As Long, ByVal cutCount As Long, _
                                    ByVal difference As Long, ByVal settings As AASettings, _
                                    ByVal doc As Document) As AALayoutPlan
     Dim i As Long, candidate As AALayoutPlan, proposed As AALayoutPlan, adapter As AAMediumPlanner
+    Dim allowZero As Boolean, totalLimit As Long, started As Double, best As AALayoutPlan
+    Dim rowProbes As Long, side As Long, forbidden As Collection, offsets As Object, rowStarted As Double
+    Dim selectedSide As Long, contactStarted As Double
     Set ImproveMediumGroup = seed
+    If seed.AreaCount <> 1 Or count < 2 Or difference < 0 Then Exit Function
+    Set best = seed
+    allowZero = True
     For i = 0 To count - 1
         AAProgressPulse
-        If Not models(indexes(i)).AllowsRotation(0#) Then
-            AADebugWrite "Medium blocks", "skipped: zero rotation is not allowed for all Designs"
-            Exit Function
-        End If
+        If Not models(indexes(i)).AllowsRotation(0#) Then allowZero = False
     Next i
-    Set proposed = ImproveMinimumGroup(seed, models, indexes, count, cuts, cutCount, difference, settings, doc)
-    If proposed Is seed Then Exit Function
-    ' Gunakan metadata placement Medium agar sumber/Cut yang dipakai ulang
-    ' kembali ke sudut sumber, termasuk setelah group sebelumnya diputar.
     Set adapter = New AAMediumPlanner
-    Set candidate = adapter.AdaptMinimum(proposed, models)
-    candidate.SetRegularPattern proposed.HasRegularPattern
-    For i = 1 To proposed.DesignCount
-        If Not proposed.Placements(i).CreatesCutLine Then candidate.Placements(i).SuppressCutLine
-    Next i
-    If Not MinimumGroupValid(candidate, settings, doc) Then
-        AADebugWrite "Medium blocks", "rejected after Medium placement adaptation"
-        Exit Function
+    If allowZero Then
+        Set proposed = ImproveMinimumGroup(seed, models, indexes, count, cuts, cutCount, difference, settings, doc)
+        If Not proposed Is seed Then
+            ' Adaptasi ini khusus kandidat nol derajat, sebelum refill rotasi.
+            Set candidate = adapter.AdaptMinimum(proposed, models)
+            candidate.SetRegularPattern proposed.HasRegularPattern
+            For i = 1 To proposed.DesignCount
+                If Not proposed.Placements(i).CreatesCutLine Then candidate.Placements(i).SuppressCutLine
+            Next i
+            If MinimumGroupValid(candidate, settings, doc) Then
+                Set best = candidate
+            Else
+                AADebugWrite "Medium blocks", "rejected after Medium placement adaptation"
+            End If
+        End If
+    Else
+        AADebugWrite "Medium blocks", "zero-angle family skipped: rotation is not allowed for all Designs"
     End If
-    AADebugWrite "Medium blocks", "zero-angle candidate; before=" & CStr(seed.DesignCount) & _
-        "; selected=" & CStr(candidate.DesignCount)
-    Set ImproveMediumGroup = candidate
+    totalLimit = 2147483647
+    If cutCount = 1 Then totalLimit = AA_MAX_OBJECTS_PER_SOURCE
+    started = AADebugPerfBegin()
+    Set proposed = best: selectedSide = -1
+    Set candidate = GroupRefill(proposed, models, indexes, count, difference, totalLimit, settings, doc, True)
+    If candidate.DesignCount > proposed.DesignCount Then Set best = candidate
+    ' Bandingkan keluarga baris dari prefix yang sama; jangan mempertahankan
+    ' lubang hasil greedy sebagai penghalang untuk kandidat alternatif.
+    rowStarted = AADebugPerfBegin()
+    Set forbidden = ForbiddenFor(settings, doc)
+    If settings.ModelMode = AA_MODEL_KISS_A Then Set forbidden = NominalForbiddenFor(settings, doc)
+    Set offsets = CreateObject("Scripting.Dictionary"): offsets.Add "0", Array(0#, 0#)
+    For side = 0 To 1
+        Set candidate = MediumSideRows(proposed, models, indexes, count, difference, totalLimit, _
+            forbidden, offsets, settings, doc, side, rowProbes)
+        If candidate.DesignCount > best.DesignCount Then
+            Set best = candidate: selectedSide = side
+            AADebugWrite "Medium side rows", "selected side=" & CStr(side) & "; objects=" & CStr(best.DesignCount)
+        End If
+    Next side
+    AADebugStageEnd "Medium group row refill", rowStarted
+    If selectedSide >= 0 Then
+        contactStarted = AADebugPerfBegin()
+        Set best = MediumSideGroupContact(best, proposed.DesignCount, selectedSide, forbidden, offsets, settings, doc)
+        AADebugStageEnd "Medium group refill contact", contactStarted
+    End If
+    If best.DesignCount > proposed.DesignCount Then Set best = adapter.OrderRefilledPattern(best)
+    AADebugWrite "Medium blocks", "before=" & CStr(seed.DesignCount) & _
+        "; selected=" & CStr(best.DesignCount)
+    AADebugStageEnd "Medium group side refill", started
+    Set ImproveMediumGroup = best
 End Function
 
 ' Keluarga blok Minimum untuk kelompok /n bebas; juga kandidat tambahan Medium.
@@ -288,7 +334,7 @@ Friend Function ImproveMinimumGroup(ByVal seed As AALayoutPlan, ByRef models() A
                 allocation, blockMode, settings, doc, seed, joinGrid)
         End If
         If Not candidate Is Nothing Then
-            Set candidate = MinimumGroupRefill(candidate, models, indexes, count, difference, totalLimit, settings, doc)
+            Set candidate = GroupRefill(candidate, models, indexes, count, difference, totalLimit, settings, doc, False)
             score = MinimumGroupAlignment(candidate)
             If candidate.DesignCount > best.DesignCount Or _
                (candidate.DesignCount = best.DesignCount And score > bestScore) Then
@@ -402,19 +448,25 @@ Private Function MinimumBlockSeed(ByRef models() As AAModel, ByRef indexes() As 
     If MinimumGroupValid(result, settings, doc) Then Set MinimumBlockSeed = result
 End Function
 
-Private Function MinimumGroupRefill(ByVal seed As AALayoutPlan, ByRef models() As AAModel, _
+Private Function GroupRefill(ByVal seed As AALayoutPlan, ByRef models() As AAModel, _
                                     ByRef indexes() As Long, ByVal count As Long, ByVal difference As Long, _
                                     ByVal totalLimit As Long, _
-                                    ByVal settings As AASettings, ByVal doc As Document) As AALayoutPlan
+                                    ByVal settings As AASettings, ByVal doc As Document, _
+                                    ByVal sideColumns As Boolean) As AALayoutPlan
     Dim result As AALayoutPlan, candidate As AALayoutPlan, placed As AAPlacement
     Dim allocation() As Long, tried As Object, forbidden As Collection, offsets As Object
     Dim i As Long, j As Long, index As Long, bestIndex As Long, least As Long, minimum As Long, maximum As Long
-    Dim probes As Long, additions As Long, round As Long
+    Dim probes As Long, additions As Long, round As Long, budget As Long, sourceLimit As Long, before As Long, additionLimit As Long
+    Dim label As String
     Set result = seed
+    budget = AA_GROUP_REFILL_PROBES: label = "Minimum block refill": additionLimit = AA_GROUP_REFILL_ADDITIONS
+    If sideColumns Then
+        budget = AA_GROUP_SIDE_PROBES: label = "Medium side refill": additionLimit = AA_GROUP_SIDE_ADDITIONS
+    End If
     Set forbidden = ForbiddenFor(settings, doc)
     If settings.ModelMode = AA_MODEL_KISS_A Then Set forbidden = NominalForbiddenFor(settings, doc)
     Set offsets = CreateObject("Scripting.Dictionary"): offsets.Add "0", Array(0#, 0#)
-    Do While additions < AA_GROUP_REFILL_ADDITIONS And probes < AA_GROUP_REFILL_PROBES And result.DesignCount < totalLimit
+    Do While additions < additionLimit And probes < budget And result.DesignCount < totalLimit
         ReDim allocation(0 To UBound(models))
         For Each placed In result.Placements
             allocation(placed.DesignIndex) = allocation(placed.DesignIndex) + 1
@@ -439,24 +491,534 @@ Private Function MinimumGroupRefill(ByVal seed As AALayoutPlan, ByRef models() A
                 If i > maximum Then maximum = i
             Next j
             If maximum - minimum <= difference And least < AA_MAX_OBJECTS_PER_SOURCE Then
-                Set candidate = MinimumGroupBonus(result, models, bestIndex, forbidden, offsets, settings, doc, probes)
+                ' Sisakan jatah untuk sumber lain; sumber awal tidak boleh
+                ' menghabiskan seluruh budget sebelum giliran berikutnya.
+                before = probes
+                sourceLimit = probes + (budget - probes) \ (count - round + 1)
+                If sideColumns Then
+                    Set candidate = MediumGroupSideBonus(result, models(bestIndex), bestIndex, _
+                        forbidden, offsets, settings, doc, probes, sourceLimit, seed.DesignCount)
+                Else
+                    Set candidate = MinimumGroupBonus(result, models, bestIndex, forbidden, offsets, _
+                        settings, doc, probes, sourceLimit)
+                End If
+                AADebugWrite "Group refill probes", "phase=" & label & "; design=" & CStr(bestIndex) & _
+                    "; quota=" & CStr(least) & "; used=" & CStr(probes - before) & _
+                    "; share=" & CStr(sourceLimit - before) & "; found=" & CStr(Not candidate Is Nothing)
                 If Not candidate Is Nothing Then Exit For
             End If
-            If probes >= AA_GROUP_REFILL_PROBES Then Exit For
+            If probes >= budget Then Exit For
         Next round
         If candidate Is Nothing Then Exit Do
         Set result = candidate: additions = additions + 1
-        AADebugWrite "Minimum block refill", "design=" & CStr(bestIndex) & "; allocated=" & _
+        AADebugWrite label, "design=" & CStr(bestIndex) & "; allocated=" & _
             CStr(least + 1) & "; total=" & CStr(result.DesignCount)
     Loop
-    AADebugWrite "Minimum block refill", "added=" & CStr(additions) & "; probes=" & CStr(probes) & _
-        "/" & CStr(AA_GROUP_REFILL_PROBES)
-    Set MinimumGroupRefill = result
+    AADebugWrite label, "added=" & CStr(additions) & "; probes=" & CStr(probes) & "/" & CStr(budget)
+    Set GroupRefill = result
+End Function
+
+Private Function MediumGroupSideBonus(ByVal seed As AALayoutPlan, ByVal model As AAModel, _
+                                      ByVal index As Long, ByVal forbidden As Collection, _
+                                      ByVal offsets As Object, ByVal settings As AASettings, _
+                                      ByVal doc As Document, ByRef probes As Long, _
+                                      ByVal probeLimit As Long, ByVal mainCount As Long) As AALayoutPlan
+    Dim origin As AAPlacement, placed As AAPlacement, bonus As AAPlacement, best As AAPlacement
+    Dim angleBest As AAPlacement, candidate As AALayoutPlan, orientation As AARotationVariant
+    Dim angleIndex As Long, side As Long, column As Long, angleLimit As Long, anchor As Long, anchorLimit As Long
+    Dim angle As Double, x As Double, y As Double, sx As Double, sy As Double, h As Double, v As Double
+    Dim tops As Collection, unique As Object, site As Long, gridY As Double, gap As Double, key As String
+    Dim i As Long, first As Long, last As Long, stride As Long
+    Dim edge As Double, distance As Double, bestDistance As Double, bestSide As Long
+    For Each placed In seed.Placements
+        If placed.DesignIndex = index Then Set origin = placed: Exit For
+    Next placed
+    If origin Is Nothing Then Exit Function
+    model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+    Set tops = New Collection: Set unique = CreateObject("Scripting.Dictionary")
+    tops.Add settings.AreaHeightMM: unique.Add CStr(Round(settings.AreaHeightMM, 6)), True
+    ' Lanjutkan dari pengisi terakhir; jangan ulangi semua slot kolom yang sudah penuh.
+    For anchor = 0 To 1
+        first = 1: last = mainCount: stride = 1
+        If anchor = 0 Then first = seed.DesignCount: last = mainCount + 1: stride = -1
+        For i = first To last Step stride
+            AAProgressPulse
+            Set placed = seed.Placements(i)
+            gap = h: If v > gap Then gap = v
+            If placed.GapH > gap Then gap = placed.GapH
+            If placed.GapV > gap Then gap = placed.GapV
+            y = placed.Footprint.BottomY - gap: key = CStr(Round(y, 6))
+            If Not unique.Exists(key) Then tops.Add y: unique.Add key, True
+        Next i
+    Next anchor
+    For angleIndex = 0 To 1
+        angle = 90# + 180# * angleIndex
+        Set angleBest = Nothing
+        If model.AllowsRotation(angle) Then
+            Set orientation = model.RotationVariant(angle)
+            sx = orientation.Width + h: sy = orientation.Height + v
+            If sx > AA_EDGE_TOLERANCE_MM And sy > AA_EDGE_TOLERANCE_MM And _
+               orientation.Width <= settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM And _
+               orientation.Height <= settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM Then
+                angleLimit = probeLimit
+                If angleIndex = 0 And model.AllowsRotation(270#) Then _
+                    angleLimit = probes + (probeLimit - probes) \ 2
+                ' Anchor utama mengikuti blok asal; tepi area hanya cadangan.
+                For anchor = 0 To 1
+                    anchorLimit = angleLimit
+                    If anchor = 0 Then anchorLimit = probes + (angleLimit - probes) * 3 \ 4
+                    For side = 0 To 1
+                        For column = 0 To AA_GROUP_SIDE_COLUMNS - 1
+                            site = 1: gridY = settings.AreaHeightMM - sy
+                            Do While probes < anchorLimit
+                                AAProgressPulse
+                                If site <= tops.Count Then
+                                    y = CDbl(tops(site))
+                                Else
+                                    y = gridY: gridY = gridY - sy
+                                    If y - orientation.Height < -AA_EDGE_TOLERANCE_MM Then Exit Do
+                                End If
+                                site = site + 1
+                                If y <= settings.AreaHeightMM + AA_EDGE_TOLERANCE_MM And _
+                                   y - orientation.Height >= -AA_EDGE_TOLERANCE_MM Then
+                                    x = column * sx
+                                    If side = 0 Then x = settings.AreaWidthMM - orientation.Width - column * sx
+                                    If anchor = 0 Then
+                                        edge = MediumSideEdge(seed, mainCount, y, orientation.Height, side)
+                                        If edge >= 0# Then
+                                            If side = 0 Then x = edge + h + column * sx Else _
+                                                x = edge - h - orientation.Width - column * sx
+                                        Else
+                                            x = -1#
+                                        End If
+                                    End If
+                                    If x >= 0# And x + orientation.Width <= settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM Then
+                                        probes = probes + 1
+                                        Set bonus = orientation.MakePlacement(index, origin.CutIndex, 0, x, y, h, v)
+                                        If Not origin.CreatesCutLine Then bonus.SuppressCutLine
+                                        If CandidateFits(bonus, seed.Placements, forbidden, settings, offsets, h, v) Then
+                                            Set angleBest = MediumSideContact(bonus, orientation, seed, forbidden, offsets, _
+                                                settings, side, probes, angleLimit)
+                                            edge = MediumSideEdge(seed, mainCount, angleBest.Footprint.TopY, orientation.Height, side)
+                                            distance = settings.AreaWidthMM
+                                            If edge >= 0# Then
+                                                If side = 0 Then distance = angleBest.Footprint.LeftX - edge Else _
+                                                    distance = edge - angleBest.Footprint.RightX
+                                            End If
+                                            AADebugWrite "Medium side candidate", "design=" & CStr(index) & "; angle=" & CStr(angle) & _
+                                                "; main dx=" & Format$(distance, "0.000000") & _
+                                                "; x/y=" & Format$(angleBest.Footprint.LeftX, "0.000000") & "/" & Format$(angleBest.Footprint.TopY, "0.000000")
+                                            If best Is Nothing Then
+                                                Set best = angleBest: bestDistance = distance: bestSide = side
+                                            ElseIf angleBest.Footprint.BottomY > best.Footprint.BottomY + AA_EDGE_TOLERANCE_MM Or _
+                                                (Abs(angleBest.Footprint.BottomY - best.Footprint.BottomY) <= AA_EDGE_TOLERANCE_MM And _
+                                                 distance < bestDistance - AA_EDGE_TOLERANCE_MM) Then
+                                                Set best = angleBest: bestDistance = distance: bestSide = side
+                                            End If
+                                            Exit Do
+                                        End If
+                                    End If
+                                End If
+                            Loop
+                            If Not angleBest Is Nothing Or probes >= anchorLimit Then Exit For
+                        Next column
+                        If Not angleBest Is Nothing Or probes >= anchorLimit Then Exit For
+                    Next side
+                    If Not angleBest Is Nothing Or probes >= angleLimit Then Exit For
+                Next anchor
+            End If
+        End If
+    Next angleIndex
+    If Not best Is Nothing Then
+        Set candidate = MinimumGroupAdded(seed, Nothing, Nothing, best, settings, doc)
+        If Not candidate Is Nothing Then
+            AADebugWrite "Medium side slot", "design=" & CStr(index) & "; angle=" & CStr(best.RotationDelta) & _
+                "; side=" & CStr(bestSide) & "; main dx=" & Format$(bestDistance, "0.000000") & _
+                "; x/y=" & Format$(best.Footprint.LeftX, "0.000000") & "/" & Format$(best.Footprint.TopY, "0.000000")
+            Set MediumGroupSideBonus = candidate
+        End If
+    End If
+End Function
+
+' Keluarga alternatif: isi baris pendek di pita samping sebelum turun.
+' Bbox hanya menghasilkan slot; validator kontur yang sama menentukan legalitasnya.
+Private Function MediumSideRows(ByVal seed As AALayoutPlan, ByRef models() As AAModel, _
+                                ByRef indexes() As Long, ByVal count As Long, ByVal difference As Long, _
+                                ByVal totalLimit As Long, ByVal forbidden As Collection, ByVal offsets As Object, _
+                                ByVal settings As AASettings, ByVal doc As Document, ByVal side As Long, _
+                                ByRef probes As Long) As AALayoutPlan
+    Dim result As AALayoutPlan, placed As AAPlacement, bonus As AAPlacement, trial As AAPlacement
+    Dim origins() As AAPlacement, allocation() As Long, tried As Object, orientation As AARotationVariant
+    Dim i As Long, j As Long, index As Long, role As Long, nextRole As Long, bestRole As Long, bestIndex As Long
+    Dim least As Long, minimum As Long, maximum As Long, round As Long, row As Long, angleIndex As Long
+    Dim angle As Double, h As Double, v As Double, gapH As Double, gapV As Double, maximumHeight As Double
+    Dim edge As Double, x As Double, cursorX As Double, y As Double, bottom As Double, filled As Boolean
+    Dim additions As Long, before As Long, accepted As Long
+    Set MediumSideRows = seed
+    before = probes
+    ReDim origins(0 To UBound(models)): ReDim allocation(0 To UBound(models))
+    For Each placed In seed.Placements
+        AAProgressPulse
+        allocation(placed.DesignIndex) = allocation(placed.DesignIndex) + 1
+        If origins(placed.DesignIndex) Is Nothing Then Set origins(placed.DesignIndex) = placed
+    Next placed
+    For i = 0 To count - 1
+        index = indexes(i)
+        models(index).GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+        If h > gapH Then gapH = h
+        If v > gapV Then gapV = v
+        For angleIndex = 0 To 1
+            angle = 90# + 180# * angleIndex
+            If models(index).AllowsRotation(angle) Then
+                Set orientation = models(index).RotationVariant(angle)
+                If orientation.Height > maximumHeight Then maximumHeight = orientation.Height
+            End If
+        Next angleIndex
+    Next i
+    ' Max(H,V) menjamin jarak diagonal antarbaris juga konservatif.
+    If gapH > gapV Then gapV = gapH
+    ' Hindari jatuh tipis di bawah gap karena roundoff koordinat slot.
+    ' Default nol tetap nol; reserve ini bukan toleransi penerimaan collision.
+    If gapH > 0# Then gapH = gapH + AA_MINIMUM_NEIGHBOR_RESERVE_MM
+    If gapV > 0# Then gapV = gapV + AA_MINIMUM_NEIGHBOR_RESERVE_MM
+    If maximumHeight <= AA_EDGE_TOLERANCE_MM Or probes >= AA_GROUP_SIDE_ROW_PROBES Then Exit Function
+    Set result = New AALayoutPlan: result.Configure seed.LayoutMode: result.SetRegularPattern False
+    For Each placed In seed.Placements
+        AAProgressPulse
+        result.Add placed.CopyForPlan()
+    Next placed
+    y = settings.AreaHeightMM
+    For row = 1 To AA_GROUP_SIDE_ROWS
+        edge = MediumSideEdge(seed, seed.DesignCount, y, maximumHeight, side)
+        cursorX = edge + gapH
+        If side = 1 Then cursorX = edge - gapH
+        bottom = y: filled = False
+        Do While edge >= 0# And probes < AA_GROUP_SIDE_ROW_PROBES And _
+                 additions < AA_GROUP_SIDE_ADDITIONS And result.DesignCount < totalLimit
+            Set bonus = Nothing: Set tried = CreateObject("Scripting.Dictionary")
+            For round = 1 To count
+                bestIndex = -1: least = AA_MAX_OBJECTS_PER_SOURCE + 1
+                ' Seri alokasi berputar hanya pada keluarga ini, agar satu baris
+                ' tidak selalu mengambil sumber pertama lagi setelah dua tambahan.
+                For i = 0 To count - 1
+                    role = (nextRole + i) Mod count: index = indexes(role)
+                    If Not tried.Exists(CStr(index)) And allocation(index) < least Then
+                        bestIndex = index: bestRole = role: least = allocation(index)
+                    End If
+                Next i
+                If bestIndex < 0 Then Exit For
+                tried.Add CStr(bestIndex), True
+                minimum = AA_MAX_OBJECTS_PER_SOURCE: maximum = 0
+                For j = 0 To count - 1
+                    index = indexes(j): i = allocation(index)
+                    If index = bestIndex Then i = i + 1
+                    If i < minimum Then minimum = i
+                    If i > maximum Then maximum = i
+                Next j
+                If maximum - minimum <= difference And least < AA_MAX_OBJECTS_PER_SOURCE And _
+                   Not origins(bestIndex) Is Nothing Then
+                    models(bestIndex).GetBoundaryGaps AA_MODE_STRAIGHT, h, v
+                    For angleIndex = 0 To 1
+                        angle = 90# + 180# * angleIndex
+                        If models(bestIndex).AllowsRotation(angle) Then
+                            Set orientation = models(bestIndex).RotationVariant(angle)
+                            x = cursorX: If side = 1 Then x = cursorX - orientation.Width
+                            If x >= 0# And x + orientation.Width <= settings.AreaWidthMM + AA_EDGE_TOLERANCE_MM And _
+                               y - orientation.Height >= -AA_EDGE_TOLERANCE_MM Then
+                                AAProgressPulse
+                                probes = probes + 1
+                                Set trial = orientation.MakePlacement(bestIndex, origins(bestIndex).CutIndex, 0, x, y, h, v)
+                                If Not origins(bestIndex).CreatesCutLine Then trial.SuppressCutLine
+                                If CandidateFits(trial, result.Placements, forbidden, settings, offsets, h, v) Then
+                                    Set bonus = trial
+                                    Exit For
+                                End If
+                            End If
+                        End If
+                        If probes >= AA_GROUP_SIDE_ROW_PROBES Then Exit For
+                    Next angleIndex
+                End If
+                If Not bonus Is Nothing Or probes >= AA_GROUP_SIDE_ROW_PROBES Then Exit For
+            Next round
+            If bonus Is Nothing Then Exit Do
+            result.Add bonus: additions = additions + 1
+            allocation(bestIndex) = allocation(bestIndex) + 1
+            nextRole = (bestRole + 1) Mod count
+            cursorX = bonus.Footprint.RightX + gapH
+            If side = 1 Then cursorX = bonus.Footprint.LeftX - gapH
+            If bonus.Footprint.BottomY < bottom Then bottom = bonus.Footprint.BottomY
+            filled = True
+        Loop
+        If filled Then y = bottom - gapV Else y = y - maximumHeight - gapV
+        If y <= 0# Or probes >= AA_GROUP_SIDE_ROW_PROBES Or additions >= AA_GROUP_SIDE_ADDITIONS Or _
+           result.DesignCount >= totalLimit Then Exit For
+    Next row
+    If additions > 0 Then
+        If MinimumGroupValid(result, settings, doc) Then
+            Set MediumSideRows = result: accepted = additions
+            For i = seed.DesignCount + 1 To result.DesignCount
+                Set placed = result.Placements(i)
+                AADebugWrite "Medium side row slot", "design=" & CStr(placed.DesignIndex) & _
+                    "; angle=" & CStr(placed.RotationDelta) & "; x/y=" & _
+                    Format$(placed.Footprint.LeftX, "0.000000") & "/" & Format$(placed.Footprint.TopY, "0.000000")
+            Next i
+        End If
+    End If
+    AADebugWrite "Medium side rows", "side=" & CStr(side) & "; added=" & _
+        CStr(accepted) & "; used=" & CStr(probes - before) & _
+        "; probes=" & CStr(probes) & "/" & CStr(AA_GROUP_SIDE_ROW_PROBES)
+End Function
+
+' Geser seluruh tambahan sebagai satu pola. Prefix utama tidak ikut bergerak.
+' Turun sampai kontak utama; tanpa kontak, sejajarkan bbox atas dengan utama.
+Private Function MediumSideGroupContact(ByVal seed As AALayoutPlan, ByVal mainCount As Long, _
+                                        ByVal side As Long, ByVal forbidden As Collection, ByVal offsets As Object, _
+                                        ByVal settings As AASettings, ByVal doc As Document) As AALayoutPlan
+    Dim best As AALayoutPlan, axisSeed As AALayoutPlan, trial As AALayoutPlan, fixedMain As New Collection
+    Dim placed As AAPlacement, i As Long, axis As Long, probes As Long, limit As Long
+    Dim left As Double, bottom As Double, right As Double, top As Double, mainTop As Double
+    Dim originalX As Double, originalY As Double
+    Dim maximum As Double, target As Double, gap As Double, ownGap As Double, distance As Double
+    Dim safe As Double, blocked As Double, dx As Double, dy As Double, hasNeighbor As Boolean
+    Dim hitMain As Boolean, blockedByMain As Boolean, foundBottom As Boolean, reason As String
+    Set MediumSideGroupContact = seed
+    If mainCount <= 0 Or mainCount >= seed.DesignCount Then Exit Function
+    For i = 1 To mainCount
+        Set placed = seed.Placements(i): fixedMain.Add placed
+        If i = 1 Or placed.Footprint.TopY > mainTop Then mainTop = placed.Footprint.TopY
+    Next i
+    Set best = seed
+    For axis = 0 To 1
+        Set axisSeed = best
+        ownGap = 0#
+        For i = mainCount + 1 To axisSeed.DesignCount
+            AAProgressPulse
+            Set placed = axisSeed.Placements(i)
+            If i = mainCount + 1 Then
+                left = placed.Footprint.LeftX: right = placed.Footprint.RightX
+                bottom = placed.Footprint.BottomY: top = placed.Footprint.TopY
+            Else
+                If placed.Footprint.LeftX < left Then left = placed.Footprint.LeftX
+                If placed.Footprint.RightX > right Then right = placed.Footprint.RightX
+                If placed.Footprint.BottomY < bottom Then bottom = placed.Footprint.BottomY
+                If placed.Footprint.TopY > top Then top = placed.Footprint.TopY
+            End If
+            If placed.GapH > ownGap Then ownGap = placed.GapH
+            If placed.GapV > ownGap Then ownGap = placed.GapV
+        Next i
+        If axis = 0 Then
+            originalX = (left + right) / 2#: originalY = (bottom + top) / 2#
+        End If
+        maximum = bottom
+        If axis = 1 Then
+            maximum = left
+            If side = 1 Then maximum = settings.AreaWidthMM - right
+        End If
+        target = maximum: hasNeighbor = False
+        For Each placed In fixedMain
+            AAProgressPulse
+            gap = ownGap
+            If placed.GapH > gap Then gap = placed.GapH
+            If placed.GapV > gap Then gap = placed.GapV
+            If gap > 0# Then gap = gap + AA_MINIMUM_NEIGHBOR_RESERVE_MM
+            If axis = 0 Then
+                If placed.Footprint.RightX > left And placed.Footprint.LeftX < right And _
+                   placed.Footprint.BottomY < bottom Then
+                    hasNeighbor = True
+                    distance = bottom - placed.Footprint.TopY - gap
+                    If distance < target Then target = distance
+                End If
+            ElseIf placed.Footprint.TopY > bottom And placed.Footprint.BottomY < top Then
+                If side = 0 And placed.Footprint.LeftX < left Then
+                    hasNeighbor = True: distance = left - placed.Footprint.RightX - gap
+                    If distance < target Then target = distance
+                ElseIf side = 1 And placed.Footprint.RightX > right Then
+                    hasNeighbor = True: distance = placed.Footprint.LeftX - right - gap
+                    If distance < target Then target = distance
+                End If
+            End If
+        Next placed
+        safe = 0#: blocked = 0#: blockedByMain = False: foundBottom = False
+        reason = "no neighbor"
+        limit = AA_GROUP_SIDE_GROUP_PROBES
+        If axis = 0 Then limit = limit - 1 ' Sisakan satu probe untuk fallback bbox atas.
+        If hasNeighbor And maximum > AA_GROUP_SIDE_GROUP_TOLERANCE_MM Then
+            distance = target
+            If distance <= AA_GROUP_SIDE_GROUP_TOLERANCE_MM Then distance = AA_GROUP_SIDE_GROUP_STEP_MM
+            If distance > maximum Then distance = maximum
+            Do While distance > safe + AA_GROUP_SIDE_GROUP_TOLERANCE_MM And probes < limit
+                AAProgressPulse
+                dx = 0#: dy = -distance
+                If axis = 1 Then
+                    dy = 0#: dx = -distance
+                    If side = 1 Then dx = distance
+                End If
+                probes = probes + 1
+                Set trial = MediumSideGroupShift(axisSeed, mainCount, fixedMain, dx, dy, forbidden, offsets, settings, hitMain)
+                If trial Is Nothing Then
+                    blocked = distance: blockedByMain = hitMain
+                Else
+                    Set best = trial: safe = distance
+                    If safe >= maximum - AA_GROUP_SIDE_GROUP_TOLERANCE_MM Then
+                        foundBottom = True
+                        Exit Do
+                    End If
+                End If
+                If blocked > 0# Then
+                    distance = (safe + blocked) / 2#
+                Else
+                    distance = safe + AA_GROUP_SIDE_GROUP_STEP_MM
+                    If distance > maximum Then distance = maximum
+                End If
+            Loop
+            reason = "search limited"
+            If blockedByMain Then reason = "main contact"
+            If blocked > 0# And Not blockedByMain Then reason = "mark/internal limit"
+            If foundBottom Then reason = "area edge"
+        End If
+        If axis = 0 And (Not hasNeighbor Or foundBottom Or Not blockedByMain) Then
+            ' Batas area/mark atau pencarian tanpa bukti kontak utama bukan anchor bawah.
+            Set best = axisSeed: reason = "align main top"
+            dy = mainTop - top
+            If Abs(dy) > AA_GROUP_SIDE_GROUP_TOLERANCE_MM And probes < AA_GROUP_SIDE_GROUP_PROBES Then
+                probes = probes + 1
+                Set trial = MediumSideGroupShift(axisSeed, mainCount, fixedMain, 0#, dy, forbidden, offsets, settings, hitMain)
+                If Not trial Is Nothing Then Set best = trial Else reason = "align main top rejected"
+            End If
+        End If
+        Set placed = best.Placements(mainCount + 1)
+        Set trial = Nothing
+        AADebugWrite "Medium side group contact", "axis=" & CStr(axis) & "; anchor=" & reason & _
+            "; shift X/Y=" & Format$(placed.Footprint.LeftX - axisSeed.Placements(mainCount + 1).Footprint.LeftX, "0.000000") & _
+            "/" & Format$(placed.Footprint.TopY - axisSeed.Placements(mainCount + 1).Footprint.TopY, "0.000000")
+    Next axis
+    If best Is seed Then Exit Function
+    If Not MinimumGroupValid(best, settings, doc) Then
+        AADebugWrite "Medium side group contact", "rejected final; original refill retained"
+        Exit Function
+    End If
+    Set placed = best.Placements(mainCount + 1)
+    dx = placed.Footprint.LeftX - seed.Placements(mainCount + 1).Footprint.LeftX
+    dy = placed.Footprint.TopY - seed.Placements(mainCount + 1).Footprint.TopY
+    AADebugWrite "Medium side group contact", "objects=" & CStr(best.DesignCount - mainCount) & _
+        "; shift X/Y=" & Format$(dx, "0.000000") & "/" & Format$(dy, "0.000000") & _
+        "; center X/Y=" & Format$(originalX + dx, "0.000000") & "/" & Format$(originalY + dy, "0.000000") & _
+        "; probes=" & CStr(probes) & "/" & CStr(AA_GROUP_SIDE_GROUP_PROBES)
+    Set MediumSideGroupContact = best
+End Function
+
+' Bedakan penghalang utama dari mark/ketidakcocokan internal untuk fallback vertikal.
+Private Function MediumSideGroupShift(ByVal seed As AALayoutPlan, ByVal mainCount As Long, _
+                                      ByVal fixedMain As Collection, ByVal dx As Double, ByVal dy As Double, _
+                                      ByVal forbidden As Collection, ByVal offsets As Object, _
+                                      ByVal settings As AASettings, ByRef hitMain As Boolean) As AALayoutPlan
+    Dim result As New AALayoutPlan, moved As AAPlacement, placed As AAPlacement, occupied As New Collection
+    Dim i As Long
+    hitMain = False
+    result.Configure seed.LayoutMode: result.SetRegularPattern False
+    For i = 1 To seed.DesignCount
+        AAProgressPulse
+        Set placed = seed.Placements(i): Set moved = placed.CopyForPlan()
+        If i > mainCount Then
+            moved.Translate dx, dy
+            If Not CandidateFits(moved, fixedMain, forbidden, settings, Nothing, moved.GapH, moved.GapV) Then
+                hitMain = True
+                Exit Function
+            End If
+            If Not PlacementMarksFit(moved, offsets, forbidden, "Medium refill group") Then Exit Function
+            If Not CandidateFits(moved, occupied, forbidden, settings, Nothing, moved.GapH, moved.GapV) Then Exit Function
+            occupied.Add moved
+        End If
+        result.Add moved
+    Next i
+    Set MediumSideGroupShift = result
+End Function
+
+' Hanya prefix susunan utama; objek tambahan tidak menggeser anchor ke tepi area.
+Private Function MediumSideEdge(ByVal seed As AALayoutPlan, ByVal mainCount As Long, _
+                                ByVal top As Double, ByVal height As Double, ByVal side As Long) As Double
+    Dim i As Long, placed As AAPlacement, edge As Double
+    edge = -1#
+    For i = 1 To mainCount
+        AAProgressPulse
+        Set placed = seed.Placements(i)
+        If placed.Footprint.BottomY < top - AA_EDGE_TOLERANCE_MM And _
+           placed.Footprint.TopY > top - height + AA_EDGE_TOLERANCE_MM Then
+            If side = 0 Then
+                If placed.Footprint.RightX > edge Then edge = placed.Footprint.RightX
+            Else
+                If edge < 0# Or placed.Footprint.LeftX < edge Then edge = placed.Footprint.LeftX
+            End If
+        End If
+    Next i
+    MediumSideEdge = edge
+End Function
+
+' Dekati blok utama, lalu tetangga atas. Setiap posisi tetap diperiksa kontur asli.
+Private Function MediumSideContact(ByVal placed As AAPlacement, ByVal orientation As AARotationVariant, _
+                                   ByVal seed As AALayoutPlan, ByVal forbidden As Collection, ByVal offsets As Object, _
+                                   ByVal settings As AASettings, ByVal side As Long, ByRef probes As Long, _
+                                   ByVal probeLimit As Long) As AAPlacement
+    Dim best As AAPlacement, trial As AAPlacement, neighbor As AAPlacement
+    Dim axis As Long, attempts As Long, maximum As Double, safe As Double, blocked As Double
+    Dim distance As Double, x As Double, y As Double, hasAbove As Boolean
+    Set best = placed
+    For axis = 0 To 1
+        maximum = AA_GROUP_SIDE_CONTACT_MM
+        If axis = 0 Then
+            If side = 0 Then
+                If best.Footprint.LeftX < maximum Then maximum = best.Footprint.LeftX
+            Else
+                If settings.AreaWidthMM - best.Footprint.RightX < maximum Then _
+                    maximum = settings.AreaWidthMM - best.Footprint.RightX
+            End If
+        Else
+            hasAbove = False
+            For Each neighbor In seed.Placements
+                AAProgressPulse
+                If neighbor.Footprint.BottomY >= best.Footprint.TopY - AA_EDGE_TOLERANCE_MM And _
+                   neighbor.Footprint.LeftX < best.Footprint.RightX And neighbor.Footprint.RightX > best.Footprint.LeftX Then _
+                    hasAbove = True
+            Next neighbor
+            If Not hasAbove Then maximum = 0#
+            If settings.AreaHeightMM - best.Footprint.TopY < maximum Then _
+                maximum = settings.AreaHeightMM - best.Footprint.TopY
+        End If
+        safe = 0#: blocked = 0#: attempts = 0
+        distance = maximum: If distance > 2# Then distance = 2#
+        x = best.Footprint.LeftX: y = best.Footprint.TopY
+        Do While distance > safe + AA_GROUP_SIDE_CONTACT_TOLERANCE_MM And _
+                 probes < probeLimit And attempts < AA_GROUP_SIDE_CONTACT_PROBES
+            AAProgressPulse
+            attempts = attempts + 1: probes = probes + 1
+            If axis = 0 Then
+                If side = 0 Then distance = -distance
+                Set trial = orientation.MakePlacement(placed.DesignIndex, placed.CutIndex, 0, x + distance, y, placed.GapH, placed.GapV)
+                distance = Abs(distance)
+            Else
+                Set trial = orientation.MakePlacement(placed.DesignIndex, placed.CutIndex, 0, x, y + distance, placed.GapH, placed.GapV)
+            End If
+            If Not placed.CreatesCutLine Then trial.SuppressCutLine
+            If CandidateFits(trial, seed.Placements, forbidden, settings, offsets, placed.GapH, placed.GapV) Then
+                Set best = trial: safe = distance
+                If safe >= maximum Then Exit Do
+            Else
+                blocked = distance
+            End If
+            If blocked > 0# Then
+                distance = (safe + blocked) / 2#
+            Else
+                distance = safe + 2#: If distance > maximum Then distance = maximum
+            End If
+        Loop
+    Next axis
+    Set MediumSideContact = best
 End Function
 
 Private Function MinimumGroupBonus(ByVal seed As AALayoutPlan, ByRef models() As AAModel, _
                                    ByVal index As Long, ByVal forbidden As Collection, ByVal offsets As Object, _
-                                   ByVal settings As AASettings, ByVal doc As Document, ByRef probes As Long) As AALayoutPlan
+                                   ByVal settings As AASettings, ByVal doc As Document, ByRef probes As Long, _
+                                   ByVal probeLimit As Long) As AALayoutPlan
     Dim model As AAModel, placed As AAPlacement, bonus As AAPlacement, origin As AAPlacement
     Dim candidate As AALayoutPlan, slots As New Collection, localSlots As New Collection, unique As Object
     Dim sx As Double, sy As Double, zx As Double, zy As Double, h As Double, v As Double, x As Double, y As Double
@@ -486,7 +1048,7 @@ Private Function MinimumGroupBonus(ByVal seed As AALayoutPlan, ByRef models() As
     For i = 1 To slots.Count
         AAProgressPulse
         slot = slots(i)
-        If probes >= AA_GROUP_REFILL_PROBES Then Exit Function
+        If probes >= probeLimit Then Exit Function
         Set bonus = model.MakePlacement(index, origin.CutIndex, 0, _
             CDbl(slot(0)) + model.DesignInsetX, CDbl(slot(1)) - model.DesignInsetY)
         If Not origin.CreatesCutLine Then bonus.SuppressCutLine
@@ -501,16 +1063,16 @@ Private Function MinimumGroupBonus(ByVal seed As AALayoutPlan, ByRef models() As
         End If
     Next i
     For Each bonus In localSlots
-        Set candidate = MinimumGroupRelocate(seed, bonus, forbidden, offsets, settings, doc, probes)
+        Set candidate = MinimumGroupRelocate(seed, bonus, forbidden, offsets, settings, doc, probes, probeLimit)
         If Not candidate Is Nothing Then Set MinimumGroupBonus = candidate: Exit Function
-        If probes >= AA_GROUP_REFILL_PROBES Then Exit Function
+        If probes >= probeLimit Then Exit Function
     Next bonus
 End Function
 
 Private Function MinimumGroupRelocate(ByVal seed As AALayoutPlan, ByVal bonus As AAPlacement, _
                                       ByVal forbidden As Collection, ByVal offsets As Object, _
                                       ByVal settings As AASettings, ByVal doc As Document, _
-                                      ByRef probes As Long) As AALayoutPlan
+                                      ByRef probes As Long, ByVal probeLimit As Long) As AALayoutPlan
     Dim original As AAPlacement, placed As AAPlacement, moved As AAPlacement
     Dim occupied As Collection, candidate As AALayoutPlan, localStep As Long, direction As Long
     Dim dx As Double, dy As Double, rx As Double, ry As Double
@@ -526,13 +1088,13 @@ Private Function MinimumGroupRelocate(ByVal seed As AALayoutPlan, ByVal bonus As
             For Each placed In seed.Placements
                 If Not placed Is original Then occupied.Add placed
             Next placed
-            If probes >= AA_GROUP_REFILL_PROBES Then Exit Function
+            If probes >= probeLimit Then Exit Function
             probes = probes + 1
             If CandidateFits(bonus, occupied, forbidden, settings, offsets, bonus.GapH, bonus.GapV) Then
                 occupied.Add bonus
                 For localStep = 1 To AA_GROUP_LOCAL_STEPS
                     For direction = 0 To 7
-                        If probes >= AA_GROUP_REFILL_PROBES Then Exit Function
+                        If probes >= probeLimit Then Exit Function
                         dx = 0#: dy = 0#
                         Select Case direction
                             Case 0, 4, 6: dx = rx * localStep / AA_GROUP_LOCAL_STEPS

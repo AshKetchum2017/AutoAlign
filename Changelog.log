@@ -345,3 +345,15 @@ Catatan: pemeriksaan contour 2 mm sebelum perbaikan aman. Celah bawah masih bert
 ~ Memakai batas jarak bbox kurva aktual sebelum pemeriksaan kontur, serta memeriksa ulang gap kandidat Medium setelah penyalinan kurva agar penolakan slot dan validasi akhir mengikuti geometri penempatan. Gap, toleransi kontur, area dan mark tetap mengikuti pengaturan yang berlaku.
 ~ Kandidat Medium dekat batas gap dapat dilanjutkan dari precheck ke pemeriksaan copy aktual; kandidat tetap harus memenuhi gap, collision, area dan mark sebelum diterima. Cadangan clearance tambahan tetap diperiksa.
 ~ Menyamakan basis penempatan Minimum dengan perhitungan langkah serta mempertahankan translasi kontur saat pemusatan, cache, dan pemakaian template Cut bersama. Pembulatan bbox tidak dijadikan pergeseran kontur; node/control hasil copy diverifikasi dan perubahan bentuk memakai kontur aktual.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-11-04
+[Refill kelompok dan kolom samping Medium]
++ Medium mencoba kolom pengisi 90°/270° pada kelompok /n bebas dengan satu container setelah kuota akhir, mengikuti izin rotasi serta pembagian jumlah. Objek lama dipertahankan dan setiap tambahan diperiksa terhadap gap, area, collision, dan mark.
+~ Refill blok membagi sisa budget probe antar-Design agar sumber awal tidak menghabiskan seluruh kesempatan. Debug merinci jatah serta pemakaian probe per Design dan tahap kolom samping.
+~ Kolom samping Medium memakai anchor dekat susunan utama, merapatkan kandidat dengan kontur, dan membandingkan sudut legal 90°/270° sebelum memilih. Batas tambahan samping 32 objek dengan budget pencarian tetap berbatas.
+~ Medium membandingkan baris pendek di pita samping dengan refill kolom, memilih jumlah yang lebih banyak sambil mempertahankan susunan utama, pasangan, gap, area, mark, dan pembagian kelompok.
+~ Kelompok baris refill dirapatkan sebagai satu pola ke objek utama di bawah dan samping. Tanpa penghalang utama di bawah atau saat mencapai batas bawah area, bbox atas refill dicoba sejajar dengan bbox utama; hasil tetap diperiksa terhadap gap, mark, dan area.
+
+[Debug ringkas dan detail]
+~ Log per capture kontur hanya tampil pada mode detail. Mode ringkas mempertahankan ringkasan profiling dan diagnostik refill tanpa ribuan baris capture berulang.
