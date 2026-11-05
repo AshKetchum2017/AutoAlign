@@ -705,6 +705,8 @@ Private Function BuildQuantityGroups(ByVal objects As AAObjectStore, ByRef model
         End If
         cutOwner = -1
         If groupNumber > 0 Then
+            If AADebugProfiling Then balanced.SetDebugQuotaContext _
+                "legacy /" & CStr(groupNumber), result.AreaCount
             Set part = balanced.BuildGroup(models, selectedDesigns, selectedCount, _
                 selectedCuts, selectedCutCount, settings, sourceDocument, layoutMode, planner)
             If part.AreaCount <> 1 Then Err.Raise vbObjectError + 5334, "AAProcessEngine", _

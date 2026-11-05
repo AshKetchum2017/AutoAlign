@@ -7,6 +7,16 @@ Private mTemplateCutIndex As Long
 Private mTemplateRotationMask As Long
 Private mQuotaPlanner As AAMediumPlanner
 Private mLastCapacityCount As Long
+Private mDebugQuotaContext As String, mDebugQuotaContainer As Long, mDebugQuotaSearch As Long
+
+Private Sub Class_Initialize()
+    mDebugQuotaContainer = -1
+End Sub
+
+Friend Sub SetDebugQuotaContext(ByVal label As String, ByVal containerIndex As Long)
+    If Not AADebugProfiling Then Exit Sub
+    mDebugQuotaContext = label: mDebugQuotaContainer = containerIndex
+End Sub
 
 ' Satu container: target tetap menurut urutan, lalu filler seimbang.
 ' Target yang belum muat dikembalikan sebagai hasil parsial untuk scheduler.
@@ -37,6 +47,10 @@ Public Function BuildAllocatedGroup(ByRef models() As AAModel, ByRef designIndex
         Set BuildAllocatedGroup = BuildGroup(models, designIndexes, designCount, cutIndexes, _
             cutCount, settings, sourceDocument, layoutMode, planner)
         Exit Function
+    End If
+    If AADebugProfiling Then
+        mDebugQuotaSearch = AADebugQuotaSearchBegin("allocated", mDebugQuotaContext, mDebugQuotaContainer)
+        AADebugQuotaSources mDebugQuotaSearch, models, designIndexes, designCount, cutIndexes, cutCount, sourceDocument
     End If
     Set mQuotaPlanner = Nothing
     If CanUseTemplate(models, designIndexes, designCount, cutCount) Then
@@ -290,6 +304,10 @@ Public Function BuildGroup(ByRef models() As AAModel, ByRef designIndexes() As L
     Dim expected As Long, pass As Long, failedAtTotal() As Long
     Dim hint As Long, consecutiveHints As Long
     Dim expanding As Boolean
+    If AADebugProfiling Then
+        mDebugQuotaSearch = AADebugQuotaSearchBegin("free balanced", mDebugQuotaContext, mDebugQuotaContainer)
+        AADebugQuotaSources mDebugQuotaSearch, models, designIndexes, designCount, cutIndexes, cutCount, sourceDocument
+    End If
     ' Geometri, urutan sumber, area dan gap cache tidak boleh lintas kelompok.
     Set mQuotaPlanner = Nothing
     ReDim quantities(0 To UBound(models))
@@ -580,6 +598,7 @@ Private Function TryQuota(ByRef models() As AAModel, ByRef designIndexes() As Lo
                           Optional ByVal capacityOnly As Boolean = True) As AALayoutPlan
     Dim candidate As AALayoutPlan, number As Long, description As String, source As String
     Dim perfStarted As Double, phase As String, capacityTarget As Long
+    Dim trace As Variant, traceStatus As String
     phase = "full": capacityTarget = -1
     If layoutMode = AA_MODE_MEDIUM And capacityOnly Then
         phase = "capacity": capacityTarget = expected
@@ -587,26 +606,36 @@ Private Function TryQuota(ByRef models() As AAModel, ByRef designIndexes() As Lo
     perfStarted = AADebugPerfBegin()
     mLastCapacityCount = 0
     On Error GoTo QuotaFailed
+    If AADebugProfiling Then trace = AADebugQuotaTrialBegin(mDebugQuotaSearch, phase, expected, _
+        designIndexes, designCount, quantities)
     AAProgressTrial
     Set candidate = BuildMode(models, designIndexes, designCount, cutIndexes, cutCount, _
         quantities, settings, sourceDocument, layoutMode, planner, capacityTarget)
-    AADebugStageEnd "quota target=" & CStr(expected) & "; phase=" & phase, perfStarted
     mLastCapacityCount = candidate.DesignCount
     If candidate.MatchesQuotas(designIndexes, designCount, quantities, expected) Then
         Set TryQuota = candidate
+        If AADebugProfiling Then AADebugQuotaTrialEnd trace, candidate, "fits"
+        AADebugStageEnd "quota target=" & CStr(expected) & "; phase=" & phase, perfStarted
         AADebugWrite "Quantity", "quota target=" & CStr(expected) & " -> fits"
     Else
+        If AADebugProfiling Then AADebugQuotaTrialEnd trace, candidate, "partial"
+        AADebugStageEnd "quota target=" & CStr(expected) & "; phase=" & phase, perfStarted
         AADebugWrite "Quantity", "quota target=" & CStr(expected) & " -> capacity"
     End If
     Exit Function
 QuotaFailed:
     number = Err.Number: description = Err.Description: source = Err.Source
-    AADebugStageEnd "quota target=" & CStr(expected) & "; phase=" & phase & " failed", perfStarted
     Select Case number
         Case vbObjectError + 5210, vbObjectError + 5230, vbObjectError + 5231, _
              vbObjectError + 5233, vbObjectError + 5234, vbObjectError + 5241
+            If AADebugProfiling Then AADebugQuotaTrialEnd trace, Nothing, "rejected", number, source, description
+            AADebugStageEnd "quota target=" & CStr(expected) & "; phase=" & phase & " failed", perfStarted
             AADebugWrite "Quantity", "quota target=" & CStr(expected) & " -> rejected: " & description
         Case Else
+            traceStatus = "error"
+            If number = AA_ERROR_CANCELLED Then traceStatus = "cancelled"
+            If AADebugProfiling Then AADebugQuotaTrialEnd trace, Nothing, traceStatus, number, source, description
+            AADebugStageEnd "quota target=" & CStr(expected) & "; phase=" & phase & " failed", perfStarted
             Err.Raise number, source, description
     End Select
 End Function

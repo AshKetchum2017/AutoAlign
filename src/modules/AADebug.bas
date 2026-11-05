@@ -40,6 +40,9 @@ Private mGroupEdgesSkipped As Double, mGroupEdgesDetailed As Double
 Private mOccupiedQueries As Double, mOccupiedAvailable As Double, mOccupiedOffered As Double
 Private mOccupiedFallbacks As Double, mOccupiedCacheHits As Double
 Private mOccupiedBuilds As Double, mOccupiedAdded As Double
+' Record diagnostik hanya berisi scalar/array; tidak menahan plan atau COM object.
+Private mQuotaRunSequence As Long, mQuotaSearchSequence As Long, mQuotaTrialSequence As Long
+Private mQuotaRunLabel As String, mQuotaActive As Variant
 
 ' Immediate Window: AADebugOn (ringkas), AADebugOn True (detail), AADebugOff.
 ' Tidak disimpan: reset project mengembalikan debug ke kondisi nonaktif.
@@ -108,6 +111,7 @@ Public Sub AADebugOn(Optional ByVal detailed As Boolean = False)
     AADebugProfiling = False
     AADebugGapWitnessActive = False
     mCandidateTiming = False
+    AADebugQuotaReset
     AADebugMemoryReset
     AADebugWrite "Debug", "ON; detailed=" & CStr(detailed)
 End Sub
@@ -121,6 +125,7 @@ Public Sub AADebugOff()
     AADebugProfiling = False
     AADebugGapWitnessActive = False
     mCandidateTiming = False
+    AADebugQuotaReset
     AADebugMemoryReset
     Debug.Print "[AA][Debug] OFF"
 End Sub
@@ -254,6 +259,9 @@ Private Sub AADebugPerfReset()
     On Error Resume Next
     AADebugProfiling = False
     mCandidateTiming = False
+    AADebugQuotaReset
+    mQuotaRunSequence = mQuotaRunSequence + 1
+    mQuotaRunLabel = Format$(Now, "yyyy-mm-dd hh:nn:ss") & "/" & CStr(mQuotaRunSequence)
     For i = 1 To AA_PERF_KIND_COUNT
         mPerfCalls(i) = 0#: mPerfSeconds(i) = 0#
     Next i
@@ -282,6 +290,8 @@ Private Sub AADebugPerfReset()
         AADebugWrite "Perf", "clock=Timer fallback; times inclusive (do not sum nested stages/counters)"
     End If
     If mDetailed Then AADebugWrite "Perf", "detail mode includes extra sample diagnostics"
+    AADebugWrite "Trial trace", "schema=1; run=" & mQuotaRunLabel & _
+        "; counters=Process; times=inclusive; cache statistics=Build; slot reasons=detail/candidate only"
 End Sub
 
 Private Function AADebugPerfClock() As Double
@@ -344,12 +354,17 @@ SnapshotUnavailable:
     Err.Clear
 End Function
 
-Public Sub AADebugPerfDelta(ByVal label As String, ByVal snapshot As Variant)
-    Dim i As Long, counterLabel As String, message As String
+Public Sub AADebugPerfDelta(ByVal label As String, ByVal snapshot As Variant, _
+                           Optional ByVal finishedSnapshot As Variant)
+    Dim i As Long, counterLabel As String, message As String, finished As Variant
     If Not AADebugProfiling Then Exit Sub
     If Not IsArray(snapshot) Then Exit Sub
     On Error GoTo InvalidSnapshot
     If LBound(snapshot) <> 0 Or UBound(snapshot) <> AA_PERF_KIND_COUNT * 2 - 1 Then Exit Sub
+    finished = finishedSnapshot
+    If Not IsArray(finished) Then finished = AADebugPerfSnapshot()
+    If Not IsArray(finished) Then Exit Sub
+    If LBound(finished) <> 0 Or UBound(finished) <> UBound(snapshot) Then Exit Sub
     message = label
     For i = 1 To AA_PERF_KIND_COUNT
         Select Case i
@@ -364,13 +379,147 @@ Public Sub AADebugPerfDelta(ByVal label As String, ByVal snapshot As Variant)
             Case AA_PERF_CONTOUR_POSE: counterLabel = "contour pose"
         End Select
         message = message & "; " & counterLabel & " calls=" & _
-            Format$(mPerfCalls(i) - CDbl(snapshot((i - 1) * 2)), "0")
+            Format$(CDbl(finished((i - 1) * 2)) - CDbl(snapshot((i - 1) * 2)), "0")
         If i <> AA_PERF_WELD Then message = message & "; " & counterLabel & " s=" & _
-            Format$(mPerfSeconds(i) - CDbl(snapshot((i - 1) * 2 + 1)), "0.000")
+            Format$(CDbl(finished((i - 1) * 2 + 1)) - CDbl(snapshot((i - 1) * 2 + 1)), "0.000")
     Next i
     AADebugWrite "Phase work", message
     Exit Sub
 InvalidSnapshot:
+    Err.Clear
+End Sub
+
+Private Sub AADebugQuotaReset()
+    mQuotaSearchSequence = 0: mQuotaTrialSequence = 0
+    mQuotaActive = Empty
+End Sub
+
+Public Function AADebugQuotaSearchBegin(ByVal route As String, ByVal context As String, _
+                                       ByVal containerIndex As Long) As Long
+    If Not AADebugProfiling Then Exit Function
+    On Error GoTo Unavailable
+    mQuotaSearchSequence = mQuotaSearchSequence + 1
+    AADebugQuotaSearchBegin = mQuotaSearchSequence
+    If Len(context) = 0 Then context = "direct allocator"
+    AADebugWrite "Trial search", "run=" & mQuotaRunLabel & "; search=" & CStr(mQuotaSearchSequence) & _
+        "; route=" & route & "; context=" & context & "; container=" & CStr(containerIndex) & _
+        "; container index=zero-based/-1 unavailable"
+Unavailable:
+    Err.Clear
+End Function
+
+' Pembacaan metadata sekali per search; tidak mengubah geometri atau dokumen.
+Public Sub AADebugQuotaSources(ByVal searchID As Long, ByRef models() As AAModel, _
+                              ByRef indexes() As Long, ByVal count As Long, _
+                              ByRef cuts() As Long, ByVal cutCount As Long, ByVal doc As Document)
+    Dim i As Long, index As Long, cut As Long
+    If Not AADebugProfiling Or searchID = 0 Then Exit Sub
+    On Error GoTo Unavailable
+    AADebugWrite "Trial source", "search=" & CStr(searchID) & "; document=" & doc.FullFileName & _
+        "; page=" & CStr(doc.ActivePage.Index) & "; Corel=" & Application.Version
+    For i = 0 To count - 1
+        index = indexes(i): cut = -1
+        If cutCount = 1 Then cut = cuts(0)
+        If cutCount > 1 Then cut = cuts(i)
+        AADebugWrite "Trial source", "search=" & CStr(searchID) & "; Design=" & CStr(index) & _
+            "; ID=/" & CStr(models(index).DesignShape.StaticID) & "; Cut=" & CStr(cut) & _
+            "; rotation mask=" & CStr(models(index).RotationMask)
+    Next i
+Unavailable:
+    Err.Clear
+End Sub
+
+Public Function AADebugQuotaTrialBegin(ByVal searchID As Long, ByVal phase As String, _
+                                      ByVal expected As Long, ByRef indexes() As Long, _
+                                      ByVal count As Long, ByRef quantities() As Long) As Variant
+    Dim i As Long, requested As String, token As Variant, activeIndexes() As Long
+    If Not AADebugProfiling Then Exit Function
+    On Error GoTo Unavailable
+    If IsArray(mQuotaActive) Then
+        AADebugWrite "Trial trace", "nested trial not traced; active id=" & CStr(mQuotaActive(0))
+        Exit Function
+    End If
+    ReDim activeIndexes(0 To count - 1)
+    For i = 0 To count - 1
+        activeIndexes(i) = indexes(i)
+        If i > 0 Then requested = requested & ","
+        requested = requested & CStr(indexes(i)) & ":" & CStr(quantities(indexes(i)))
+    Next i
+    mQuotaTrialSequence = mQuotaTrialSequence + 1
+    ' Token: attempt/search/run/phase/target/requested/started/perf/max index/active indexes.
+    token = Array(mQuotaTrialSequence, searchID, mQuotaRunSequence, phase, expected, _
+        "[" & requested & "]", 0#, Empty, UBound(quantities), activeIndexes)
+    AADebugWrite "Trial begin", "id=" & CStr(token(0)) & "; search=" & CStr(searchID) & _
+        "; phase=" & phase & "; target=" & CStr(expected) & "; requested=" & CStr(token(5))
+    token(7) = AADebugPerfSnapshot()
+    token(6) = AADebugPerfBegin()
+    mQuotaActive = token
+    AADebugQuotaTrialBegin = token
+Unavailable:
+    Err.Clear
+End Function
+
+Private Function AADebugQuotaActual(ByVal plan As AALayoutPlan, ByVal activeIndexes As Variant, _
+                                   ByVal maxIndex As Long) As String
+    Dim counts() As Long, placed As AAPlacement, i As Long, vector As String
+    Dim active() As Boolean
+    AADebugQuotaActual = "N/A"
+    On Error GoTo Unavailable
+    If plan Is Nothing Then Exit Function
+    ReDim counts(0 To maxIndex)
+    ReDim active(0 To maxIndex)
+    For i = LBound(activeIndexes) To UBound(activeIndexes)
+        active(CLng(activeIndexes(i))) = True
+    Next i
+    For Each placed In plan.Placements
+        i = placed.DesignIndex
+        If i < 0 Or i > maxIndex Then Exit Function
+        counts(i) = counts(i) + 1
+    Next placed
+    For i = 0 To maxIndex
+        ' Nol anggota aktif tetap ditulis; sumber tak diminta yang muncul ikut terlihat.
+        If counts(i) > 0 Or active(i) Then
+            If Len(vector) > 0 Then vector = vector & ","
+            vector = vector & CStr(i) & ":" & CStr(counts(i))
+        End If
+    Next i
+    AADebugQuotaActual = "[" & vector & "]"
+Unavailable:
+    Err.Clear
+End Function
+
+Public Sub AADebugQuotaTrialEnd(ByVal token As Variant, ByVal plan As AALayoutPlan, _
+                              ByVal outcome As String, Optional ByVal errorNumber As Long = 0, _
+                              Optional ByVal errorSource As String = vbNullString, _
+                              Optional ByVal errorText As String = vbNullString)
+    Dim finished As Variant, elapsed As Double, actual As String, total As String, message As String
+    If Not AADebugProfiling Or Not IsArray(token) Then Exit Sub
+    On Error GoTo Unavailable
+    If Not IsArray(mQuotaActive) Then Exit Sub
+    If CLng(token(2)) <> mQuotaRunSequence Or CLng(token(0)) <> CLng(mQuotaActive(0)) Then Exit Sub
+    elapsed = AADebugPerfBegin() - CDbl(token(6))
+    finished = AADebugPerfSnapshot()
+    mQuotaActive = Empty
+    If elapsed < 0# Then elapsed = 0#
+    total = "N/A"
+    If Not plan Is Nothing Then total = CStr(plan.DesignCount)
+    actual = AADebugQuotaActual(plan, token(9), CLng(token(8)))
+    message = "id=" & CStr(token(0)) & "; search=" & CStr(token(1)) & _
+        "; phase=" & CStr(token(3)) & "; status=" & outcome & "; target=" & CStr(token(4)) & _
+        "; actual=" & total & "; actual-vector=" & actual & "; seconds=" & Format$(elapsed, "0.000")
+    If errorNumber <> 0 Then message = message & "; error=" & CStr(errorNumber) & _
+        "; source=" & errorSource & "; reason=" & errorText
+    AADebugWrite "Trial end", message
+    AADebugPerfDelta "trial id=" & CStr(token(0)) & "; search=" & CStr(token(1)), token(7), finished
+Unavailable:
+    Err.Clear
+End Sub
+
+Public Sub AADebugQuotaSelected(ByVal label As String)
+    If Not AADebugProfiling Or Not IsArray(mQuotaActive) Then Exit Sub
+    On Error GoTo Unavailable
+    AADebugWrite "Trial selected", "id=" & CStr(mQuotaActive(0)) & "; candidate=" & label
+Unavailable:
     Err.Clear
 End Sub
 
@@ -412,6 +561,7 @@ Public Sub AADebugPerfFinish(ByVal status As String)
     Dim i As Long, label As String
     If Not AADebugProfiling Then Exit Sub
     On Error Resume Next
+    If IsArray(mQuotaActive) Then AADebugQuotaTrialEnd mQuotaActive, Nothing, "aborted: " & status
     AADebugStageEnd "Process total (" & status & ")", 0#
     For i = 1 To AA_PERF_KIND_COUNT
         Select Case i
@@ -454,6 +604,7 @@ Public Sub AADebugPerfFinish(ByVal status As String)
     AADebugMemoryFinish status
     AADebugProfiling = False
     mCandidateTiming = False
+    AADebugQuotaReset
 End Sub
 
 Public Sub AADebugRejectSlot(ByVal reason As String)

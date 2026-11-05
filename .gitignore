@@ -1,6 +1,7 @@
 # Ignore all of this files in the project directory
 test/
 tests/
+l1-run/
 *.env
 *.exe
 *.log

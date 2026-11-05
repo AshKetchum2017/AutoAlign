@@ -12,6 +12,7 @@ Private mOrderCount As Long
 Private mSealed() As Boolean
 Private mPullFree() As Boolean
 Private mAllocator As AAQuantityPlanner
+Private mDebugContainer As Long
 
 ' Hanya /n dan Quantity bermodifier. Entry biasa tetap melalui jalur template lama.
 Public Function Build(ByVal objects As AAObjectStore, ByRef models() As AAModel, _
@@ -38,6 +39,10 @@ Public Function Build(ByVal objects As AAObjectStore, ByRef models() As AAModel,
     Set mAllocator = New AAQuantityPlanner
     Set result = New AALayoutPlan: result.Configure layoutMode: result.SetRegularPattern True
     For group = 1 To mGroups.Count
+        If AADebugProfiling Then
+            mDebugContainer = result.AreaCount
+            mAllocator.SetDebugQuotaContext CStr(mLabels(group)), mDebugContainer
+        End If
         AAProgressGroup CStr(mLabels(group))
         AAProgressPulse
         ResetRequests objects.Count, selected, selectedCuts, requested, limits, count
@@ -67,6 +72,10 @@ Public Function Build(ByVal objects As AAObjectStore, ByRef models() As AAModel,
     Next group
     ' Filler tidak membuka container sendiri setelah target tetap habis.
     Do While PendingCount() > 0#
+        If AADebugProfiling Then
+            mDebugContainer = result.AreaCount
+            mAllocator.SetDebugQuotaContext "carry container", mDebugContainer
+        End If
         AAProgressGroup "Sisa Quantity - container tambahan"
         AAProgressPulse
         before = PendingCount()
@@ -219,6 +228,8 @@ Private Function PullFutureFree(ByVal current As AALayoutPlan, ByVal group As Lo
         End If
     Next i
     If freeCount = 0 Then Exit Function
+    If AADebugProfiling Then mAllocator.SetDebugQuotaContext _
+        "pull-free " & CStr(mLabels(group)), mDebugContainer
     Set candidate = Allocate(models, selected, cuts, count, requested, limits, settings, doc, layoutMode, planner)
     For Each placed In candidate.Placements
         pinned(placed.DesignIndex) = pinned(placed.DesignIndex) - 1

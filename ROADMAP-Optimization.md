@@ -1,6 +1,6 @@
 # Roadmap Optimasi AutoAlign
 
-Dibuat: **3 November 2026**. Diperbarui: **4 November 2026**.
+Dibuat: **3 November 2026**. Diperbarui: **5 November 2026**.
 
 **Dokumen ini bersifat dinamis.** Prioritas, tahapan, kasus uji, dan pendekatan boleh diubah, dipecah, digabung, ditunda, atau dibatalkan mengikuti hasil pengukuran, perubahan source, serta kebutuhan pengguna. Urutan di bawah adalah arah awal, bukan rencana yang fixed atau janji implementasi seluruh tahap.
 
@@ -64,13 +64,15 @@ Retest berikutnya pada `AA-Debug-Geometry-Fix.txt` memuat lima Process selesai: 
 
 Pembanding fase tepi Straight Minimum untuk satu Design non-rectangle bebas/satu area mempertahankan prioritas jumlah dan envelope: acuan Case_05 **437 dalam 304,5 × 461,5 mm**. Catatan penerimaan tetap di Development.log. Stage `Minimum partial edge rows` perlu dimasukkan dalam profil keluarga strategi. Run Case_01/Case_07 di Geometry-Fix mendahului patch partial terakhir; tetap bedakan observasi revisi tersebut dengan baseline berulang yang akan diambil sesudah instrumentasi O0.
 
+**Pengujian primitive Case_12 tersedia:** harness sementara di project VBA yang sama menjalankan class `AAGeometry` asli pada delapan halaman, dua unit, variasi orientasi/penempatan dan translasi berulang, serta memeriksa proof/recapture dengan kontrol negatif. Source produksi dan state dokumen dipertahankan; module uji dibersihkan. Bukti, microbenchmark eksploratif dan batas cakupan dicatat di Development.log. Tahap ini tidak menggantikan Process end-to-end atau baseline berulang O0. Belum ada alasan dari hasil tersebut untuk mengubah validator atau budget; prioritas berikutnya tetap atribusi biaya trial/refill dan overlap pada workflow nyata.
+
 ## Prioritas awal yang dapat direvisi
 
 ID dipakai untuk merujuk eksperimen, bukan menentukan urutan wajib.
 
 | ID | Arah pekerjaan | Prioritas awal | Status | Bukti yang diperlukan untuk keputusan berikutnya |
 | --- | --- | --- | --- | --- |
-| O0 | Baseline terbaru, atribusi trial dan efisiensi strategi | Pertama | Acuan Case_07 tersedia; instrumentasi tambahan direncanakan | Vector trial, biaya/hasil strategi dan baseline berulang dapat dibandingkan. |
+| O0 | Baseline terbaru, atribusi trial dan efisiensi strategi | Pertama | I1 trial tersedia di source, menunggu VBE/runtime; I2 kontribusi refill direncanakan | Vector trial, biaya/hasil strategi dan baseline berulang dapat dibandingkan. |
 | O1 | Transfer data dan pengurutan slot | Setelah hotspot dominan, kecuali profil berubah | Direncanakan | Biaya transfer/sort diketahui; urutan identik; waktu bersih membaik. |
 | O2 | Evaluasi cache pasangan pada pengisian bebas | Eksperimen terpisah | Cache sudah ada; manfaat belum ditetapkan | A/B cache aktif/nonaktif dengan source, profiling, dan input setara. |
 | O3 | Early rejection, reuse proof/geometri, overlap native dan mark | Setelah atribusi O0; dapat mendahului O4 sesuai temuan | Investigasi terbuka | Predicate mahal yang dihemat, biaya cache/proof, invalidasi dan kesetaraan hasil. |
@@ -107,6 +109,72 @@ Catat satu ringkasan per keluarga strategi yang benar-benar dipanggil (blok, ref
 Contoh acuan: row menghasilkan **18/2,788 ≈ 6,46 objek/detik dari seed**, tetapi hanya **5/2,788 ≈ 1,79 objek/detik di atas incumbent kolom**. Kedua angka bukan kontribusi independen yang boleh dijumlahkan. Kolom menghasilkan kandidat +13 yang kemudian tergantikan, tetapi bukan berarti dapat dihapus untuk semua geometri. Kontak +0 memperbaiki posisi; durasinya tetap masuk biaya hasil terpilih. Produktivitas keseluruhan portfolio memakai hasil akhir dikurangi seed bersama dibagi seluruh waktu portfolio, termasuk keluarga yang kalah.
 
 Perbandingan dari seed yang sama dan uji urutan/ablation terkontrol dipakai kemudian untuk mengatasi bias urutan. Jangan menjalankan semua ablation pada pemakaian normal atau menyimpan seluruh kurva kandidat hanya untuk statistik. Ringkasan scalar/array secukupnya dan lifetime satu Process menjadi pilihan awal.
+
+#### Rencana implementasi instrumentasi O0
+
+Rencana **4 November 2026**, audit batas pengukuran memakai source `8d3ea30`. **5 November: I1 diimplementasikan di source, menunggu compile VBE dan runtime pengguna; I2 tetap direncanakan.** Implementasi dibagi menjadi dua increment agar kebenaran log dan overhead dapat diperiksa sebelum memperluas cakupan. Tidak membutuhkan kontrol UserForm, registry, akses COM tambahan, atau module profiler baru; gunakan `AADebug.bas` yang sudah `Option Private Module` dan clock QPC/Timer yang sama.
+
+| Increment | Batas source dan keluaran | Gate sebelum melanjutkan |
+| --- | --- | --- |
+| I1 — atribusi trial kuota | `AAQuantityPlanner.TryQuota`, konteks pemanggil `AAQuantityFlow`/allocator dan batas `AAMediumPlanner.Build`. Catat satu awal/akhir trial, vector, status, durasi dan delta counter global yang lifetime-nya cocok. | Trial dapat ditelusuri ke search/container tujuan; capacity/full, partial, error dan Cancel tidak tertukar. Hasil Process tetap sama. |
+| I2 — atribusi strategi refill | Batas pemanggilan di `AAPlanner.ImproveMinimumGroup`/`ImproveMediumGroup`, lalu keluarga partial/final/independent di `AAMediumPlanner` sesuai jalur. Catat kandidat, incumbent, pilihan akhir, durasi dan work yang tersedia. | Alternatif dari seed sama tidak dijumlahkan sebagai gain independen; biaya parent/child dan budget bersama jelas; overhead terukur. |
+
+Mulai implementasi dari I1. I2 boleh dipecah lagi menjadi portfolio kelompok, lalu partial/final/independent. Pengukuran setiap pattern/relocate internal, reason counter baru, proof-reuse/recapture rinci dan cache lookup merupakan perluasan terarah bila ringkasan awal belum menjawab hotspot; jangan langsung menambah counter pada semua loop geometri.
+
+**Kontrak record trial:**
+
+- ID run/search/attempt dan konteks container lokal Process. Nomor `/n` merupakan label tambahan, bukan identitas unik karena ada carry dan container tambahan. Catat jalur finite/free/modifier bila berlaku. Daftar sumber, pasangan dan pengaturan dicatat sekali per konteks, lalu dirujuk ID.
+- Fase `capacity` atau `full`, target total dan vector requested lengkap menurut urutan Design. Ambil snapshot requested sebelum caller mengubah array kuota; total sama dengan vector berbeda tetap dua permintaan berbeda. Saat ada plan hasil, catat vector actual dari plan, bukan dari target.
+- Outcome `fits`, `partial`, `rejected`, `cancelled` atau `error`. Partial menunjukkan pencarian ini belum memenuhi vector, bukan bukti kapasitas maksimum. Exception tanpa plan memberi actual `N/A`, bukan nol atau hasil trial sebelumnya. Bedakan outcome tersebut dari pemilihan kandidat akhir.
+- Elapsed dan delta calls/seconds dari counter Process: capture, gap, overlap, weld, placement, proof pose, persiapan/sort slot yang sudah tersedia. Sertakan pekerjaan baseline Minimum di dalam trial dengan label child jika batasnya tersedia. Waktu tetap inclusive; belum menghitung exclusive time dari subtraction sembarang.
+- Untuk cache, tulis scope/reset yang sebenarnya. Cache isi dapat bertahan antar trial, sementara statistik `mFill*`, `mGap*` dan `mReject*` di-reset pada awal `AAMediumPlanner.Build`. Nilai akhir Build dapat dipakai untuk Build tersebut; jangan mengurangkan snapshot lintas reset atau mencampurnya dengan hit/miss seumur search.
+
+**Kontrak record refill:**
+
+| Keluarga awal | Pengukuran dan batas penting |
+| --- | --- |
+| Blok Minimum + refill | Portfolio tersendiri sebelum refill samping; pattern/relocate di dalamnya masih inclusive pada increment awal. Catat seed serta kandidat yang lolos adaptasi/validasi ketika dipakai oleh Medium. |
+| Side greedy | Durasi panggilan `GroupRefill(..., True)`, seed bersama, candidate dan incumbent; pisahkan dari timer side keseluruhan yang juga mencakup setup, rows, contact dan ordering. |
+| Side rows kiri/kanan | Record masing-masing pemanggilan dengan seed yang sama. Budget probe 128 dipakai bersama kedua sisi; laporkan pemakaian per panggilan serta total portfolio, jangan menyatakan 128 per sisi. Setup forbidden/offset dicatat pada parent/setup, bukan dibebankan dua kali. |
+| Kontak kelompok | Record hanya saat dipanggil pada kandidat row terpilih. Pose rigid kelompok maksimal 32 berbeda satuan dari probe penempatan objek. Count tetap; catat delta gerak dan bounds/ukuran celah yang sudah tersedia tanpa menghitung geometri baru. |
+| Partial edge, final/free-template, independent area | Label jalur dan area/tepi; hitung gain terhadap input masing-masing. Kandidat partial yang ikut baseline bukan tambahan kedua kalinya pada gain akhir Medium. |
+
+Setiap keluarga menyimpan `seed`, `candidate`, `best-before/after`, vector alokasi, raw gain dan gain atas incumbent. Catat diterima/tie/tidak membaik/ditolak serta alasan gate yang benar-benar tersedia. Pilihan keluarga akhir dicatat pada record portfolio, setelah perbandingan dan validasi; kandidat yang kalah tetap masuk biaya portfolio. Tidak menyimpan reference plan/Shape/Curve untuk kebutuhan statistik atau menambah field provenance pada plan produksi.
+
+Satu instance keluarga dalam satu run belum cukup untuk mengatur budget adaptif. Agregasi analisis nantinya membedakan fase capacity/full/final, bentuk/kompleksitas sumber, seed dan alasan berhenti. Durasi terlalu pendek memakai `N/A` untuk rate; Cancel/error tetap memiliki elapsed tetapi dikeluarkan dari rate run sukses. Tahap kontak dinilai sebagai perbaikan posisi, bukan bersaing pada obj/detik dengan keluarga penambah objek.
+
+**Lifetime, biaya dan jalur gagal:**
+
+- `AADebugPerfSnapshot` adalah counter Process dan cocok untuk selisih pada batas trial. Sebaliknya, `AADebugSlotSnapshot` memakai counter yang di-reset oleh `AADebugCandidateStart` serta hanya aktif pada debug detail. Counter slot itu tidak boleh langsung dijadikan delta seluruh trial atau dianggap nol penolakan pada debug ringkas. Bila diperlukan, tambahkan agregasi numerik lifetime Process pada hook penolakan yang ada dalam increment terpisah.
+- Debug nonaktif keluar sebelum serialisasi vector/alokasi record. Saat aktif, snapshot numerik diambil sebelum format/output; tulis ringkasan di batas tahap, tanpa log per edge/node/placement, pemeriksaan collision tambahan atau `DoEvents` tambahan. Interval UI 200 ms tetap.
+- Scope yang bersarang memakai parent ID eksplisit; helper kecil dan array scalar cukup. Reset konteks pada awal Process dan bersihkan pada selesai/gagal/Cancel agar run berikutnya tidak mewarisi trial aktif. Semua status akhir harus berpasangan dengan awal yang tercatat; scope yang tidak pernah dipanggil tidak diberi waktu nol palsu.
+- Simpan `Err.Number/Source/Description` sebelum logging; whitelist penolakan dan re-raise error/Cancel tetap persis. Kegagalan diagnostik tidak boleh menutupi error asli atau mengubah cleanup/Undo.
+
+**Pengujian increment:**
+
+1. Periksa helper ID/nesting/reset, vector requested/actual, zero-duration, partial/rejected dan Cancel/error; test adaptasi diberi label terpisah dari VBE/runtime. Cocokkan record dengan timer/counter lama tanpa menjumlahkan waktu nested.
+2. Compile VBE, lalu Case_07 Page 3 dengan **`AADebugOn` ringkas**, input semula Custom 1000 × 1000/gap 1/Otomatis/tiga pasangan `/1` bebas. Ambil minimal dua run sebanding setelah instrumentasi; bandingkan count/vector, bounds, pose dan Z-order dengan acuan 316 (105/105/106), bukan memaksa angka tersebut jika source/input berbeda.
+3. Satu kontrol Quantity finite/carry/`*`/`&` dan mixed source untuk I1 sesuai caller terdampak; Case_05 partial dan satu kontrol refill/pair untuk I2. Uji Cancel di tengah trial/refill lalu Process berikutnya, Undo/Redo, serta gap/mark/area pada jalur terkait. Pengukuran host tidak digantikan harness Case_12.
+4. Ukur overhead sebagai seri terpisah pada revisi/input sama, debug ringkas dibanding debug nonaktif, dengan metode timing eksternal yang konsisten. Laporkan variasi/median/rentang; jangan menyebut selisih kecil sebagai speedup algoritme atau menetapkan persen overhead universal sebelum datanya ada.
+
+Keluaran I1/I2 adalah profil yang bisa dipakai memilih eksperimen O4/O3: trial gagal mana yang mahal, predicate apa yang dominan, dan keluarga refill mana yang memberi manfaat dengan biaya berapa. Early rejection, reuse hasil geometri, deduplikasi dan scheduler tetap menunggu scope implementasi berikutnya.
+
+#### Pelaksanaan baseline I1 — Case_07 Page 1 dan Page 3
+
+Source yang diperbarui: Standard Module `AADebug`, Class Modules `AAQuantityPlanner`, `AAQuantityFlow`, `AAMediumPlanner` dan `AAProcessEngine`. Pastikan versi tersebut tersimpan/dimuat kembali setelah restart, lalu compile. I1 tidak mengubah kernel geometri, algoritme, budget atau refresh UI. Record trial hanya untuk `TryQuota`; template/direct build dapat tidak memiliki attempt. Atribusi strategi refill I2 belum termasuk pada baseline ini.
+
+Rangkaian yang direncanakan pengguna, sedikitnya **12 Process** untuk dua halaman:
+
+| Sesi | Kondisi Corel | Urutan minimum |
+| --- | --- | --- |
+| A | Instance awal, catat apakah sudah dipakai sebelumnya | P1-R1, P1-R2, P3-R1, P3-R2 |
+| B | Restart sebelum sesi | P1-R1, P3-R1, P1-R2, P3-R2 |
+| C | Restart sebelum sesi, khusus Page 1 | P1-R1, P1-R2 |
+| D | Restart sebelum sesi, khusus Page 3 | P3-R1, P3-R2 |
+
+Pertahankan source awal dan settings yang sama untuk halaman yang sama di seluruh sesi; Page 1 tidak dipaksa meniru setting Page 3. Catat label sesi/run di nama file atau catatan pengantar. Pada setiap restart aktifkan **`AADebugOn` ringkas** dan file logging kembali; mode detail bukan bagian seri ini. Pisahkan percobaan Cancel/input invalid dari run timing selesai. Run pertama setelah restart dibedakan dari run berikutnya; cache quota internal berumur search, sehingga selisih warm/cold host tidak otomatis berasal dari cache quota yang bertahan antarrun.
+
+Laporkan semua nilai per run serta median/rentang per halaman dan kondisi sesi, jumlah/vector alokasi, bounds dan perbandingan visual. Jangan menggabungkan halaman atau kondisi warm/cold menjadi satu angka. Pengukuran overhead debug ringkas/nonaktif tetap seri terpisah; seri ini sendiri belum membuktikan speedup atau keuntungan setiap keluarga refill.
 
 ### O1 — pengurutan slot
 
@@ -212,3 +280,6 @@ Pisahkan pemeriksaan statis, harness adaptasi/mock, compile VBE, runtime CorelDR
 | 2026-11-03 | Roadmap dibuat sebagai dokumen dinamis. Fokus awal Medium/helper bersama; prioritas pertama baseline source terbaru, lalu pilih eksperimen dari biaya yang terukur. |
 | 2026-11-04 | Case_07 sesudah refill menjadi sasaran awal. O0 diperluas menjadi atribusi vector trial dan produktivitas mentah/marginal/final tiap strategi; O4/O3 didahulukan terhadap sort berdasarkan biaya trial. O6 menunda alokasi adaptif sampai data, efek urutan dan kontrak kualitas diketahui. Belum mengubah source algoritme atau budget. |
 | 2026-11-04 | Prasyarat perbaikan primitive translasi dan partial Minimum ditutup pada scope teruji. Profil Case_07 sesudah transform dipakai sebagai acuan awal O0; baseline/instrumentasi baru tetap diperlukan sebelum klaim penghematan. |
+| 2026-11-04 | Pengujian intensif primitive AddPlaced melalui class VBA asli pada Case_12 selesai. O0 tetap langkah berikutnya; microbenchmark dipisahkan dari pengukuran planner dan tidak memicu refactor primitive tanpa atribusi biaya. |
+| 2026-11-04 | Rencana O0 dirinci menjadi I1 atribusi trial kuota dan I2 kontribusi/biaya refill. Kontrak record, lifetime/reset counter, nesting, Cancel/error dan pengujian overhead ditetapkan sebagai rencana; source VBA, budget dan scheduler belum diubah. |
+| 2026-11-05 | I1 trial dipasang pada debug ringkas: ID konteks/attempt, vector requested/actual, outcome dan delta kerja; kernel/budget/scheduler tetap. Menunggu compile/runtime. Baseline pengguna direncanakan pada Case_07 P1/P3, sesi awal, restart bergantian dan restart per halaman; atribusi refill I2 tetap terpisah. |

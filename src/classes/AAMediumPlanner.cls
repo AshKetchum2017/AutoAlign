@@ -626,6 +626,7 @@ BuildComplete:
         AADebugWrite "Capacity", "target=" & CStr(capacityTarget) & "; selected=" & bestLabel & _
             "; complete=" & CStr(best.MatchesQuotas(designIndexes, designCount, quantities, capacityTarget))
     End If
+    If AADebugProfiling Then AADebugQuotaSelected bestLabel
     AADebugPlan "Selected " & bestLabel, best
     If Not mQuotaFills Is Nothing Then AADebugWrite "Quota cache", _
         "hits=" & CStr(mFillHits) & "; misses=" & CStr(mFillMisses) & _
