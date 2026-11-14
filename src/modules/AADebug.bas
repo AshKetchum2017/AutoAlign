@@ -43,6 +43,7 @@ Private mOccupiedBuilds As Double, mOccupiedAdded As Double
 ' Record diagnostik hanya berisi scalar/array; tidak menahan plan atau COM object.
 Private mQuotaRunSequence As Long, mQuotaSearchSequence As Long, mQuotaTrialSequence As Long
 Private mQuotaRunLabel As String, mQuotaActive As Variant
+Private mStrategyStack As Collection, mStrategySequence As Long
 
 ' Immediate Window: AADebugOn (ringkas), AADebugOn True (detail), AADebugOff.
 ' Tidak disimpan: reset project mengembalikan debug ke kondisi nonaktif.
@@ -112,6 +113,7 @@ Public Sub AADebugOn(Optional ByVal detailed As Boolean = False)
     AADebugGapWitnessActive = False
     mCandidateTiming = False
     AADebugQuotaReset
+    AADebugStrategyReset
     AADebugMemoryReset
     AADebugWrite "Debug", "ON; detailed=" & CStr(detailed)
 End Sub
@@ -126,6 +128,7 @@ Public Sub AADebugOff()
     AADebugGapWitnessActive = False
     mCandidateTiming = False
     AADebugQuotaReset
+    AADebugStrategyReset
     AADebugMemoryReset
     Debug.Print "[AA][Debug] OFF"
 End Sub
@@ -260,6 +263,7 @@ Private Sub AADebugPerfReset()
     AADebugProfiling = False
     mCandidateTiming = False
     AADebugQuotaReset
+    AADebugStrategyReset
     mQuotaRunSequence = mQuotaRunSequence + 1
     mQuotaRunLabel = Format$(Now, "yyyy-mm-dd hh:nn:ss") & "/" & CStr(mQuotaRunSequence)
     For i = 1 To AA_PERF_KIND_COUNT
@@ -292,6 +296,8 @@ Private Sub AADebugPerfReset()
     If mDetailed Then AADebugWrite "Perf", "detail mode includes extra sample diagnostics"
     AADebugWrite "Trial trace", "schema=1; run=" & mQuotaRunLabel & _
         "; counters=Process; times=inclusive; cache statistics=Build; slot reasons=detail/candidate only"
+    AADebugWrite "Strategy trace", "schema=1; run=" & mQuotaRunLabel & _
+        "; times=inclusive; choice/winner=local portfolio; rates=N/A below 0.001 s"
 End Sub
 
 Private Function AADebugPerfClock() As Double
@@ -523,6 +529,188 @@ Unavailable:
     Err.Clear
 End Sub
 
+' Scope strategi bersarang; stack hanya menyimpan scalar/array, bukan plan/COM.
+Private Sub AADebugStrategyReset()
+    Set mStrategyStack = Nothing
+    mStrategySequence = 0
+End Sub
+
+Private Function AADebugStrategyPlan(ByVal plan As AALayoutPlan) As Variant
+    Dim counts() As Long, placed As AAPlacement, maxIndex As Long, i As Long, vector As String
+    Dim width As Double, height As Double, area As Double
+    On Error GoTo Unavailable
+    If plan Is Nothing Then Exit Function
+    For Each placed In plan.Placements
+        If placed.DesignIndex > maxIndex Then maxIndex = placed.DesignIndex
+    Next placed
+    ReDim counts(0 To maxIndex)
+    For Each placed In plan.Placements
+        counts(placed.DesignIndex) = counts(placed.DesignIndex) + 1
+    Next placed
+    For i = 0 To maxIndex
+        If counts(i) > 0 Then
+            If Len(vector) > 0 Then vector = vector & ","
+            vector = vector & CStr(i) & ":" & CStr(counts(i))
+        End If
+    Next i
+    PlanBounds plan, False, width, height, area
+    AADebugStrategyPlan = Array(plan.DesignCount, "[" & vector & "]", width, height, area)
+Unavailable:
+    Err.Clear
+End Function
+
+Private Function AADebugStrategyCount(ByVal summary As Variant) As String
+    AADebugStrategyCount = "N/A"
+    If IsArray(summary) Then AADebugStrategyCount = CStr(summary(0))
+End Function
+
+Public Function AADebugStrategyID(ByVal token As Variant) As Long
+    On Error Resume Next
+    If IsArray(token) Then AADebugStrategyID = CLng(token(0))
+End Function
+
+Private Function AADebugStrategyState(ByVal summary As Variant) As String
+    AADebugStrategyState = "N/A"
+    If Not IsArray(summary) Then Exit Function
+    AADebugStrategyState = CStr(summary(1)) & " bounds=" & Format$(summary(2), "0.000") & _
+        "x" & Format$(summary(3), "0.000") & " bbox-area-sum=" & Format$(summary(4), "0.000")
+End Function
+
+Private Function AADebugStrategyRate(ByVal gain As Long, ByVal elapsed As Double) As String
+    AADebugStrategyRate = "N/A"
+    If elapsed >= 0.001 Then AADebugStrategyRate = Format$(CDbl(gain) / elapsed, "0.000")
+End Function
+
+Public Function AADebugStrategyBegin(ByVal family As String, ByVal seed As AALayoutPlan, _
+                                     ByVal incumbent As AALayoutPlan, _
+                                     Optional ByVal context As String = vbNullString) As Variant
+    Dim token As Variant, baseline As Variant, before As Variant, parent As Variant
+    Dim parentID As Long, trialID As Long, searchID As Long
+    If Not AADebugProfiling Then Exit Function
+    On Error GoTo Unavailable
+    If mStrategyStack Is Nothing Then Set mStrategyStack = New Collection
+    If mStrategyStack.Count >= 64 Then
+        AADebugWrite "Strategy trace", "depth limit; family=" & family
+        Exit Function
+    End If
+    If mStrategyStack.Count > 0 Then
+        parent = mStrategyStack(mStrategyStack.Count): parentID = CLng(parent(0))
+    End If
+    searchID = mQuotaSearchSequence
+    If IsArray(mQuotaActive) Then trialID = CLng(mQuotaActive(0)): searchID = CLng(mQuotaActive(1))
+    baseline = AADebugStrategyPlan(seed)
+    If seed Is incumbent Then before = baseline Else before = AADebugStrategyPlan(incumbent)
+    mStrategySequence = mStrategySequence + 1
+    ' id, parent, run, trial, search, family, seed, incumbent-before, started, perf.
+    token = Array(mStrategySequence, parentID, mQuotaRunSequence, trialID, searchID, family, _
+        baseline, before, 0#, Empty)
+    AADebugWrite "Strategy begin", "id=" & CStr(token(0)) & "; parent=" & CStr(parentID) & _
+        "; trial=" & CStr(trialID) & "; search=" & CStr(searchID) & "; family=" & family & _
+        "; seed=" & AADebugStrategyCount(baseline) & "; best-before=" & AADebugStrategyCount(before) & _
+        "; context=" & context
+    token(9) = AADebugPerfSnapshot(): token(8) = AADebugPerfBegin()
+    mStrategyStack.Add token
+    AADebugStrategyBegin = token
+Unavailable:
+    Err.Clear
+End Function
+
+Public Sub AADebugStrategyEnd(ByVal token As Variant, ByVal candidate As AALayoutPlan, _
+                             ByVal incumbent As AALayoutPlan, _
+                             Optional ByVal role As String = "returned", _
+                             Optional ByVal work As String = vbNullString, _
+                             Optional ByVal winnerID As Long = 0)
+    Dim top As Variant, finish As Variant, proposed As Variant, after As Variant
+    Dim baseline As Variant, before As Variant, elapsed As Double, raw As Long, marginal As Long
+    Dim rawRate As String, marginalRate As String, message As String, choice As String
+    Dim rawText As String, marginalText As String
+    If Not AADebugProfiling Or Not IsArray(token) Then Exit Sub
+    On Error GoTo Unavailable
+    If CLng(token(2)) <> mQuotaRunSequence Then Exit Sub
+    If mStrategyStack Is Nothing Then Exit Sub
+    If mStrategyStack.Count = 0 Then Exit Sub
+    top = mStrategyStack(mStrategyStack.Count)
+    If CLng(top(0)) <> CLng(token(0)) Then
+        AADebugWrite "Strategy trace", "end out of order; id=" & CStr(token(0))
+        Exit Sub
+    End If
+    elapsed = AADebugPerfBegin() - CDbl(token(8)): finish = AADebugPerfSnapshot()
+    mStrategyStack.Remove mStrategyStack.Count
+    If elapsed < 0# Then elapsed = 0#
+    baseline = token(6): before = token(7)
+    proposed = AADebugStrategyPlan(candidate)
+    If candidate Is incumbent Then after = proposed Else after = AADebugStrategyPlan(incumbent)
+    rawRate = "N/A": marginalRate = "N/A": choice = "N/A"
+    rawText = "N/A": marginalText = "N/A"
+    If IsArray(proposed) And IsArray(baseline) And IsArray(before) And IsArray(after) Then
+        raw = CLng(proposed(0)) - CLng(baseline(0))
+        marginal = CLng(after(0)) - CLng(before(0))
+        If marginal < 0 Then marginal = 0
+        rawText = CStr(raw): marginalText = CStr(marginal)
+        rawRate = AADebugStrategyRate(raw, elapsed)
+        marginalRate = AADebugStrategyRate(marginal, elapsed)
+        If candidate Is incumbent Then choice = "selected" Else choice = "not-selected"
+    End If
+    message = "id=" & CStr(token(0)) & "; parent=" & CStr(token(1)) & "; trial=" & CStr(token(3)) & _
+        "; search=" & CStr(token(4)) & "; family=" & CStr(token(5)) & "; role=" & role & _
+        "; seed=" & AADebugStrategyCount(baseline) & "; candidate=" & AADebugStrategyCount(proposed) & _
+        "; best-before=" & AADebugStrategyCount(before) & "; best-after=" & AADebugStrategyCount(after) & _
+        "; choice=" & choice & "; seconds=" & Format$(elapsed, "0.000") & _
+        "; raw-gain=" & rawText & "; marginal-gain=" & marginalText & _
+        "; raw obj/s=" & rawRate & "; marginal obj/s=" & marginalRate & "; winner=" & CStr(winnerID)
+    AADebugWrite "Strategy end", message
+    AADebugWrite "Strategy result", "id=" & CStr(token(0)) & _
+        "; seed=" & AADebugStrategyState(baseline) & "; best-before=" & AADebugStrategyState(before) & _
+        "; candidate=" & AADebugStrategyState(proposed) & "; best-after=" & AADebugStrategyState(after)
+    If Len(work) > 0 Then AADebugWrite "Strategy work", "id=" & CStr(token(0)) & "; " & work
+    AADebugPerfDelta "strategy id=" & CStr(token(0)), token(9), finish
+Unavailable:
+    Err.Clear
+End Sub
+
+Public Sub AADebugStrategyWork(ByVal message As String)
+    Dim top As Variant
+    If Not AADebugProfiling Then Exit Sub
+    On Error GoTo Unavailable
+    If mStrategyStack Is Nothing Then Exit Sub
+    If mStrategyStack.Count = 0 Then Exit Sub
+    top = mStrategyStack(mStrategyStack.Count)
+    AADebugWrite "Strategy work", "id=" & CStr(top(0)) & "; " & message
+Unavailable:
+    Err.Clear
+End Sub
+
+Public Sub AADebugStrategyFailed(ByVal token As Variant, ByVal number As Long, _
+                                ByVal source As String, ByVal description As String)
+    Dim top As Variant, role As String, work As String, previousCount As Long
+    If Not AADebugProfiling Or Not IsArray(token) Then Exit Sub
+    On Error GoTo Unavailable
+    If CLng(token(2)) <> mQuotaRunSequence Or mStrategyStack Is Nothing Then Exit Sub
+    role = "error": If number = AA_ERROR_CANCELLED Then role = "cancelled"
+    work = "error=" & CStr(number) & "; source=" & source & "; reason=" & description
+    Do While mStrategyStack.Count > 0
+        previousCount = mStrategyStack.Count
+        top = mStrategyStack(mStrategyStack.Count)
+        If CLng(top(0)) < CLng(token(0)) Then Exit Do
+        AADebugStrategyEnd top, Nothing, Nothing, role, work
+        If mStrategyStack.Count = previousCount Then mStrategyStack.Remove previousCount
+    Loop
+Unavailable:
+    Err.Clear
+End Sub
+
+Private Sub AADebugStrategyAbortAll(ByVal status As String)
+    Dim top As Variant, previousCount As Long
+    On Error Resume Next
+    If mStrategyStack Is Nothing Then Exit Sub
+    Do While mStrategyStack.Count > 0
+        previousCount = mStrategyStack.Count
+        top = mStrategyStack(mStrategyStack.Count)
+        AADebugStrategyEnd top, Nothing, Nothing, "aborted", "Process finish=" & status
+        If mStrategyStack.Count = previousCount Then mStrategyStack.Remove previousCount
+    Loop
+End Sub
+
 Public Sub AADebugContourCaptured(ByVal nodes As Long, ByVal edges As Long, ByVal flatnessMM As Double)
     If Not AADebugProfiling Then Exit Sub
     If Not AADebugDetailsEnabled Then Exit Sub
@@ -561,6 +749,7 @@ Public Sub AADebugPerfFinish(ByVal status As String)
     Dim i As Long, label As String
     If Not AADebugProfiling Then Exit Sub
     On Error Resume Next
+    AADebugStrategyAbortAll status
     If IsArray(mQuotaActive) Then AADebugQuotaTrialEnd mQuotaActive, Nothing, "aborted: " & status
     AADebugStageEnd "Process total (" & status & ")", 0#
     For i = 1 To AA_PERF_KIND_COUNT
@@ -605,6 +794,7 @@ Public Sub AADebugPerfFinish(ByVal status As String)
     AADebugProfiling = False
     mCandidateTiming = False
     AADebugQuotaReset
+    AADebugStrategyReset
 End Sub
 
 Public Sub AADebugRejectSlot(ByVal reason As String)

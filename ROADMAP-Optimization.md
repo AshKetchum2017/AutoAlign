@@ -1,6 +1,6 @@
 # Roadmap Optimasi AutoAlign
 
-Dibuat: **3 November 2026**. Diperbarui: **5 November 2026**.
+Dibuat: **3 November 2026**. Diperbarui: **14 November 2026**.
 
 **Dokumen ini bersifat dinamis.** Prioritas, tahapan, kasus uji, dan pendekatan boleh diubah, dipecah, digabung, ditunda, atau dibatalkan mengikuti hasil pengukuran, perubahan source, serta kebutuhan pengguna. Urutan di bawah adalah arah awal, bukan rencana yang fixed atau janji implementasi seluruh tahap.
 
@@ -72,7 +72,7 @@ ID dipakai untuk merujuk eksperimen, bukan menentukan urutan wajib.
 
 | ID | Arah pekerjaan | Prioritas awal | Status | Bukti yang diperlukan untuk keputusan berikutnya |
 | --- | --- | --- | --- | --- |
-| O0 | Baseline terbaru, atribusi trial dan efisiensi strategi | Pertama | I1 trial tersedia di source, menunggu VBE/runtime; I2 kontribusi refill direncanakan | Vector trial, biaya/hasil strategi dan baseline berulang dapat dibandingkan. |
+| O0 | Baseline terbaru, atribusi trial dan efisiensi strategi | Pertama | I1 selesai pada scope Case_07 P1/P3; I2 tersedia di source, menunggu VBE/runtime; overhead dan efek urutan belum diukur terisolasi | Vector trial, biaya/hasil strategi dan baseline berulang dapat dibandingkan. |
 | O1 | Transfer data dan pengurutan slot | Setelah hotspot dominan, kecuali profil berubah | Direncanakan | Biaya transfer/sort diketahui; urutan identik; waktu bersih membaik. |
 | O2 | Evaluasi cache pasangan pada pengisian bebas | Eksperimen terpisah | Cache sudah ada; manfaat belum ditetapkan | A/B cache aktif/nonaktif dengan source, profiling, dan input setara. |
 | O3 | Early rejection, reuse proof/geometri, overlap native dan mark | Setelah atribusi O0; dapat mendahului O4 sesuai temuan | Investigasi terbuka | Predicate mahal yang dihemat, biaya cache/proof, invalidasi dan kesetaraan hasil. |
@@ -112,7 +112,7 @@ Perbandingan dari seed yang sama dan uji urutan/ablation terkontrol dipakai kemu
 
 #### Rencana implementasi instrumentasi O0
 
-Rencana **4 November 2026**, audit batas pengukuran memakai source `8d3ea30`. **5 November: I1 diimplementasikan di source, menunggu compile VBE dan runtime pengguna; I2 tetap direncanakan.** Implementasi dibagi menjadi dua increment agar kebenaran log dan overhead dapat diperiksa sebelum memperluas cakupan. Tidak membutuhkan kontrol UserForm, registry, akses COM tambahan, atau module profiler baru; gunakan `AADebug.bas` yang sudah `Option Private Module` dan clock QPC/Timer yang sama.
+Rencana **4 November 2026**, audit batas pengukuran memakai source `8d3ea30`; I1 dipasang pada 5 November. **Status 14 November: I1 selesai untuk scope baseline Case_07 P1/P3; bukti dan batas penerimaan berada di Development.log. I2 tersedia di source, menunggu compile VBE/runtime.** Implementasi dibagi menjadi dua increment agar kebenaran log dan overhead dapat diperiksa sebelum memperluas cakupan. Tidak membutuhkan kontrol UserForm, registry, akses COM tambahan, atau module profiler baru; gunakan `AADebug.bas` yang sudah `Option Private Module` dan clock QPC/Timer yang sama.
 
 | Increment | Batas source dan keluaran | Gate sebelum melanjutkan |
 | --- | --- | --- |
@@ -159,6 +159,16 @@ Satu instance keluarga dalam satu run belum cukup untuk mengatur budget adaptif.
 
 Keluaran I1/I2 adalah profil yang bisa dipakai memilih eksperimen O4/O3: trial gagal mana yang mahal, predicate apa yang dominan, dan keluarga refill mana yang memberi manfaat dengan biaya berapa. Early rejection, reuse hasil geometri, deduplikasi dan scheduler tetap menunggu scope implementasi berikutnya.
 
+#### Pelaksanaan instrumentasi I2
+
+Source yang diperbarui: Standard Module `AADebug` serta Class Modules `AAPlanner` dan `AAMediumPlanner`. Scope `Strategy begin/end/result/work` membentuk pohon parent/trial/search dengan metadata scalar/array; tidak menyimpan reference plan atau COM di stack. Caller portfolio kelompok memberi ID winner lokal setelah keputusan asli, sedangkan fungsi refill lain melaporkan plan yang dikembalikan dan masih dapat ditolak caller berikutnya. Waktu/error boundary aktif hanya saat profiling. Whitelist/fallback/error caller dipertahankan; Cancel/error menutup scope tanpa menerbitkan rate sukses. Rincian field dan satuan budget berada di README.
+
+Pengukuran awal meliputi portfolio kelompok/pattern, adaptasi blok Medium, greedy/rows per sisi dan portfolio bersama, kontak rigid, partial/edge/free-template, filler/grid serta independent-area. Detail alasan penolakan dan cache per predicate tetap mengikuti kebutuhan profil, bukan counter baru di semua loop. Kontak dinilai dari shift/probe yang sudah dihitung algoritme; bbox dan alignment yang dicatat tidak menggantikan validator.
+
+Setelah memperbarui tiga module tersebut, lakukan Compile, lalu satu smoke run **Case_07 P1 dan P3** dengan input I1 dan `AADebugOn` ringkas. Periksa pasangan scope, parent/winner, raw/marginal gain, trial/search dan kesamaan output terhadap input yang setara. Jika sesuai, tambah run kedua per halaman untuk variasi waktu. Tidak perlu mengulang seluruh matriks restart A/B/C/D hanya untuk memasang I2; data I1 belum membuktikan restart tidak berpengaruh atau menentukan sebab warmup.
+
+Kontrol jalur lain: Minimum partial satu Design bebas (Case_05 Page 5 dengan setting yang dicatat), Medium standalone atau shared-Cut free template, dan kasus multi-area (misalnya kontrol 03Nov) sesuai jalur pemakaian. Quantity filler diperiksa bila workflow tersebut dipakai. Periksa Cancel saat refill lalu run berikutnya, gap/mark/area, Undo/Redo dan Z-order. Toleransi mark working tree masih eksperimen; jangan memaksa count historis pada input/parameter yang berbeda. Log I2 dapat dipisahkan di ignored `AutoAlign/tests/i2-run`; pengukuran overhead nonaktif tetap seri tersendiri. Tidak ada hasil waktu/gain native I2 yang dinyatakan sebelum log tersedia.
+
 #### Pelaksanaan baseline I1 — Case_07 Page 1 dan Page 3
 
 Source yang diperbarui: Standard Module `AADebug`, Class Modules `AAQuantityPlanner`, `AAQuantityFlow`, `AAMediumPlanner` dan `AAProcessEngine`. Pastikan versi tersebut tersimpan/dimuat kembali setelah restart, lalu compile. I1 tidak mengubah kernel geometri, algoritme, budget atau refresh UI. Record trial hanya untuk `TryQuota`; template/direct build dapat tidak memiliki attempt. Atribusi strategi refill I2 belum termasuk pada baseline ini.
@@ -172,9 +182,15 @@ Rangkaian yang direncanakan pengguna, sedikitnya **12 Process** untuk dua halama
 | C | Restart sebelum sesi, khusus Page 1 | P1-R1, P1-R2 |
 | D | Restart sebelum sesi, khusus Page 3 | P3-R1, P3-R2 |
 
+Realisasi sesi B pada log 14 November adalah **P1-R1, P1-R2, P3-R1, P3-R2**, bukan bergantian. Data tersebut tetap dipakai untuk profil biaya, tetapi tidak menjawab efek pergantian urutan halaman; pengujian bergantian terpisah hanya diperlukan jika efek itu menjadi sasaran. Log mentah A/P3 kini kosong; pembandingnya memakai ringkasan terstruktur hasil inspeksi 8 November, dengan provenance terpisah dari raw log yang masih tersedia. Detail anomali file, pengecualian run dan perbandingan ada di Development.log tanggal 14 November.
+
 Pertahankan source awal dan settings yang sama untuk halaman yang sama di seluruh sesi; Page 1 tidak dipaksa meniru setting Page 3. Catat label sesi/run di nama file atau catatan pengantar. Pada setiap restart aktifkan **`AADebugOn` ringkas** dan file logging kembali; mode detail bukan bagian seri ini. Pisahkan percobaan Cancel/input invalid dari run timing selesai. Run pertama setelah restart dibedakan dari run berikutnya; cache quota internal berumur search, sehingga selisih warm/cold host tidak otomatis berasal dari cache quota yang bertahan antarrun.
 
 Laporkan semua nilai per run serta median/rentang per halaman dan kondisi sesi, jumlah/vector alokasi, bounds dan perbandingan visual. Jangan menggabungkan halaman atau kondisi warm/cold menjadi satu angka. Pengukuran overhead debug ringkas/nonaktif tetap seri terpisah; seri ini sendiri belum membuktikan speedup atau keuntungan setiap keluarga refill.
+
+**Checkpoint 8 November:** sesi A tersedia untuk kedua halaman; source lokal `5f0e0fb`. Empat Process selesai dan 36 trial memiliki pasangan begin/end/work/selected lengkap. Dua run per halaman konsisten pada vector trial/hasil, kandidat terpilih, call counts serta jumlah/alokasi/footprint akhir. Status ini merupakan inspeksi log runtime, bukan penerimaan Compile terpisah atau gap/mark/area/Cancel/Undo/Z-order manual. Data dan batas pembanding dicatat di Development.log; source produksi dipertahankan selama pengguna melanjutkan sesi B. Sesi B/C/D, overhead nonaktif dan atribusi keluarga refill I2 tetap terbuka.
+
+**Eksperimen terpisah, 13 November:** pengguna mengonfirmasi perubahan toleransi mark pada working tree masih percobaan; identitas parameter, nilai dan batas bukti dicatat pada topik AutoAlign tanggal tersebut di [Development.log](../Development.log). Sebelum membandingkan sesi berikutnya, catat revisi/parameter yang benar-benar dimuat di VBE. HEAD saja tidak mewakili source eksperimen yang belum dikomit; pisahkan hasil sampai kesetaraan kondisi yang relevan diketahui. Catatan ini tidak menerima eksperimen sebagai default atau mengubah algoritme/budget baseline.
 
 ### O1 — pengurutan slot
 
@@ -283,3 +299,5 @@ Pisahkan pemeriksaan statis, harness adaptasi/mock, compile VBE, runtime CorelDR
 | 2026-11-04 | Pengujian intensif primitive AddPlaced melalui class VBA asli pada Case_12 selesai. O0 tetap langkah berikutnya; microbenchmark dipisahkan dari pengukuran planner dan tidak memicu refactor primitive tanpa atribusi biaya. |
 | 2026-11-04 | Rencana O0 dirinci menjadi I1 atribusi trial kuota dan I2 kontribusi/biaya refill. Kontrak record, lifetime/reset counter, nesting, Cancel/error dan pengujian overhead ditetapkan sebagai rencana; source VBA, budget dan scheduler belum diubah. |
 | 2026-11-05 | I1 trial dipasang pada debug ringkas: ID konteks/attempt, vector requested/actual, outcome dan delta kerja; kernel/budget/scheduler tetap. Menunggu compile/runtime. Baseline pengguna direncanakan pada Case_07 P1/P3, sesi awal, restart bergantian dan restart per halaman; atribusi refill I2 tetap terpisah. |
+| 2026-11-08 | Inspeksi sesi A: trace I1 lengkap pada empat Process. Sumber produksi dibekukan selama sesi B; belum menarik kesimpulan pengaruh restart, overhead I1 atau speedup. B/C/D dan I2 tetap terbuka. |
+| 2026-11-14 | I1 ditutup pada baseline teruji; I2 atribusi keluarga refill tersedia di source dan menunggu VBE/runtime. Budget, urutan serta scheduler tetap; efek restart/overhead belum terisolasi. |

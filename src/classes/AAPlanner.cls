@@ -1,8 +1,8 @@
-﻿Option Explicit
+Option Explicit
 
 Private Const AA_EDGE_TOLERANCE_MM As Double = 0.0001
 Private Const AA_PLAN_BOUNDS_TOLERANCE_MM As Double = 0.001
-Private Const AA_MARK_TOLERANCE_MM As Double = 0.2
+Private Const AA_MARK_TOLERANCE_MM As Double = 0.25
 Private Const AA_SHIFT_STEP_MM As Double = 0.2
 Private Const AA_MAX_SHIFT_PROBES_PER_AREA As Long = 50000
 Private Const AA_MAX_SHIFT_CACHE_ENTRIES As Long = 32768
@@ -65,20 +65,38 @@ Friend Function RefillMinimum(ByVal seed As AALayoutPlan, ByVal model As AAModel
     Dim bestScore As Long, bestDX As Double, bestDY As Double
     Dim sx As Double, sy As Double, zx As Double, zy As Double, h As Double, v As Double
     Dim x As Double, y As Double, dx As Double, dy As Double, started As Double
+    Dim strategyTrace As Variant
+    Dim strategyNumber As Long, strategySource As String, strategyDescription As String
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("minimum-filler-local", seed, seed)
+        On Error GoTo StrategyFailed
+    End If
     Set RefillMinimum = seed: Set best = seed: bestScore = -2147483647
-    If seed.AreaCount <> 1 Then Exit Function
+    If seed.AreaCount <> 1 Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillMinimum, RefillMinimum
+        Exit Function
+    End If
     For Each placed In seed.placements
         If placed.designIndex = designIndex Then
             count = count + 1
-            If placed.RotationDelta <> 0# Then Exit Function
+            If placed.RotationDelta <> 0# Then
+                If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillMinimum, RefillMinimum
+                Exit Function
+            End If
         End If
     Next placed
-    If count = 0 Or count >= maximum Or maximum > AA_MAX_OBJECTS_PER_SOURCE Then Exit Function
+    If count = 0 Or count >= maximum Or maximum > AA_MAX_OBJECTS_PER_SOURCE Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillMinimum, RefillMinimum
+        Exit Function
+    End If
     started = AADebugPerfBegin()
     model.GetMinimumSteps AA_MODE_STRAIGHT, sx, sy
     model.GetMinimumSteps AA_MODE_ZIGZAG, zx, zy
     model.GetBoundaryGaps AA_MODE_STRAIGHT, h, v
-    If sx <= AA_EDGE_TOLERANCE_MM Or sy <= AA_EDGE_TOLERANCE_MM Or zy <= AA_EDGE_TOLERANCE_MM Then Exit Function
+    If sx <= AA_EDGE_TOLERANCE_MM Or sy <= AA_EDGE_TOLERANCE_MM Or zy <= AA_EDGE_TOLERANCE_MM Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillMinimum, RefillMinimum
+        Exit Function
+    End If
     Set forbidden = ForbiddenFor(settings, sourceDocument)
     If settings.modelMode = AA_MODEL_KISS_A Then Set forbidden = NominalForbiddenFor(settings, sourceDocument)
     Set offsets = CreateObject("Scripting.Dictionary"): offsets.Add "0", Array(0#, 0#)
@@ -133,6 +151,8 @@ Friend Function RefillMinimum(ByVal seed As AALayoutPlan, ByVal model As AAModel
         If probes >= AA_MAX_MINIMUM_REFILL_PROBES Then GoTo Finished
     Next original
 Finished:
+    If AADebugProfiling Then AADebugStrategyWork "unit=position; probes=" & CStr(probes) & _
+        "; targets=" & CStr(targets) & "; shift X/Y=" & Format$(bestDX, "0.000000") & "/" & Format$(bestDY, "0.000000")
     Set RefillMinimum = best
     If best.designCount > seed.designCount Then AADebugWrite "Minimum filler refill", _
         "move X/Y=" & Format$(bestDX, "0.000000") & "/" & Format$(bestDY, "0.000000") & _
@@ -140,6 +160,13 @@ Finished:
     AADebugStageEnd "Minimum filler local refill", started
     AADebugWrite "Minimum filler refill", "design=" & CStr(designIndex) & "; probes=" & CStr(probes) & _
         "; targets=" & CStr(targets) & "; added=" & CStr(best.designCount - seed.designCount)
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillMinimum, RefillMinimum
+    Exit Function
+' Strategy trace error boundary (profiling only).
+StrategyFailed:
+    strategyNumber = Err.Number: strategySource = Err.Source: strategyDescription = Err.Description
+    AADebugStrategyFailed strategyTrace, strategyNumber, strategySource, strategyDescription
+    Err.Raise strategyNumber, strategySource, strategyDescription
 End Function
 
 Private Function MinimumFillerBonus(ByVal seed As AALayoutPlan, ByVal original As AAPlacement, _
@@ -225,8 +252,18 @@ Friend Function ImproveMediumGroup(ByVal seed As AALayoutPlan, ByRef models() As
     Dim allowZero As Boolean, totalLimit As Long, started As Double, best As AALayoutPlan
     Dim rowProbes As Long, side As Long, forbidden As Collection, offsets As Object, rowStarted As Double
     Dim selectedSide As Long, contactStarted As Double
+    Dim strategyTrace As Variant, familyTrace As Variant, sideTrace As Variant, rowsTrace As Variant, rowTrace As Variant
+    Dim strategyWinner As Long, sideWinner As Long, rowsWinner As Long, rowBefore As Long
+    Dim strategyNumber As Long, strategySource As String, strategyDescription As String
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("medium-group-portfolio", seed, seed)
+        On Error GoTo StrategyFailed
+    End If
     Set ImproveMediumGroup = seed
-    If seed.AreaCount <> 1 Or count < 2 Or difference < 0 Then Exit Function
+    If seed.AreaCount <> 1 Or count < 2 Or difference < 0 Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, ImproveMediumGroup, ImproveMediumGroup
+        Exit Function
+    End If
     Set best = seed
     allowZero = True
     For i = 0 To count - 1
@@ -235,6 +272,7 @@ Friend Function ImproveMediumGroup(ByVal seed As AALayoutPlan, ByRef models() As
     Next i
     Set adapter = New AAMediumPlanner
     If allowZero Then
+        If AADebugProfiling Then familyTrace = AADebugStrategyBegin("medium-blocks-adaptation", seed, best)
         Set proposed = ImproveMinimumGroup(seed, models, indexes, count, cuts, cutCount, difference, settings, doc)
         If Not proposed Is seed Then
             ' Adaptasi ini khusus kandidat nol derajat, sebelum refill rotasi.
@@ -249,6 +287,10 @@ Friend Function ImproveMediumGroup(ByVal seed As AALayoutPlan, ByRef models() As
                 AADebugWrite "Medium blocks", "rejected after Medium placement adaptation"
             End If
         End If
+        If AADebugProfiling Then
+            AADebugStrategyEnd familyTrace, best, best, "decision"
+            If Not best Is seed Then strategyWinner = AADebugStrategyID(familyTrace)
+        End If
     Else
         AADebugWrite "Medium blocks", "zero-angle family skipped: rotation is not allowed for all Designs"
     End If
@@ -256,8 +298,18 @@ Friend Function ImproveMediumGroup(ByVal seed As AALayoutPlan, ByRef models() As
     If cutCount = 1 Then totalLimit = AA_MAX_OBJECTS_PER_SOURCE
     started = AADebugPerfBegin()
     Set proposed = best: selectedSide = -1
+    If AADebugProfiling Then
+        sideTrace = AADebugStrategyBegin("medium-side-portfolio", proposed, best)
+        familyTrace = AADebugStrategyBegin("side-greedy", proposed, best)
+    End If
     Set candidate = GroupRefill(proposed, models, indexes, count, difference, totalLimit, settings, doc, True)
     If candidate.DesignCount > proposed.DesignCount Then Set best = candidate
+    If AADebugProfiling Then
+        AADebugStrategyEnd familyTrace, candidate, best, "decision"
+        If Not best Is proposed Then sideWinner = AADebugStrategyID(familyTrace): strategyWinner = sideWinner
+        rowsTrace = AADebugStrategyBegin("side-rows-portfolio", best, best, _
+            "alternative seed=" & CStr(proposed.DesignCount) & "; shared position budget=" & CStr(AA_GROUP_SIDE_ROW_PROBES))
+    End If
     ' Bandingkan keluarga baris dari prefix yang sama; jangan mempertahankan
     ' lubang hasil greedy sebagai penghalang untuk kandidat alternatif.
     rowStarted = AADebugPerfBegin()
@@ -265,13 +317,23 @@ Friend Function ImproveMediumGroup(ByVal seed As AALayoutPlan, ByRef models() As
     If settings.ModelMode = AA_MODEL_KISS_A Then Set forbidden = NominalForbiddenFor(settings, doc)
     Set offsets = CreateObject("Scripting.Dictionary"): offsets.Add "0", Array(0#, 0#)
     For side = 0 To 1
+        If AADebugProfiling Then
+            rowBefore = rowProbes
+            rowTrace = AADebugStrategyBegin("side-rows", proposed, best, "side=" & CStr(side))
+        End If
         Set candidate = MediumSideRows(proposed, models, indexes, count, difference, totalLimit, _
             forbidden, offsets, settings, doc, side, rowProbes)
         If candidate.DesignCount > best.DesignCount Then
             Set best = candidate: selectedSide = side
+            If AADebugProfiling Then
+                sideWinner = AADebugStrategyID(rowTrace): strategyWinner = sideWinner: rowsWinner = sideWinner
+            End If
             AADebugWrite "Medium side rows", "selected side=" & CStr(side) & "; objects=" & CStr(best.DesignCount)
         End If
+        If AADebugProfiling Then AADebugStrategyEnd rowTrace, candidate, best, "decision", _
+            "unit=position; used=" & CStr(rowProbes - rowBefore) & "; shared-used=" & CStr(rowProbes) & "; shared-limit=" & CStr(AA_GROUP_SIDE_ROW_PROBES)
     Next side
+    If AADebugProfiling Then AADebugStrategyEnd rowsTrace, best, best, "portfolio", vbNullString, rowsWinner
     AADebugStageEnd "Medium group row refill", rowStarted
     If selectedSide >= 0 Then
         contactStarted = AADebugPerfBegin()
@@ -282,7 +344,16 @@ Friend Function ImproveMediumGroup(ByVal seed As AALayoutPlan, ByRef models() As
     AADebugWrite "Medium blocks", "before=" & CStr(seed.DesignCount) & _
         "; selected=" & CStr(best.DesignCount)
     AADebugStageEnd "Medium group side refill", started
+    If AADebugProfiling Then AADebugStrategyEnd sideTrace, best, best, "portfolio", vbNullString, sideWinner
     Set ImproveMediumGroup = best
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, ImproveMediumGroup, ImproveMediumGroup, _
+        "portfolio", "winner is local to this group", strategyWinner
+    Exit Function
+' Strategy trace error boundary (profiling only).
+StrategyFailed:
+    strategyNumber = Err.Number: strategySource = Err.Source: strategyDescription = Err.Description
+    AADebugStrategyFailed strategyTrace, strategyNumber, strategySource, strategyDescription
+    Err.Raise strategyNumber, strategySource, strategyDescription
 End Function
 
 ' Keluarga blok Minimum untuk kelompok /n bebas; juga kandidat tambahan Medium.
@@ -296,8 +367,18 @@ Friend Function ImproveMinimumGroup(ByVal seed As AALayoutPlan, ByRef models() A
     Dim placed As AAPlacement, pattern As Long, bestPattern As Long, score As Double, bestScore As Double
     Dim started As Double, orderer As AAMediumPlanner, totalLimit As Long, zeroSeed As Boolean
     Dim i As Long, cut As Long, previousCut As Long, hasSharedCut As Boolean, blockMode As Long, joinGrid As Boolean
+    Dim strategyTrace As Variant, patternTrace As Variant
+    Dim strategyWinner As Long
+    Dim strategyNumber As Long, strategySource As String, strategyDescription As String
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("minimum-group-portfolio", seed, seed)
+        On Error GoTo StrategyFailed
+    End If
     Set ImproveMinimumGroup = seed
-    If seed.AreaCount <> 1 Or count < 2 Or difference < 0 Then Exit Function
+    If seed.AreaCount <> 1 Or count < 2 Or difference < 0 Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, ImproveMinimumGroup, ImproveMinimumGroup
+        Exit Function
+    End If
     zeroSeed = True
     ReDim allocation(0 To UBound(models))
     For Each placed In seed.Placements
@@ -320,6 +401,8 @@ Friend Function ImproveMinimumGroup(ByVal seed As AALayoutPlan, ByRef models() A
     Set best = seed: bestScore = MinimumGroupAlignment(seed)
     For pattern = AA_MODE_STRAIGHT To AA_MODE_ZIGZAG + 3
         AAProgressPulse
+        If AADebugProfiling Then patternTrace = AADebugStrategyBegin("minimum-block-pattern", seed, best, _
+            "pattern=" & CStr(pattern))
         Set candidate = Nothing
         blockMode = pattern: joinGrid = True
         If pattern <= AA_MODE_ZIGZAG Then
@@ -348,6 +431,13 @@ Friend Function ImproveMinimumGroup(ByVal seed As AALayoutPlan, ByRef models() A
         Else
             AADebugWrite "Minimum blocks", "pattern=" & CStr(pattern) & "; unavailable"
         End If
+        If AADebugProfiling Then
+            If Not candidate Is Nothing Then
+                AADebugStrategyWork "alignment=" & CStr(score)
+                If candidate Is best Then strategyWinner = AADebugStrategyID(patternTrace)
+            End If
+            AADebugStrategyEnd patternTrace, candidate, best, "decision", "pattern=" & CStr(pattern)
+        End If
     Next pattern
     If Not best Is seed Then
         Set orderer = New AAMediumPlanner
@@ -357,6 +447,14 @@ Friend Function ImproveMinimumGroup(ByVal seed As AALayoutPlan, ByRef models() A
         "; selected pattern=" & CStr(bestPattern)
     AADebugStageEnd "Minimum group blocks + refill", started
     Set ImproveMinimumGroup = best
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, ImproveMinimumGroup, ImproveMinimumGroup, _
+        "portfolio", "pattern=" & CStr(bestPattern) & "; alignment=" & CStr(bestScore), strategyWinner
+    Exit Function
+' Strategy trace error boundary (profiling only).
+StrategyFailed:
+    strategyNumber = Err.Number: strategySource = Err.Source: strategyDescription = Err.Description
+    AADebugStrategyFailed strategyTrace, strategyNumber, strategySource, strategyDescription
+    Err.Raise strategyNumber, strategySource, strategyDescription
 End Function
 
 Private Function MinimumBlockSeed(ByRef models() As AAModel, ByRef indexes() As Long, _
@@ -459,6 +557,12 @@ Private Function GroupRefill(ByVal seed As AALayoutPlan, ByRef models() As AAMod
     Dim i As Long, j As Long, index As Long, bestIndex As Long, least As Long, minimum As Long, maximum As Long
     Dim probes As Long, additions As Long, round As Long, budget As Long, sourceLimit As Long, before As Long, additionLimit As Long
     Dim label As String
+    Dim strategyTrace As Variant
+    Dim strategyNumber As Long, strategySource As String, strategyDescription As String
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("group-refill-work", seed, seed)
+        On Error GoTo StrategyFailed
+    End If
     Set result = seed
     budget = AA_GROUP_REFILL_PROBES: label = "Minimum block refill": additionLimit = AA_GROUP_REFILL_ADDITIONS
     If sideColumns Then
@@ -516,7 +620,15 @@ Private Function GroupRefill(ByVal seed As AALayoutPlan, ByRef models() As AAMod
             CStr(least + 1) & "; total=" & CStr(result.DesignCount)
     Loop
     AADebugWrite label, "added=" & CStr(additions) & "; probes=" & CStr(probes) & "/" & CStr(budget)
+    If AADebugProfiling Then AADebugStrategyWork "unit=position; probes=" & CStr(probes) & "; limit=" & CStr(budget)
     Set GroupRefill = result
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, GroupRefill, GroupRefill
+    Exit Function
+' Strategy trace error boundary (profiling only).
+StrategyFailed:
+    strategyNumber = Err.Number: strategySource = Err.Source: strategyDescription = Err.Description
+    AADebugStrategyFailed strategyTrace, strategyNumber, strategySource, strategyDescription
+    Err.Raise strategyNumber, strategySource, strategyDescription
 End Function
 
 Private Function MediumGroupSideBonus(ByVal seed As AALayoutPlan, ByVal model As AAModel, _
@@ -655,6 +767,12 @@ Private Function MediumSideRows(ByVal seed As AALayoutPlan, ByRef models() As AA
     Dim angle As Double, h As Double, v As Double, gapH As Double, gapV As Double, maximumHeight As Double
     Dim edge As Double, x As Double, cursorX As Double, y As Double, bottom As Double, filled As Boolean
     Dim additions As Long, before As Long, accepted As Long
+    Dim strategyTrace As Variant
+    Dim strategyNumber As Long, strategySource As String, strategyDescription As String
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("side-rows-work", seed, seed)
+        On Error GoTo StrategyFailed
+    End If
     Set MediumSideRows = seed
     before = probes
     ReDim origins(0 To UBound(models)): ReDim allocation(0 To UBound(models))
@@ -682,7 +800,10 @@ Private Function MediumSideRows(ByVal seed As AALayoutPlan, ByRef models() As AA
     ' Default nol tetap nol; reserve ini bukan toleransi penerimaan collision.
     If gapH > 0# Then gapH = gapH + AA_MINIMUM_NEIGHBOR_RESERVE_MM
     If gapV > 0# Then gapV = gapV + AA_MINIMUM_NEIGHBOR_RESERVE_MM
-    If maximumHeight <= AA_EDGE_TOLERANCE_MM Or probes >= AA_GROUP_SIDE_ROW_PROBES Then Exit Function
+    If maximumHeight <= AA_EDGE_TOLERANCE_MM Or probes >= AA_GROUP_SIDE_ROW_PROBES Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, MediumSideRows, MediumSideRows
+        Exit Function
+    End If
     Set result = New AALayoutPlan: result.Configure seed.LayoutMode: result.SetRegularPattern False
     For Each placed In seed.Placements
         AAProgressPulse
@@ -765,9 +886,18 @@ Private Function MediumSideRows(ByVal seed As AALayoutPlan, ByRef models() As AA
             Next i
         End If
     End If
+    If AADebugProfiling Then AADebugStrategyWork "unit=position; side=" & CStr(side) & _
+        "; used=" & CStr(probes - before) & "; shared-used=" & CStr(probes) & "; shared-limit=" & CStr(AA_GROUP_SIDE_ROW_PROBES)
     AADebugWrite "Medium side rows", "side=" & CStr(side) & "; added=" & _
         CStr(accepted) & "; used=" & CStr(probes - before) & _
         "; probes=" & CStr(probes) & "/" & CStr(AA_GROUP_SIDE_ROW_PROBES)
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, MediumSideRows, MediumSideRows
+    Exit Function
+' Strategy trace error boundary (profiling only).
+StrategyFailed:
+    strategyNumber = Err.Number: strategySource = Err.Source: strategyDescription = Err.Description
+    AADebugStrategyFailed strategyTrace, strategyNumber, strategySource, strategyDescription
+    Err.Raise strategyNumber, strategySource, strategyDescription
 End Function
 
 ' Geser seluruh tambahan sebagai satu pola. Prefix utama tidak ikut bergerak.
@@ -782,8 +912,17 @@ Private Function MediumSideGroupContact(ByVal seed As AALayoutPlan, ByVal mainCo
     Dim maximum As Double, target As Double, gap As Double, ownGap As Double, distance As Double
     Dim safe As Double, blocked As Double, dx As Double, dy As Double, hasNeighbor As Boolean
     Dim hitMain As Boolean, blockedByMain As Boolean, foundBottom As Boolean, reason As String
+    Dim strategyTrace As Variant
+    Dim strategyNumber As Long, strategySource As String, strategyDescription As String
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("group-contact", seed, seed)
+        On Error GoTo StrategyFailed
+    End If
     Set MediumSideGroupContact = seed
-    If mainCount <= 0 Or mainCount >= seed.DesignCount Then Exit Function
+    If mainCount <= 0 Or mainCount >= seed.DesignCount Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, MediumSideGroupContact, MediumSideGroupContact
+        Exit Function
+    End If
     For i = 1 To mainCount
         Set placed = seed.Placements(i): fixedMain.Add placed
         If i = 1 Or placed.Footprint.TopY > mainTop Then mainTop = placed.Footprint.TopY
@@ -893,9 +1032,14 @@ Private Function MediumSideGroupContact(ByVal seed As AALayoutPlan, ByVal mainCo
             "; shift X/Y=" & Format$(placed.Footprint.LeftX - axisSeed.Placements(mainCount + 1).Footprint.LeftX, "0.000000") & _
             "/" & Format$(placed.Footprint.TopY - axisSeed.Placements(mainCount + 1).Footprint.TopY, "0.000000")
     Next axis
-    If best Is seed Then Exit Function
+    If AADebugProfiling Then AADebugStrategyWork "unit=group-pose; probes=" & CStr(probes) & "; limit=" & CStr(AA_GROUP_SIDE_GROUP_PROBES)
+    If best Is seed Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, MediumSideGroupContact, MediumSideGroupContact
+        Exit Function
+    End If
     If Not MinimumGroupValid(best, settings, doc) Then
         AADebugWrite "Medium side group contact", "rejected final; original refill retained"
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, MediumSideGroupContact, MediumSideGroupContact
         Exit Function
     End If
     Set placed = best.Placements(mainCount + 1)
@@ -905,7 +1049,15 @@ Private Function MediumSideGroupContact(ByVal seed As AALayoutPlan, ByVal mainCo
         "; shift X/Y=" & Format$(dx, "0.000000") & "/" & Format$(dy, "0.000000") & _
         "; center X/Y=" & Format$(originalX + dx, "0.000000") & "/" & Format$(originalY + dy, "0.000000") & _
         "; probes=" & CStr(probes) & "/" & CStr(AA_GROUP_SIDE_GROUP_PROBES)
+    If AADebugProfiling Then AADebugStrategyWork "applied shift X/Y=" & Format$(dx, "0.000000") & "/" & Format$(dy, "0.000000")
     Set MediumSideGroupContact = best
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, MediumSideGroupContact, MediumSideGroupContact
+    Exit Function
+' Strategy trace error boundary (profiling only).
+StrategyFailed:
+    strategyNumber = Err.Number: strategySource = Err.Source: strategyDescription = Err.Description
+    AADebugStrategyFailed strategyTrace, strategyNumber, strategySource, strategyDescription
+    Err.Raise strategyNumber, strategySource, strategyDescription
 End Function
 
 ' Bedakan penghalang utama dari mark/ketidakcocokan internal untuk fallback vertikal.
@@ -1397,10 +1549,22 @@ Private Function MinimumPartialEdges(ByVal seed As AALayoutPlan, ByVal model As 
                                      ByVal settings As AASettings, ByVal doc As Document) As AALayoutPlan
     Dim best As AALayoutPlan, candidate As AALayoutPlan, orderer As AAMediumPlanner
     Dim forbidden As Collection, offsets As Object, edge As Long, started As Double
+    Dim strategyTrace As Variant
+    Dim strategyNumber As Long, strategySource As String, strategyDescription As String
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("minimum-partial-edges", seed, seed)
+        On Error GoTo StrategyFailed
+    End If
     Set MinimumPartialEdges = seed
     If seed.AreaCount <> 1 Or seed.DesignCount < 4 Or _
-       seed.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit Function
-    If Not model.AllowsRotation(0#) Then Exit Function
+       seed.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then
+           If AADebugProfiling Then AADebugStrategyEnd strategyTrace, MinimumPartialEdges, MinimumPartialEdges
+           Exit Function
+       End If
+    If Not model.AllowsRotation(0#) Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, MinimumPartialEdges, MinimumPartialEdges
+        Exit Function
+    End If
     Set forbidden = ForbiddenFor(settings, doc)
     If settings.ModelMode = AA_MODEL_KISS_A Then Set forbidden = NominalForbiddenFor(settings, doc)
     Set offsets = CreateObject("Scripting.Dictionary"): offsets.Add "0", Array(0#, 0#)
@@ -1423,6 +1587,13 @@ Private Function MinimumPartialEdges(ByVal seed As AALayoutPlan, ByVal model As 
     Set MinimumPartialEdges = best
     AADebugWrite "Minimum partial", "before=" & CStr(seed.DesignCount) & "; selected=" & CStr(best.DesignCount)
     AADebugStageEnd "Minimum partial edge rows", started
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, MinimumPartialEdges, MinimumPartialEdges
+    Exit Function
+' Strategy trace error boundary (profiling only).
+StrategyFailed:
+    strategyNumber = Err.Number: strategySource = Err.Source: strategyDescription = Err.Description
+    AADebugStrategyFailed strategyTrace, strategyNumber, strategySource, strategyDescription
+    Err.Raise strategyNumber, strategySource, strategyDescription
 End Function
 
 ' Coba dua fase grid pada baris paling atas/bawah saja. Slot yang mengenai

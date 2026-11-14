@@ -105,6 +105,7 @@ Friend Function FillRemaining(ByVal seed As AALayoutPlan, ByVal model As AAModel
     Dim existing As Long, pattern As Long, added As Long
     Dim number As Long, source As String, description As String
     Dim selected As Boolean
+    Dim strategyTrace As Variant
     If seed.AreaCount > 1 Then Err.Raise vbObjectError + 5341, "AAMediumPlanner", _
         "Pengisian filler memerlukan satu container."
     For Each placed In seed.Placements
@@ -114,6 +115,9 @@ Friend Function FillRemaining(ByVal seed As AALayoutPlan, ByVal model As AAModel
         vbObjectError + 5340, "AAMediumPlanner", "Batas filler tidak sesuai jumlah sumber."
     Set best = seed
     On Error GoTo RefillFailed
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("quantity-filler-portfolio", seed, seed)
+    End If
     ' Snapshot quota sebelum centering tidak boleh dipakai pada seed final.
     Set mQuotaFills = Nothing: mCapacitySearch = False
     EndQuotaRejectCache: ClearGapCache
@@ -161,6 +165,7 @@ Friend Function FillRemaining(ByVal seed As AALayoutPlan, ByVal model As AAModel
     Set best = RebuildFillerGrid(best, model, designIndex, cutIndex, maximum, _
         forbidden, fillForbidden, settings, sourceDocument, planner)
     Set FillRemaining = best
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, best, best
     Exit Function
 RefillFailed:
     number = Err.Number: source = Err.Source: description = Err.Description
@@ -169,7 +174,9 @@ RefillFailed:
         AAProgressCheckCancelled
         AADebugWrite "Quantity refill", "slot budget reached; retained validated plan"
         Set FillRemaining = best
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, best, best, "budget-fallback"
     Else
+        If AADebugProfiling Then AADebugStrategyFailed strategyTrace, number, source, description
         Err.Raise number, source, description
     End If
 End Function
@@ -185,6 +192,12 @@ Private Function RebuildFillerGrid(ByVal seed As AALayoutPlan, ByVal model As AA
     Dim phasesX(0 To 2) As Double, phasesY(0 To 2) As Double
     Dim probes As Long, tested As Long, gridSelected As Boolean, selected As Boolean
     Dim started As Double
+    Dim strategyTrace As Variant
+    Dim strategyNumber As Long, strategySource As String, strategyDescription As String
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("filler-grid", seed, seed)
+        On Error GoTo StrategyFailed
+    End If
     started = AADebugPerfBegin()
     Set best = seed
     Set angles = AnglesFor(model, 0#)
@@ -235,10 +248,18 @@ Private Function RebuildFillerGrid(ByVal seed As AALayoutPlan, ByVal model As AA
         End If
     Next a
 FinishedGrid:
+    If AADebugProfiling Then AADebugStrategyWork "unit=position; probes=" & CStr(probes) & "; candidates=" & CStr(tested)
     AADebugStageEnd "Quantity filler grid", started
     AADebugWrite "Quantity filler grid", "tested=" & CStr(tested) & "; probes=" & CStr(probes) & _
         "; selected=" & CStr(gridSelected) & "; before total=" & CStr(seed.DesignCount) & "; total=" & CStr(best.DesignCount)
     Set RebuildFillerGrid = best
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RebuildFillerGrid, RebuildFillerGrid
+    Exit Function
+' Strategy trace error boundary (profiling only).
+StrategyFailed:
+    strategyNumber = Err.Number: strategySource = Err.Source: strategyDescription = Err.Description
+    AADebugStrategyFailed strategyTrace, strategyNumber, strategySource, strategyDescription
+    Err.Raise strategyNumber, strategySource, strategyDescription
 End Function
 
 Private Function FillerGridCandidate(ByVal seed As AALayoutPlan, ByVal orientation As AARotationVariant, _
@@ -704,9 +725,21 @@ Private Function RefillIndependentAreas(ByVal plan As AALayoutPlan, ByRef models
     Dim slotForbidden As Collection, sourceCounts As Object
     Dim areaIndex As Long, sourceIndex As Long, probes As Long, added As Long
     Dim homogeneous As Boolean, areaLabel As String, key As String
+    Dim strategyTrace As Variant
+    Dim strategyNumber As Long, strategySource As String, strategyDescription As String
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("independent-area-refill", plan, plan)
+        On Error GoTo StrategyFailed
+    End If
     Set RefillIndependentAreas = plan
-    If plan Is Nothing Then Exit Function
-    If plan.AreaCount < 2 Then Exit Function
+    If plan Is Nothing Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillIndependentAreas, RefillIndependentAreas
+        Exit Function
+    End If
+    If plan.AreaCount < 2 Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillIndependentAreas, RefillIndependentAreas
+        Exit Function
+    End If
     Set sourceCounts = CreateObject("Scripting.Dictionary")
     For Each placed In plan.Placements
         AAProgressPulse
@@ -782,6 +815,13 @@ Private Function RefillIndependentAreas(ByVal plan As AALayoutPlan, ByRef models
             End If
         End If
     End If
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillIndependentAreas, RefillIndependentAreas
+    Exit Function
+' Strategy trace error boundary (profiling only).
+StrategyFailed:
+    strategyNumber = Err.Number: strategySource = Err.Source: strategyDescription = Err.Description
+    AADebugStrategyFailed strategyTrace, strategyNumber, strategySource, strategyDescription
+    Err.Raise strategyNumber, strategySource, strategyDescription
 End Function
 
 ' Hanya dipanggil allocator pada template BEBAS sebelum distribusi /n.
@@ -790,9 +830,21 @@ Friend Function RefillFreeTemplate(ByVal plan As AALayoutPlan, ByVal model As AA
                                    ByVal settings As AASettings, ByVal sourceDocument As Document, _
                                    ByVal sharedPlanner As AAPlanner) As AALayoutPlan
     Dim forbidden As Collection, slotForbidden As Collection
+    Dim strategyTrace As Variant
+    Dim strategyNumber As Long, strategySource As String, strategyDescription As String
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("free-template-refill", plan, plan)
+        On Error GoTo StrategyFailed
+    End If
     Set RefillFreeTemplate = plan
-    If plan Is Nothing Then Exit Function
-    If plan.LayoutMode <> AA_MODE_MEDIUM Then Exit Function
+    If plan Is Nothing Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillFreeTemplate, RefillFreeTemplate
+        Exit Function
+    End If
+    If plan.LayoutMode <> AA_MODE_MEDIUM Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillFreeTemplate, RefillFreeTemplate
+        Exit Function
+    End If
     Set forbidden = sharedPlanner.ForbiddenFor(settings, sourceDocument)
     Set slotForbidden = forbidden
     If settings.ModelMode = AA_MODEL_KISS_A Then _
@@ -803,6 +855,13 @@ Friend Function RefillFreeTemplate(ByVal plan As AALayoutPlan, ByVal model As AA
     Set RefillFreeTemplate = RefillEdgeRows(plan, model, forbidden, slotForbidden, settings, _
         sourceDocument, sharedPlanner, "Free template edge refill")
     AADebugCandidateEnd
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillFreeTemplate, RefillFreeTemplate
+    Exit Function
+' Strategy trace error boundary (profiling only).
+StrategyFailed:
+    strategyNumber = Err.Number: strategySource = Err.Source: strategyDescription = Err.Description
+    AADebugStrategyFailed strategyTrace, strategyNumber, strategySource, strategyDescription
+    Err.Raise strategyNumber, strategySource, strategyDescription
 End Function
 
 Private Function RefillEdgeRows(ByVal plan As AALayoutPlan, ByVal model As AAModel, _
@@ -810,10 +869,22 @@ Private Function RefillEdgeRows(ByVal plan As AALayoutPlan, ByVal model As AAMod
                                ByVal settings As AASettings, ByVal sourceDocument As Document, _
                                ByVal sharedPlanner As AAPlanner, ByVal label As String) As AALayoutPlan
     Dim best As AALayoutPlan, candidate As AALayoutPlan, edge As Long
+    Dim strategyTrace As Variant
+    Dim strategyNumber As Long, strategySource As String, strategyDescription As String
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("edge-row-refill", plan, plan)
+        On Error GoTo StrategyFailed
+    End If
     Set RefillEdgeRows = plan
-    If plan Is Nothing Then Exit Function
+    If plan Is Nothing Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillEdgeRows, RefillEdgeRows
+        Exit Function
+    End If
     If plan.AreaCount <> 1 Or plan.DesignCount < 4 Or _
-       plan.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit Function
+       plan.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then
+           If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillEdgeRows, RefillEdgeRows
+           Exit Function
+       End If
     Set best = plan
     ' Maksimal satu tambahan per tepi; tidak mencoba fase seluruh container.
     For edge = 0 To 1
@@ -834,6 +905,13 @@ Private Function RefillEdgeRows(ByVal plan As AALayoutPlan, ByVal model As AAMod
         End If
     Next edge
     If best.DesignCount > plan.DesignCount Then Set RefillEdgeRows = OrderRefilledPattern(best)
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillEdgeRows, RefillEdgeRows
+    Exit Function
+' Strategy trace error boundary (profiling only).
+StrategyFailed:
+    strategyNumber = Err.Number: strategySource = Err.Source: strategyDescription = Err.Description
+    AADebugStrategyFailed strategyTrace, strategyNumber, strategySource, strategyDescription
+    Err.Raise strategyNumber, strategySource, strategyDescription
 End Function
 
 Private Function ExtendedEdgeRow(ByVal plan As AALayoutPlan, ByVal model As AAModel, _
@@ -974,10 +1052,22 @@ Private Function RefillCenteredPattern(ByVal plan As AALayoutPlan, ByVal model A
     Dim orientation As AARotationVariant, angles As Collection, angle As Variant, slot As Variant
     Dim leftX As Double, rightX As Double, topY As Double, bottomY As Double, h As Double, v As Double
     Dim i As Long, added As Long, probes As Long
+    Dim strategyTrace As Variant
+    Dim strategyNumber As Long, strategySource As String, strategyDescription As String
+    If AADebugProfiling Then
+        strategyTrace = AADebugStrategyBegin("centered-pattern-refill", plan, plan)
+        On Error GoTo StrategyFailed
+    End If
     Set RefillCenteredPattern = plan
-    If plan Is Nothing Then Exit Function
+    If plan Is Nothing Then
+        If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillCenteredPattern, RefillCenteredPattern
+        Exit Function
+    End If
     If plan.AreaCount <> 1 Or plan.DesignCount = 0 Or _
-       plan.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then Exit Function
+       plan.DesignCount >= AA_MAX_OBJECTS_PER_SOURCE Then
+           If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillCenteredPattern, RefillCenteredPattern
+           Exit Function
+       End If
 
     Set result = New AALayoutPlan
     result.Configure AA_MODE_MEDIUM
@@ -1055,10 +1145,18 @@ Private Function RefillCenteredPattern(ByVal plan As AALayoutPlan, ByVal model A
     Next angle
     AADebugWrite "Refill", label & "; added=" & CStr(added) & "; probes=" & CStr(probes) & _
         "; limit=" & CStr(probeLimit)
+    If AADebugProfiling Then AADebugStrategyWork "unit=position; probes=" & CStr(probes) & "; limit=" & CStr(probeLimit)
     If added > 0 Then
         If ValidPlan(result, forbidden, settings, label & " refill") Then _
             Set RefillCenteredPattern = OrderRefilledPattern(result)
     End If
+    If AADebugProfiling Then AADebugStrategyEnd strategyTrace, RefillCenteredPattern, RefillCenteredPattern
+    Exit Function
+' Strategy trace error boundary (profiling only).
+StrategyFailed:
+    strategyNumber = Err.Number: strategySource = Err.Source: strategyDescription = Err.Description
+    AADebugStrategyFailed strategyTrace, strategyNumber, strategySource, strategyDescription
+    Err.Raise strategyNumber, strategySource, strategyDescription
 End Function
 
 Friend Function OrderRefilledPattern(ByVal plan As AALayoutPlan) As AALayoutPlan
