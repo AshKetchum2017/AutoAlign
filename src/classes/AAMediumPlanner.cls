@@ -478,6 +478,20 @@ NextPairAngle:
             AAProgressCheckCancelled
             AADebugCandidateEnd
             If Len(buildError) > 0 Then AADebugWrite "Medium", candidateLabel & " -> " & buildError
+            ' Finalisasi/repair mempertahankan jumlah. Kandidat kapasitas satu
+            ' area yang kalah jumlah tidak dapat memenuhi target atau menang.
+            ' Jumlah sama tetap dibandingkan untuk footprint/pola/rotasi.
+            If capacityTarget > 0 Then
+                If Not best Is Nothing Then
+                    If best.DesignCount < capacityTarget Then
+                        If HasFewerObjects(candidate, best) Then
+                            AADebugWrite "Capacity", candidateLabel & " -> skipped before finalize: objects=" & _
+                                CStr(candidate.DesignCount) & " < best=" & CStr(best.DesignCount) & " (one area)"
+                            Set candidate = Nothing
+                        End If
+                    End If
+                End If
+            End If
             ' Hanya satu Design bebas non-rectangle: finalisasi/repair tidak
             ' menambah objek. Rectangle masih dapat diisi oleh refill di bawah.
             If designCount = 1 And capacityTarget < 0 Then

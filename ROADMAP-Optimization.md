@@ -72,11 +72,11 @@ ID dipakai untuk merujuk eksperimen, bukan menentukan urutan wajib.
 
 | ID | Arah pekerjaan | Prioritas awal | Status | Bukti yang diperlukan untuk keputusan berikutnya |
 | --- | --- | --- | --- | --- |
-| O0 | Baseline terbaru, atribusi trial dan efisiensi strategi | Pertama | I1 selesai pada scope Case_07 P1/P3; I2 tersedia di source, menunggu VBE/runtime; overhead dan efek urutan belum diukur terisolasi | Vector trial, biaya/hasil strategi dan baseline berulang dapat dibandingkan. |
+| O0 | Baseline terbaru, atribusi trial dan efisiensi strategi | Pertama | I1 selesai pada scope Case_07 P1/P3; profil I2 Case_07 tersedia; fix winner/gate O4 tersedia dan menunggu runtime; cakupan keluarga lain/overhead/urutan terbuka | Vector trial, biaya/hasil strategi dan baseline berulang dapat dibandingkan. |
 | O1 | Transfer data dan pengurutan slot | Setelah hotspot dominan, kecuali profil berubah | Direncanakan | Biaya transfer/sort diketahui; urutan identik; waktu bersih membaik. |
 | O2 | Evaluasi cache pasangan pada pengisian bebas | Eksperimen terpisah | Cache sudah ada; manfaat belum ditetapkan | A/B cache aktif/nonaktif dengan source, profiling, dan input setara. |
 | O3 | Early rejection, reuse proof/geometri, overlap native dan mark | Setelah atribusi O0; dapat mendahului O4 sesuai temuan | Investigasi terbuka | Predicate mahal yang dihemat, biaya cache/proof, invalidasi dan kesetaraan hasil. |
-| O4 | Trial quota, kandidat redundan, blok dan filler/refill | Sasaran utama Case_07 sesudah O0 | Investigasi terbuka | Vector/context trial terpisah, pengulangan terbukti, hasil serta kualitas terjaga. |
+| O4 | Trial quota, kandidat redundan, blok dan filler/refill | Sasaran utama Case_07 sesudah O0 | Gate kandidat kalah jumlah sebelum finalisasi tersedia, menunggu VBE/runtime; fill/gap tetap sasaran utama | Vector/context trial terpisah, pengulangan terbukti, hasil serta kualitas terjaga. |
 | O5 | Pemeriksaan regresi lintas jalur yang terdampak | Mengikuti setiap perubahan | Berjalan per eksperimen | Bukti sesuai scope; tidak menunggu semua arah optimasi selesai. |
 | O6 | Urutan strategi dan alokasi komputasi adaptif | Sesudah metrik stabil | Rencana; belum mengubah budget atau scheduler | Kontribusi marginal, efek urutan, kualitas, biaya tanpa debug dan kebijakan fallback diketahui. |
 
@@ -112,7 +112,7 @@ Perbandingan dari seed yang sama dan uji urutan/ablation terkontrol dipakai kemu
 
 #### Rencana implementasi instrumentasi O0
 
-Rencana **4 November 2026**, audit batas pengukuran memakai source `8d3ea30`; I1 dipasang pada 5 November. **Status 14 November: I1 selesai untuk scope baseline Case_07 P1/P3; bukti dan batas penerimaan berada di Development.log. I2 tersedia di source, menunggu compile VBE/runtime.** Implementasi dibagi menjadi dua increment agar kebenaran log dan overhead dapat diperiksa sebelum memperluas cakupan. Tidak membutuhkan kontrol UserForm, registry, akses COM tambahan, atau module profiler baru; gunakan `AADebug.bas` yang sudah `Option Private Module` dan clock QPC/Timer yang sama.
+Rencana **4 November 2026**, audit batas pengukuran memakai source `8d3ea30`; I1 dipasang pada 5 November. **Status 14 November: I1 selesai untuk scope baseline Case_07 P1/P3; bukti dan batas penerimaan berada di Development.log. Profil I2 Case_07 tersedia; batas cakupan dan tindak lanjut metadata winner berada di Development.log.** Implementasi dibagi menjadi dua increment agar kebenaran log dan overhead dapat diperiksa sebelum memperluas cakupan. Tidak membutuhkan kontrol UserForm, registry, akses COM tambahan, atau module profiler baru; gunakan `AADebug.bas` yang sudah `Option Private Module` dan clock QPC/Timer yang sama.
 
 | Increment | Batas source dan keluaran | Gate sebelum melanjutkan |
 | --- | --- | --- |
@@ -167,7 +167,7 @@ Pengukuran awal meliputi portfolio kelompok/pattern, adaptasi blok Medium, greed
 
 Setelah memperbarui tiga module tersebut, lakukan Compile, lalu satu smoke run **Case_07 P1 dan P3** dengan input I1 dan `AADebugOn` ringkas. Periksa pasangan scope, parent/winner, raw/marginal gain, trial/search dan kesamaan output terhadap input yang setara. Jika sesuai, tambah run kedua per halaman untuk variasi waktu. Tidak perlu mengulang seluruh matriks restart A/B/C/D hanya untuk memasang I2; data I1 belum membuktikan restart tidak berpengaruh atau menentukan sebab warmup.
 
-Kontrol jalur lain: Minimum partial satu Design bebas (Case_05 Page 5 dengan setting yang dicatat), Medium standalone atau shared-Cut free template, dan kasus multi-area (misalnya kontrol 03Nov) sesuai jalur pemakaian. Quantity filler diperiksa bila workflow tersebut dipakai. Periksa Cancel saat refill lalu run berikutnya, gap/mark/area, Undo/Redo dan Z-order. Toleransi mark working tree masih eksperimen; jangan memaksa count historis pada input/parameter yang berbeda. Log I2 dapat dipisahkan di ignored `AutoAlign/tests/i2-run`; pengukuran overhead nonaktif tetap seri tersendiri. Tidak ada hasil waktu/gain native I2 yang dinyatakan sebelum log tersedia.
+Kontrol jalur lain: Minimum partial satu Design bebas (Case_05 Page 5 dengan setting yang dicatat), Medium standalone atau shared-Cut free template, dan kasus multi-area (misalnya kontrol 03Nov) sesuai jalur pemakaian. Quantity filler diperiksa bila workflow tersebut dipakai. Periksa Cancel saat refill lalu run berikutnya, gap/mark/area, Undo/Redo dan Z-order. Toleransi mark working tree masih eksperimen; jangan memaksa count historis pada input/parameter yang berbeda. Log I2 dapat dipisahkan di ignored `AutoAlign/tests/i2-run`; pengukuran overhead nonaktif tetap seri tersendiri. Profil empat log Case_07 tersedia di ignored `tests/i2-run/Inspection.md`/`inspection-summary.json`; bukti dan batas validasi dicatat di Development.log tanggal 14 November. Trial parsial masih sasaran O4 utama. Fix winner pattern tersedia dan menunggu uji source baru sebelum memakai field itu untuk scheduler; jangan menonaktifkan greedy hanya karena rows unggul pada satu kasus. Cakupan keluarga lain dan overhead tetap terbuka.
 
 #### Pelaksanaan baseline I1 — Case_07 Page 1 dan Page 3
 
@@ -231,6 +231,14 @@ Mulai dari biaya gagal Case_07, bukan menambah cache besar tanpa bukti pengulang
 - Snapshot sebelum centering versus rencana final setelah transform; jangan mengembalikan snapshot lama sebagai hasil aman tanpa validasi pose akhir.
 
 Penghentian keluarga/trial memakai batas atas hanya jika batas itu benar-benar konservatif untuk seluruh kandidat legal dan vector target yang bersangkutan. Estimasi bbox, hasil trial gagal, hint kapasitas atau produktivitas rendah bukan bukti bahwa tidak ada susunan lebih baik. Perubahan pencarian yang menukar peluang jumlah dengan waktu dipisahkan dari optimasi mekanis.
+
+#### Increment O4: kandidat kapasitas kalah jumlah
+
+Source `AAPlanner` mencatat winner pada cabang adopsi aktual serta work `adopted`; `AAMediumPlanner` melewati finalisasi kandidat kapasitas yang jumlahnya lebih kecil dari incumbent parsial, memakai guard satu area yang sudah ada. Semua build, budget, ties, trial full, refill dan validasi kandidat yang masih berpeluang tetap berlaku. Gate mengandalkan finalisasi/repair yang mempertahankan count; perubahan perilaku tahap itu perlu meninjau ulang guard.
+
+Audit empat raw I2 mengatribusikan sekitar 0,93 s finalisasi P1 (59 kandidat/run) dan 1,53 s P3 (100/run), sehingga increment ini tidak menjanjikan penghematan menit. Bukti, snapshot dan batas pemeriksaan berada di Development.log serta ignored `tests/o4-dominated-original`. Source tersedia, belum ada benchmark native sesudah edit.
+
+Perbarui kedua Class Module, Compile, lalu gunakan `AADebugOn` ringkas dengan input I2 yang sama; simpan log terpisah di `tests/o4-run`. Mulai satu smoke P1/P3, periksa `Capacity ... skipped before finalize`, vector/selected/count/alokasi/footprint serta winner/adopted. Tambah run kedua bila hasil sesuai; karena peluang penghematan kecil, tambah A/B bergantian hanya bila ingin menetapkan manfaat waktu. Kontrol allocated Quantity tetap/carry/modifier dan KissA/mark mengikuti caller terdampak. Periksa Cancel lalu run berikutnya, gap/mark/area, Undo/Redo dan Z-order. Minimum hanya terkena perbaikan diagnostik winner. Status native/penerimaan hanya dicatat di Development.log.
 
 ### O6 — penjadwalan strategi adaptif
 
@@ -300,4 +308,4 @@ Pisahkan pemeriksaan statis, harness adaptasi/mock, compile VBE, runtime CorelDR
 | 2026-11-04 | Rencana O0 dirinci menjadi I1 atribusi trial kuota dan I2 kontribusi/biaya refill. Kontrak record, lifetime/reset counter, nesting, Cancel/error dan pengujian overhead ditetapkan sebagai rencana; source VBA, budget dan scheduler belum diubah. |
 | 2026-11-05 | I1 trial dipasang pada debug ringkas: ID konteks/attempt, vector requested/actual, outcome dan delta kerja; kernel/budget/scheduler tetap. Menunggu compile/runtime. Baseline pengguna direncanakan pada Case_07 P1/P3, sesi awal, restart bergantian dan restart per halaman; atribusi refill I2 tetap terpisah. |
 | 2026-11-08 | Inspeksi sesi A: trace I1 lengkap pada empat Process. Sumber produksi dibekukan selama sesi B; belum menarik kesimpulan pengaruh restart, overhead I1 atau speedup. B/C/D dan I2 tetap terbuka. |
-| 2026-11-14 | I1 ditutup pada baseline teruji; I2 atribusi keluarga refill tersedia di source dan menunggu VBE/runtime. Budget, urutan serta scheduler tetap; efek restart/overhead belum terisolasi. |
+| 2026-11-14 | I1 ditutup pada baseline teruji; profil I2 Case_07 tersedia. Fix winner eksplisit dan gate kandidat kapasitas kalah jumlah tersedia, menunggu VBE/runtime; fill/gap trial parsial tetap prioritas. Cakupan keluarga lain dan overhead terbuka; budget/urutan/scheduler tetap. |

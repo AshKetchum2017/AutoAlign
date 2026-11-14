@@ -423,8 +423,12 @@ Friend Function ImproveMinimumGroup(ByVal seed As AALayoutPlan, ByRef models() A
             If candidate.DesignCount > best.DesignCount Or _
                (candidate.DesignCount = best.DesignCount And score > bestScore) Then
                 Set best = candidate: bestScore = score: bestPattern = pattern
+                If AADebugProfiling Then strategyWinner = AADebugStrategyID(patternTrace)
             ElseIf candidate.DesignCount = best.DesignCount And score = bestScore Then
-                If BetterPlan(candidate, best) Then Set best = candidate: bestPattern = pattern
+                If BetterPlan(candidate, best) Then
+                    Set best = candidate: bestPattern = pattern
+                    If AADebugProfiling Then strategyWinner = AADebugStrategyID(patternTrace)
+                End If
             End If
             AADebugWrite "Minimum blocks", "pattern=" & CStr(pattern) & "; objects=" & _
                 CStr(candidate.DesignCount) & "; alignment=" & CStr(score)
@@ -434,9 +438,9 @@ Friend Function ImproveMinimumGroup(ByVal seed As AALayoutPlan, ByRef models() A
         If AADebugProfiling Then
             If Not candidate Is Nothing Then
                 AADebugStrategyWork "alignment=" & CStr(score)
-                If candidate Is best Then strategyWinner = AADebugStrategyID(patternTrace)
             End If
-            AADebugStrategyEnd patternTrace, candidate, best, "decision", "pattern=" & CStr(pattern)
+            AADebugStrategyEnd patternTrace, candidate, best, "decision", "pattern=" & CStr(pattern) & _
+                "; adopted=" & CStr(strategyWinner > 0 And strategyWinner = AADebugStrategyID(patternTrace))
         End If
     Next pattern
     If Not best Is seed Then
