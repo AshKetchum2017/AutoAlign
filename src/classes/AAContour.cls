@@ -173,10 +173,11 @@ End Sub
 ' Indeks hanya menyaring pasangan segmen. Rumus jarak dan error chord tetap
 ' sama; segmen panjang dan query lebar memakai jalur konservatif tanpa filter.
 Private Sub BuildEdgeIndex()
-    Dim bucket As Collection, key As String
+    Dim bucket As Collection, row As Object, bins As Object
     Dim i As Long, x As Long, y As Long
     Dim leftCell As Long, rightCell As Long, bottomCell As Long, topCell As Long
-    Set mEdgeBins = CreateObject("Scripting.Dictionary")
+    ' Publikasikan root hanya setelah seluruh sel selesai dibangun.
+    Set bins = CreateObject("Scripting.Dictionary")
     Set mWideEdges = New Collection
     ReDim mSeen(1 To mEdgeCount)
     mQueryStamp = 0
@@ -190,19 +191,26 @@ Private Sub BuildEdgeIndex()
             mWideEdges.Add i
         Else
             For x = leftCell To rightCell
+                ' Dua tingkat key Long: tidak menggabungkan atau membulatkan X/Y.
+                If bins.Exists(x) Then
+                    Set row = bins(x)
+                Else
+                    Set row = CreateObject("Scripting.Dictionary")
+                    bins.Add x, row
+                End If
                 For y = bottomCell To topCell
-                    key = CStr(x) & "|" & CStr(y)
-                    If mEdgeBins.Exists(key) Then
-                        Set bucket = mEdgeBins(key)
+                    If row.Exists(y) Then
+                        Set bucket = row(y)
                     Else
                         Set bucket = New Collection
-                        mEdgeBins.Add key, bucket
+                        row.Add y, bucket
                     End If
                     bucket.Add i
                 Next y
             Next x
         End If
     Next i
+    Set mEdgeBins = bins
 End Sub
 
 Friend Property Get MaxChordError() As Double
@@ -221,7 +229,7 @@ End Function
 Private Function CandidateEdgeIndexes(ByVal leftX As Double, ByVal bottomY As Double, _
                                ByVal rightX As Double, ByVal topY As Double) As Collection
     Dim leftCell As Long, rightCell As Long, bottomCell As Long, topCell As Long
-    Dim x As Long, y As Long, index As Variant, key As String
+    Dim x As Long, y As Long, index As Variant, row As Object
     Dim result As Collection, bucket As Collection
     If leftX > mMaxX Or rightX < mMinX Or bottomY > mMaxY Or topY < mMinY Then
         Set CandidateEdgeIndexes = mEmptyEdges
@@ -259,18 +267,20 @@ Private Function CandidateEdgeIndexes(ByVal leftX As Double, ByVal bottomY As Do
         mSeen(CLng(index)) = mQueryStamp
     Next index
     For x = leftCell To rightCell
-        For y = bottomCell To topCell
-            key = CStr(x) & "|" & CStr(y)
-            If mEdgeBins.Exists(key) Then
-                Set bucket = mEdgeBins(key)
-                For Each index In bucket
-                    If mSeen(CLng(index)) <> mQueryStamp Then
-                        result.Add CLng(index)
-                        mSeen(CLng(index)) = mQueryStamp
-                    End If
-                Next index
-            End If
-        Next y
+        If mEdgeBins.Exists(x) Then
+            Set row = mEdgeBins(x)
+            For y = bottomCell To topCell
+                If row.Exists(y) Then
+                    Set bucket = row(y)
+                    For Each index In bucket
+                        If mSeen(CLng(index)) <> mQueryStamp Then
+                            result.Add CLng(index)
+                            mSeen(CLng(index)) = mQueryStamp
+                        End If
+                    Next index
+                End If
+            Next y
+        End If
     Next x
     mLastLeftCell = leftCell: mLastRightCell = rightCell
     mLastBottomCell = bottomCell: mLastTopCell = topCell

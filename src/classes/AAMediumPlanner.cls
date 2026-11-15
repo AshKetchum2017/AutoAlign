@@ -2600,9 +2600,13 @@ Private Function QuotaClearanceAt(ByVal orientation As AARotationVariant, _
     Dim other As AAContour, slot As Long
     Dim firstSlot As Long, emptySlot As Long, bucket As Long
     Dim gapH As Double, gapV As Double, clear As Boolean
+    Dim otherDX As Double, otherDY As Double
     Set other = placed.Contour
     gapH = MaxValue(h, placed.GapH): gapV = MaxValue(v, placed.GapV)
-    firstSlot = QuotaGapSlot(x, y, placed.ContourDeltaX, placed.ContourDeltaY, gapH, gapV, _
+    ' Contour memverifikasi pose terlebih dahulu. Blocker tidak berubah selama
+    ' lookup sinkron ini; baca Double sekali untuk hash, seluruh way dan store.
+    otherDX = placed.ContourDeltaX: otherDY = placed.ContourDeltaY
+    firstSlot = QuotaGapSlot(x, y, otherDX, otherDY, gapH, gapV, _
         orientation.Angle, placed.RotationDelta)
     If firstSlot < 0 Then
         mGapBypasses = mGapBypasses + 1#
@@ -2625,7 +2629,7 @@ Private Function QuotaClearanceAt(ByVal orientation As AARotationVariant, _
         End If
         If mGapOrientations(slot) Is orientation And mGapOthers(slot) Is other Then
             If mGapKeys(0, slot) = x And mGapKeys(1, slot) = y And _
-               mGapKeys(2, slot) = placed.ContourDeltaX And mGapKeys(3, slot) = placed.ContourDeltaY And _
+               mGapKeys(2, slot) = otherDX And mGapKeys(3, slot) = otherDY And _
                mGapKeys(4, slot) = gapH And mGapKeys(5, slot) = gapV Then
                 mGapHits = mGapHits + 1#
                 QuotaClearanceAt = mGapResults(slot)
@@ -2647,7 +2651,7 @@ Private Function QuotaClearanceAt(ByVal orientation As AARotationVariant, _
     If mGapOrientations(slot) Is Nothing Then mGapStored = mGapStored + 1
     Set mGapOrientations(slot) = orientation: Set mGapOthers(slot) = other
     mGapKeys(0, slot) = x: mGapKeys(1, slot) = y
-    mGapKeys(2, slot) = placed.ContourDeltaX: mGapKeys(3, slot) = placed.ContourDeltaY
+    mGapKeys(2, slot) = otherDX: mGapKeys(3, slot) = otherDY
     mGapKeys(4, slot) = gapH: mGapKeys(5, slot) = gapV
     mGapResults(slot) = clear
     ' Penggantian bergilir hanya sesudah predicate sukses; hit/error tidak
