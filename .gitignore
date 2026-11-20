@@ -18,6 +18,7 @@ l1-run/
 !ROADMAP-Maximum.md
 !ROADMAP-Optimization.md
 !ROADMAP-Optimize.md
+!/docs/algorithm-references.md
 
 # Ignore specific files in the project directory
 AutoAlignWizard.bas

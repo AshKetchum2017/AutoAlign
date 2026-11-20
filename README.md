@@ -627,6 +627,8 @@ AADebugOff
 - Optimize dan Periksa Susunan membaca struktur container tertentu; keduanya tidak menelusuri group manual dengan kedalaman sembarang.
 - Hasil bergantung pada bentuk, jumlah sumber, model area, gap, Quantity, dan batas pencarian. Pencarian heuristik tidak menjamin nesting optimum.
 
+Untuk detail metode yang dipakai planner dan sumber pendukungnya, lihat [Referensi Algoritma AutoAlign](docs/algorithm-references.md).
+
 ## Lisensi dan Masukan
 
 Project ini menggunakan **MIT License**; lihat [LICENSE](LICENSE).

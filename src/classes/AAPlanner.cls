@@ -2427,12 +2427,17 @@ Private Function FindAreaShift(ByVal footprints As Collection, _
     Dim distance As Double, bestDistance As Double
     Dim found As Boolean
     Dim perfStarted As Double, cacheHitsBefore As Long
+    Dim useLastBlocker As Boolean
+    Dim lastBlocker As AAGeometry
+    Dim blockerChecks As Long, blockerRejects As Long
 
     perfStarted = AADebugPerfBegin()
     cacheHitsBefore = ShiftMarkCacheHits(markCache)
+    useLastBlocker = (settings.ModelMode = AA_MODEL_CUSTOM And forbidden.Count > 1 And markCache Is Nothing)
     bestX = 0#
     bestY = 0#
-    If AreaShiftFits(footprints, markFootprints, 0#, 0#, forbidden, settings, 0#, markCache) Then
+    If AreaShiftFits(footprints, markFootprints, 0#, 0#, forbidden, settings, 0#, markCache, _
+                     useLastBlocker, lastBlocker, blockerChecks, blockerRejects) Then
         found = True
         GoTo SearchFinished
     End If
@@ -2463,7 +2468,8 @@ Private Function FindAreaShift(ByVal footprints As Collection, _
             If distance >= bestDistance Then Exit For
             probes = probes + 1
             If probes > AA_MAX_SHIFT_PROBES_PER_AREA Then GoTo SearchFinished
-            If AreaShiftFits(footprints, markFootprints, xs(i), ys(j), forbidden, settings, areaAllowance, markCache) Then
+            If AreaShiftFits(footprints, markFootprints, xs(i), ys(j), forbidden, settings, _
+                             areaAllowance, markCache, useLastBlocker, lastBlocker, blockerChecks, blockerRejects) Then
                 found = True
                 bestDistance = distance
                 bestX = xs(i)
@@ -2478,6 +2484,8 @@ SearchFinished:
         "; probes=" & CStr(probes) & "; found=" & CStr(found) & _
         "; cache=" & CStr(Not markCache Is Nothing) & _
         "; hits=" & CStr(ShiftMarkCacheHits(markCache) - cacheHitsBefore)
+    If useLastBlocker And AADebugEnabled Then AADebugWrite "Mark blocker", _
+        "checks=" & CStr(blockerChecks) & "; rejected=" & CStr(blockerRejects)
     AADebugStageEnd "Mark shift search", perfStarted
 End Function
 
@@ -2529,7 +2537,9 @@ Private Function AreaShiftFits(ByVal footprints As Collection, _
                                ByVal dx As Double, ByVal dy As Double, _
                                ByVal forbidden As Collection, _
                                ByVal settings As AASettings, ByVal areaAllowance As Double, _
-                               Optional ByVal markCache As Object = Nothing) As Boolean
+                               ByVal markCache As Object, ByVal useLastBlocker As Boolean, _
+                               ByRef lastBlocker As AAGeometry, ByRef blockerChecks As Long, _
+                               ByRef blockerRejects As Long) As Boolean
     Dim footprint As AAGeometry
 
     For Each footprint In footprints
@@ -2539,7 +2549,58 @@ Private Function AreaShiftFits(ByVal footprints As Collection, _
            footprint.topY + dy > settings.AreaHeightMM + areaAllowance + AA_EDGE_TOLERANCE_MM Then Exit Function
     Next footprint
     ' Batas area selalu diperiksa ulang: allowance tidak menjadi bagian cache mark.
-    AreaShiftFits = ShiftMarksFit(markFootprints, dx, dy, forbidden, markCache)
+    If useLastBlocker Then
+        AreaShiftFits = CustomShiftMarksFit(markFootprints, dx, dy, forbidden, lastBlocker, _
+                                          blockerChecks, blockerRejects)
+    Else
+        AreaShiftFits = ShiftMarksFit(markFootprints, dx, dy, forbidden, markCache)
+    End If
+End Function
+
+Private Function CustomShiftMarksFit(ByVal markFootprints As Collection, _
+                                     ByVal dx As Double, ByVal dy As Double, _
+                                     ByVal forbidden As Collection, ByRef lastBlocker As AAGeometry, _
+                                     ByRef blockerChecks As Long, ByRef blockerRejects As Long) As Boolean
+    Dim footprint As AAGeometry
+    Dim checkedClear As AAGeometry
+    Dim blocked As Boolean
+
+    If Not lastBlocker Is Nothing Then
+        blockerChecks = blockerChecks + 1
+        If TryMarkBlocker(lastBlocker, dx, dy, forbidden, blocked) Then
+            If blocked Then
+                blockerRejects = blockerRejects + 1
+                Exit Function
+            End If
+            Set checkedClear = lastBlocker
+        End If
+    End If
+    For Each footprint In markFootprints
+        If Not footprint Is checkedClear Then
+            If Not MarksFit(footprint, dx, dy, forbidden) Then
+                Set lastBlocker = footprint
+                Exit Function
+            End If
+        End If
+    Next footprint
+    CustomShiftMarksFit = True
+End Function
+
+Private Function TryMarkBlocker(ByVal footprint As AAGeometry, _
+                               ByVal dx As Double, ByVal dy As Double, _
+                               ByVal forbidden As Collection, ByRef blocked As Boolean) As Boolean
+    Dim number As Long, source As String, description As String
+    On Error GoTo RecheckFailed
+    blocked = Not MarksFit(footprint, dx, dy, forbidden)
+    TryMarkBlocker = True
+    Exit Function
+
+RecheckFailed:
+    number = Err.Number: source = Err.Source: description = Err.Description
+    If number = AA_ERROR_CANCELLED Then Err.Raise number, source, description
+    ' Jika probe awal gagal, ulangi dengan urutan biasa agar error yang relevan
+    ' tetap keluar dari predicate normal.
+    Err.Clear
 End Function
 
 Private Function NewShiftMarkCache() As Object

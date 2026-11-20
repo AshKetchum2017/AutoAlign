@@ -75,7 +75,7 @@ ID dipakai untuk merujuk eksperimen, bukan menentukan urutan wajib.
 | O0 | Baseline terbaru, atribusi trial dan efisiensi strategi | Pertama | I1 selesai pada scope Case_07 P1/P3; profil I2 Case_07 tersedia; fix winner/gate O4 ditutup pada scope Case_07 P1/P3; cakupan lain/overhead/urutan terbuka | Vector trial, biaya/hasil strategi dan baseline berulang dapat dibandingkan. |
 | O1 | Transfer data dan pengurutan slot | Setelah hotspot dominan, kecuali profil berubah | Direncanakan | Biaya transfer/sort diketahui; urutan identik; waktu bersih membaik. |
 | O2 | Evaluasi cache pasangan pada pengisian bebas | Eksperimen terpisah | Cache sudah ada; manfaat belum ditetapkan | A/B cache aktif/nonaktif dengan source, profiling, dan input setara. |
-| O3 | Early rejection, reuse proof/geometri, overlap native dan mark | Setelah atribusi O0; dapat mendahului O4 sesuai temuan | Indeks segmen Long X/Y tersedia, menunggu VBE/runtime; jalur lain terbuka | Predicate mahal yang dihemat, biaya cache/proof, invalidasi dan kesetaraan hasil. |
+| O3 | Early rejection, reuse proof/geometri, overlap native dan mark | Setelah atribusi O0; dapat mendahului O4 sesuai temuan | Indeks Long X/Y dan pemeriksaan awal blocker mark Custom teruji pada Case_07 | Predicate mahal yang dihemat, biaya cache/proof, invalidasi dan kesetaraan hasil. |
 | O4 | Trial quota, kandidat redundan, blok dan filler/refill | Sasaran utama Case_07 sesudah O0 | Gate dan kesetaraan snapshot ditutup pada kelompok Case_07 P1/P3; speedup belum konsisten, kerapian individual terbuka; biaya kernel tetap sasaran | Vector/context trial terpisah, pengulangan terbukti, hasil serta kualitas terjaga. |
 | O5 | Pemeriksaan regresi lintas jalur yang terdampak | Mengikuti setiap perubahan | Berjalan per eksperimen | Bukti sesuai scope; tidak menunggu semua arah optimasi selesai. |
 | O6 | Urutan strategi dan alokasi komputasi adaptif | Sesudah metrik stabil | Rencana; belum mengubah budget atau scheduler | Kontribusi marginal, efek urutan, kualitas, biaya tanpa debug dan kebijakan fallback diketahui. |
@@ -222,6 +222,16 @@ Eksperimen setelah atribusi tersedia, masing-masing terpisah:
 `AAContour` menggunakan dictionary X lalu Y untuk menghilangkan pembentukan key string pada query indeks, dengan Collection ID dan urutan yang sama. Tidak ada packing/rounding atau perubahan cell size, wide-edge/query fallback, cap, stamp/cache, jarak, chord error dan validator. Root baru dipublikasikan hanya setelah konstruksi selesai; error tetap diteruskan. Tambahan dictionary per X terisi merupakan trade-off memori/CPU, bukan memory reduction yang sudah terbukti.
 
 Prototype dan source-extracted differential/microbenchmark berada di ignored `tests/edge-row-original`; snapshot dan profil pose-lookup menjadi pembanding. Source tersedia, menunggu VBE/runtime. Rasio CScript tidak dipakai sebagai speedup Corel. Perbarui hanya Class Module AAContour, Compile, gunakan `AADebugOn` ringkas, lalu Case_07 P1/P3 dengan input baseline yang sama ke `tests/edge-row-run`: smoke satu masing-masing, lanjut run kedua bila sesuai. Bandingkan vector/selected/count/alokasi/footprint, kernel/edge-query/batch dan quota-cache counters, waktu gap/Process serta memori teramati. Karena indeks dipakai bersama, sertakan satu kontrol Minimum dengan mark dan satu kontrol Medium individual /5877; periksa gap/mark/area, Cancel lalu run berikutnya, Undo/Redo/Z-order. Tindak lanjut kerapian individual tetap terpisah. Manfaat kecil/tidak konsisten memerlukan A/B bergantian sebelum penerimaan performa.
+
+**Status 19 November.** Enam log Corel tersedia di `tests/edge-row-run`. Case_07 kelompok P1/P3 dan Medium individual /5877 cocok dengan baseline pada hasil dan counter. Kontrol Minimum/Custom dengan 16 zona selesai dan menempatkan pencarian mark sebagai sasaran investigasi terpisah. Angka, cakupan serta batas pemeriksaan manual dan pembandingan waktu/memori berada di Development.log.
+
+#### Increment O3: pemeriksaan awal blocker mark Custom
+
+Pencarian area Custom dengan beberapa zona memeriksa lebih dahulu footprint yang terakhir tertolak. Pemeriksaan selalu memakai geometri pada posisi probe saat ini. Probe yang lolos pemeriksaan awal masih diperiksa terhadap footprint lain. Bila pemeriksaan awal menghasilkan error geometri, pencarian kembali ke urutan biasa. `Mark blocker` mencatat jumlah pemeriksaan awal dan penolakan yang diperoleh. Minimum dan Medium menggunakan helper ini.
+
+Baseline `/5877` di `tests/edge-row-run/case-07-page-3-with-mark.txt` menyediakan pembanding untuk 16 zona Custom. Uji Corel dimulai dengan konfigurasi itu dan satu kontrol Medium/Custom bertanda. Bandingkan hasil, offset, recovery dan probe, lalu ukur waktu `Mark shift search`, jumlah pemeriksaan overlap dan waktu Process. Rincian pemeriksaan berada di Development.log.
+
+**Status 20 November.** Uji Corel Minimum dan Medium dengan 16 zona Custom selesai pada Case_07 `/5877`. Kesetaraan hasil Minimum dan pengukuran tahap mark pada konfigurasi tersebut dicatat di Development.log. Medium menjadi kontrol jalur bersama.
 
 ### O4 — quota, blok dan refill
 
