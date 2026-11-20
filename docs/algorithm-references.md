@@ -18,7 +18,7 @@ Pembanding AA mengutamakan sedikitnya area, lalu banyaknya Design. Jika kedua ni
 
 ### Trial Quantity dan refill saat Process
 
-Trial Quantity memakai ulang template Cut Line bila syaratnya terpenuhi. Untuk jalur kuota, AA mempersempit rentang pencarian seperti pencarian biner untuk mencari jumlah yang lolos dalam satu area, lalu mencoba tambahan sesuai batas pembagian. Medium memakai estimasi awal dan hasil parsial untuk memilih trial berikutnya. Penyempitan rentang mengurangi jumlah trial mahal. Karena tiap trial memakai planner heuristik, kegagalan menunjukkan bahwa planner tidak menemukan susunan untuk kuota tersebut dalam pencariannya. [`BuildGroup` dan `TryQuota`](../src/classes/AAQuantityPlanner.cls).
+Trial Quantity memakai ulang template Cut Line bila syaratnya terpenuhi. Untuk jalur kuota, AA mempersempit rentang pencarian seperti pencarian biner untuk mencari jumlah yang lolos dalam satu area, lalu mencoba tambahan sesuai batas pembagian. Medium memakai estimasi awal dan hasil parsial untuk memilih trial berikutnya. Penyempitan rentang mengurangi jumlah trial mahal. Hasil trial heuristik tidak dijamin monoton, sehingga menurunkan batas atas setelah satu kegagalan bisa melewatkan kuota lebih tinggi yang mungkin lolos jika diuji. [`BuildGroup` dan `TryQuota`](../src/classes/AAQuantityPlanner.cls).
 
 Refill adalah perbaikan lokal yang dikembangkan di AA. Planner mencoba slot tepi, area independen, atau jalur di samping blok sesuai bentuk dan mode, dengan tetap memeriksa gap, mark, area, dan alokasi. Meneruskan susunan yang sudah ada menghindari perencanaan ulang dari awal. Pencarian lokal bisa melewatkan celah yang baru terbuka setelah susunan dirombak lebih luas. [`RefillEdgeRows` dan `RefillIndependentAreas`](../src/classes/AAMediumPlanner.cls), [`ImproveMinimumGroup` dan `ImproveMediumGroup`](../src/classes/AAPlanner.cls).
 
@@ -27,6 +27,8 @@ Refill adalah perbaikan lokal yang dikembangkan di AA. Planner mencoba slot tepi
 Optimize pada susunan yang sudah ada memakai heuristik pemadatan AA. Minimum merapatkan baris dan kolom terhadap anchor. Medium merapatkan kelompok dan objek individual, lalu mencoba memusatkan hasil jika lolos validasi. Translasi mempertahankan jumlah dan rotasi, sehingga ruang yang memerlukan perubahan orientasi berada di luar jangkauan pencarian ini. [AAOptimizeMinimum](../src/classes/AAOptimizeMinimum.cls), [AAOptimizeEngine](../src/classes/AAOptimizeEngine.cls).
 
 Untuk mark, planner mencoba translasi kelompok dalam rentang yang dibatasi area. Translasi mempertahankan posisi relatif sehingga susunan dapat melewati mark tanpa membangun ulang pola. Pilihan tetap bergantung pada ruang gerak dan offset yang diuji. `AddPlaced` memakai matriks yang terikat ke unit dokumen untuk menggeser tiap salinan kurva sebagai satu kesatuan. Cara ini menjaga hubungan node dan handle dalam satu transformasi dan tetap memerlukan salinan kurva untuk operasi native. [`FindAreaShift`](../src/classes/AAPlanner.cls), [`AddPlaced`](../src/classes/AAGeometry.cls).
+
+Pada pencarian Custom dengan beberapa zona, `CustomShiftMarksFit` memeriksa lebih dulu footprint yang terakhir membentur mark, memakai offset probe saat ini. Benturan yang berulang memungkinkan probe langsung ditolak. Jika footprint itu lolos, pemeriksaan berlanjut ke footprint lain. Penghematan bergantung pada seberapa sering penghalang yang sama muncul pada probe berikutnya. [`CustomShiftMarksFit`](../src/classes/AAPlanner.cls).
 
 ## Pemeriksaan geometri
 
